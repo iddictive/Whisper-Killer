@@ -113,6 +113,7 @@ struct MenuBarView: View {
                 .background(Color.primary.opacity(0.04))
                 .clipShape(Capsule())
                 .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+                .frame(height: 24)
 
                 Spacer()
 
@@ -146,6 +147,7 @@ struct MenuBarView: View {
                     .background(Color.primary.opacity(0.04))
                     .clipShape(Capsule())
                     .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+                    .frame(height: 24)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -159,6 +161,7 @@ struct MenuBarView: View {
                     .background(Color.primary.opacity(0.04))
                     .clipShape(Capsule())
                     .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+                    .frame(height: 24)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
