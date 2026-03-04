@@ -37,18 +37,18 @@ struct RecordingOverlayContent: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Status Indicator
+            // Status Indicator (Unified)
             ZStack {
                 Circle()
                     .fill(statusColor.opacity(0.3))
-                    .frame(width: 10, height: 10)
+                    .frame(width: 8, height: 8)
                     .scaleEffect(isPulsing ? 1.4 : 1.0)
                 
                 Circle()
                     .fill(statusColor)
-                    .frame(width: 10, height: 10)
+                    .frame(width: 8, height: 8)
             }
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: appState.state)
+            .animation(isPulsing ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: appState.state)
 
             if appState.state == .recording {
                 WaveformView(levels: recorder.audioLevels)
@@ -81,22 +81,18 @@ struct RecordingOverlayContent: View {
                 Text(formatDuration(recorder.recordingDuration))
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundStyle(.white)
-            } else if appState.state == .processing {
-                HStack(spacing: 8) {
-                    Image(systemName: "circle.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.orange)
-                    Text(appState.processingStage.rawValue)
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-                .transition(.opacity)
+            } else if appState.state == .processing || appState.state == .typing {
+                Text(appState.state == .processing ? appState.processingStage.rawValue : "Typing...")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .transition(.opacity)
             } else {
                 Text(statusText)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                     .transition(.opacity)
             }
+            
             if let _ = appState.lastError {
                 Button {
                     appState.lastError = nil
@@ -131,8 +127,8 @@ struct RecordingOverlayContent: View {
         if appState.lastError != nil { return .red }
         switch appState.state {
         case .recording: return .red
-        case .processing: return SW.accentBlue
-        case .typing: return SW.accentBlue
+        case .processing: return .orange
+        case .typing: return SW.accent
         default: return .clear
         }
     }
@@ -148,7 +144,7 @@ struct RecordingOverlayContent: View {
     }
 
     private var isPulsing: Bool {
-        appState.state == .recording
+        appState.state == .recording || appState.state == .processing
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {

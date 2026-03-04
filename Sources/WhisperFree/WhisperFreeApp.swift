@@ -200,18 +200,54 @@ struct WhisperFreeApp: App {
             MenuBarView()
                 .environmentObject(appState)
         } label: {
-            Image(systemName: menuBarIcon)
-                .symbolRenderingMode(.hierarchical)
+            MenuBarIconView(state: appState.state)
         }
         .menuBarExtraStyle(.window)
     }
+}
 
-    private var menuBarIcon: String {
-        switch appState.state {
-        case .recording: return "mic.fill"
-        case .processing: return "ellipsis.circle"
-        case .typing: return "keyboard"
-        case .idle: return "mic"
+struct MenuBarIconView: View {
+    let state: AppState.State
+    @State private var blink = true
+    
+    var body: some View {
+        ZStack {
+            Image(systemName: "microphone.fill")
+                .font(.system(size: 14, weight: .medium))
+            
+            if let color = statusColor {
+                Circle()
+                    .fill(color)
+                    .frame(width: 5, height: 5)
+                    .overlay(Circle().stroke(Color.black, lineWidth: 0.5))
+                    .offset(x: 6, y: 5)
+                    .opacity(state == .processing && !blink ? 0.3 : 1.0)
+            }
+        }
+        .onAppear {
+            if state == .processing {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    blink.toggle()
+                }
+            }
+        }
+        .onChange(of: state) { _, newState in
+            if newState == .processing {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    blink = false
+                }
+            } else {
+                blink = true
+            }
+        }
+    }
+    
+    private var statusColor: Color? {
+        switch state {
+        case .recording: return .red
+        case .processing: return .orange
+        case .typing: return SW.accent
+        case .idle: return nil
         }
     }
 }
