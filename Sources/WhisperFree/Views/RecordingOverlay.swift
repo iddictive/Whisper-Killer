@@ -1,0 +1,217 @@
+import SwiftUI
+import AppKit
+import Combine
+import Foundation
+
+// MARK: - Waveform View
+
+struct WaveformView: View {
+    let levels: [Float]
+    let barCount: Int = 24
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<barCount, id: \.self) { index in
+                let level = index < levels.count ? levels[index] : 0
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 0.0, green: 0.85, blue: 1.0), Color(red: 0.0, green: 0.85, blue: 1.0).opacity(0.4)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 3, height: max(2, CGFloat(level) * 18))
+                    .animation(.spring(response: 0.15, dampingFraction: 0.6), value: level)
+            }
+        }
+        .frame(width: CGFloat(barCount * 6 - 3), height: 20)
+    }
+}
+
+// MARK: - Recording Overlay Content
+
+struct RecordingOverlayContent: View {
+    @EnvironmentObject var appState: AppState
+    @ObservedObject var recorder: AudioRecorder
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Status Indicator
+            ZStack {
+                Circle()
+                    .fill(statusColor.opacity(0.3))
+                    .frame(width: 10, height: 10)
+                    .scaleEffect(isPulsing ? 1.4 : 1.0)
+                
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+            }
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: appState.state)
+
+            if appState.state == .recording {
+                WaveformView(levels: recorder.audioLevels)
+                    .transition(.opacity.combined(with: .move(edge: .leading)))
+                
+                if recorder.isTooQuiet {
+                    HStack(spacing: 3) {
+                        Image(systemName: "speaker.slash.fill")
+                            .font(.system(size: 9))
+                        Text("Low")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(.orange.opacity(0.15)))
+                } else if recorder.isTooNoisy {
+                    HStack(spacing: 3) {
+                        Image(systemName: "waveform.badge.exclamationmark")
+                            .font(.system(size: 9))
+                        Text("Noise")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(.red.opacity(0.15)))
+                }
+
+                Text(formatDuration(recorder.recordingDuration))
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white)
+            } else if appState.state == .processing {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.trianglehead.2.clockwise")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .rotationEffect(.degrees(appState.state == .processing ? 360 : 0))
+                        .animation(.linear(duration: 1.0).repeatForever(autoreverses: false), value: appState.state)
+                    Text(appState.processingStage.rawValue)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .transition(.opacity)
+            } else {
+                Text(statusText)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .transition(.opacity)
+            }
+            if let _ = appState.lastError {
+                Button {
+                    appState.lastError = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .fixedSize()
+        .background(
+            ZStack {
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                Capsule()
+                    .fill(Color.black.opacity(0.45))
+                Capsule()
+                    .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
+            }
+        )
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
+        .environment(\.colorScheme, .dark)
+        .padding(12) // Extra padding so the panel window has room for the shadow
+    }
+
+    private var statusColor: Color {
+        if appState.lastError != nil { return .red }
+        switch appState.state {
+        case .recording: return .red
+        case .processing: return Color(red: 0.0, green: 0.85, blue: 1.0)
+        case .typing: return Color(red: 0.0, green: 0.85, blue: 1.0)
+        default: return .clear
+        }
+    }
+
+    private var statusText: String {
+        if appState.lastError != nil { return "ERROR" }
+        switch appState.state {
+        case .recording: return "REC"
+        case .processing: return "AI..."
+        case .typing: return "TYP"
+        default: return ""
+        }
+    }
+
+    private var isPulsing: Bool {
+        appState.state == .recording
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let seconds = Int(duration) % 60
+        let tenths = Int(duration * 10) % 10
+        return String(format: "%02d.%1d", seconds, tenths)
+    }
+}
+
+// MARK: - Floating Overlay Window Controller
+
+final class OverlayWindowController: NSObject, ObservableObject {
+    private var panel: NSPanel?
+
+    func show(appState: AppState) {
+        if panel != nil { return }
+
+        let content = RecordingOverlayContent(recorder: appState.recorder)
+            .environmentObject(appState)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        let hostingView = NSHostingView(rootView: content)
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+
+        // Use a generous fixed panel size — SwiftUI content is .fixedSize() 
+        // and centers itself, so we never need to resize the panel.
+        guard let screen = NSScreen.main else { return }
+        let panelWidth: CGFloat = 500
+        let panelHeight: CGFloat = 80
+        // Use visibleFrame to stay below the notch / menu bar
+        let safeTop = screen.frame.maxY - screen.visibleFrame.maxY  // height of menu bar / notch area
+        let x = screen.frame.midX - (panelWidth / 2)
+        let y = screen.frame.maxY - panelHeight - safeTop - 4
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: x, y: y, width: panelWidth, height: panelHeight),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isFloatingPanel = true
+        // statusBar level sits above normal windows but doesn't fight the app switcher
+        panel.level = .statusBar
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.animationBehavior = .none
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.isMovableByWindowBackground = false
+        panel.hidesOnDeactivate = false
+        panel.ignoresMouseEvents = false
+
+        // Set hosting view as content and pin to edges for proper centering
+        panel.contentView = hostingView
+
+        self.panel = panel
+        panel.orderFrontRegardless()
+    }
+
+    func hide() {
+        panel?.orderOut(nil)
+        panel = nil
+    }
+}

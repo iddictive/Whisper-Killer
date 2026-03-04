@@ -1,0 +1,29 @@
+# Build
+.build/
+DerivedData/
+
+# SPM
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+
+# App bundle (built artifact)
+*.app
+
+# macOS
+.DS_Store
+._*
+
+# IDE
+*.swp
+*.swo
+*~
+
+# Test files
+test*.m4a
+test*.swift
+.agents/
