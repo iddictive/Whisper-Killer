@@ -21,7 +21,9 @@ struct SetupWizardView: View {
 
     // MARK: - Colors
 
-    private let accentCyan = Color(red: 0.0, green: 0.85, blue: 1.0)
+    private let accentGold = SW.accent
+    private let accentPink = SW.accentPink
+    private let accentMag  = SW.accentMag
     private let bgDark = Color(red: 0.07, green: 0.07, blue: 0.12)
     private let bgCard = Color(white: 1.0, opacity: 0.06)
     private let bgCardHover = Color(white: 1.0, opacity: 0.09)
@@ -38,7 +40,7 @@ struct SetupWizardView: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [accentCyan.opacity(0.08), .clear],
+                        colors: [accentGold.opacity(0.1), accentPink.opacity(0.05), .clear],
                         center: .center,
                         startRadius: 60,
                         endRadius: 300
@@ -103,14 +105,14 @@ struct SetupWizardView: View {
             ZStack {
                 // Outer ring glow
                 Circle()
-                    .stroke(accentCyan.opacity(0.3), lineWidth: 2)
+                    .stroke(LinearGradient(colors: [accentGold, accentPink], startPoint: .top, endPoint: .bottom).opacity(0.3), lineWidth: 2)
                     .frame(width: 68, height: 68)
                     .blur(radius: 4)
 
                 Circle()
                     .fill(
                         LinearGradient(
-                            colors: [accentCyan.opacity(0.2), accentCyan.opacity(0.05)],
+                            colors: [accentGold.opacity(0.2), accentPink.opacity(0.1)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -119,7 +121,7 @@ struct SetupWizardView: View {
 
                 Image(systemName: stepIcon)
                     .font(.system(size: 26, weight: .medium))
-                    .foregroundStyle(accentCyan)
+                    .foregroundStyle(accentPink)
             }
 
             Text(stepTitle)
@@ -169,7 +171,7 @@ struct SetupWizardView: View {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(
                         LinearGradient(
-                            colors: [accentCyan, accentCyan.opacity(0.6)],
+                            colors: [accentGold, accentPink, accentMag],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -181,11 +183,11 @@ struct SetupWizardView: View {
                 HStack {
                     ForEach(0..<totalSteps, id: \.self) { step in
                         Circle()
-                            .fill(step <= currentStep ? accentCyan : Color.white.opacity(0.15))
+                            .fill(step <= currentStep ? accentPink : Color.white.opacity(0.15))
                             .frame(width: 8, height: 8)
                             .overlay(
                                 Circle()
-                                    .fill(step == currentStep ? accentCyan : .clear)
+                                    .fill(step == currentStep ? accentPink : .clear)
                                     .frame(width: 12, height: 12)
                                     .opacity(0.3)
                             )
@@ -206,7 +208,7 @@ struct SetupWizardView: View {
             featureCard(icon: "mic.fill", color: .red,
                         title: "⌥+Space to record",
                         desc: "Hold, Toggle, or Push-to-Talk — pick your style")
-            featureCard(icon: "waveform", color: accentCyan,
+            featureCard(icon: "waveform", color: accentPink,
                         title: "AI transcription",
                         desc: "Cloud (OpenAI) or Local (whisper.cpp with GPU/NPU)")
             featureCard(icon: "sparkles", color: .purple,
@@ -290,7 +292,7 @@ struct SetupWizardView: View {
                     Text("Refresh")
                 }
                 .font(.system(size: 12))
-                .foregroundStyle(accentCyan)
+                .foregroundStyle(accentGold)
             }
             .buttonStyle(.plain)
             .padding(.top, 4)
@@ -381,12 +383,12 @@ struct SetupWizardView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(selected ? accentCyan.opacity(0.15) : bgCard)
-            .foregroundStyle(selected ? accentCyan : textSecondary)
+            .background(selected ? accentGold.opacity(0.15) : bgCard)
+            .foregroundStyle(selected ? accentGold : textSecondary)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(selected ? accentCyan.opacity(0.4) : borderSubtle, lineWidth: 1.5)
+                    .strokeBorder(selected ? accentGold.opacity(0.4) : borderSubtle, lineWidth: 1.5)
             )
         }
         .buttonStyle(.plain)
@@ -441,8 +443,8 @@ struct SetupWizardView: View {
                             .font(.system(size: 11, weight: .semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
-                            .background(accentCyan.opacity(0.2))
-                            .foregroundStyle(accentCyan)
+                            .background(accentPink.opacity(0.2))
+                            .foregroundStyle(accentPink)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -478,7 +480,7 @@ struct SetupWizardView: View {
         return HStack(spacing: 10) {
             Image(systemName: isCurrent ? "largecircle.fill.circle" : "circle")
                 .font(.system(size: 14))
-                .foregroundStyle(isCurrent ? accentCyan : textSecondary)
+                .foregroundStyle(isCurrent ? accentPink : textSecondary)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -490,8 +492,8 @@ struct SetupWizardView: View {
                             .font(.system(size: 8, weight: .heavy, design: .monospaced))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
-                            .background(accentCyan.opacity(0.2))
-                            .foregroundStyle(accentCyan)
+                            .background(accentGold.opacity(0.2))
+                            .foregroundStyle(accentGold)
                             .clipShape(Capsule())
                     }
                 }
@@ -535,10 +537,10 @@ struct SetupWizardView: View {
                             Text("Get")
                                 .font(.system(size: 11, weight: .semibold))
                         }
-                        .foregroundStyle(accentCyan)
+                        .foregroundStyle(accentGold)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(accentCyan.opacity(0.15))
+                        .background(accentGold.opacity(0.15))
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -553,7 +555,7 @@ struct SetupWizardView: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .background(isCurrent ? accentCyan.opacity(0.06) : .clear)
+        .background(isCurrent ? accentGold.opacity(0.06) : .clear)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .contentShape(Rectangle())
         .onTapGesture {
@@ -580,14 +582,14 @@ struct SetupWizardView: View {
         VStack(spacing: 16) {
             if selectedEngine == .local {
                 HStack(spacing: 10) {
-                    Image(systemName: "info.circle.fill").foregroundStyle(accentCyan)
+                    Image(systemName: "info.circle.fill").foregroundStyle(accentGold)
                     Text("Optional for local engine. Only needed for AI post-processing modes.")
                         .font(.system(size: 12)).foregroundStyle(textSecondary)
                 }
                 .padding(14)
-                .background(accentCyan.opacity(0.06))
+                .background(accentGold.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(accentCyan.opacity(0.15), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(accentGold.opacity(0.15), lineWidth: 1))
             }
 
             VStack(alignment: .leading, spacing: 12) {
@@ -611,7 +613,7 @@ struct SetupWizardView: View {
                     } label: {
                         Group {
                             if isTestingAPI {
-                                ProgressView().controlSize(.mini).tint(accentCyan)
+                                ProgressView().controlSize(.mini).tint(accentGold)
                             } else {
                                 Text("Test")
                                     .font(.system(size: 12, weight: .semibold))
@@ -619,8 +621,8 @@ struct SetupWizardView: View {
                         }
                         .frame(width: 50)
                         .padding(.vertical, 10)
-                        .background(accentCyan.opacity(0.15))
-                        .foregroundStyle(accentCyan)
+                        .background(accentGold.opacity(0.15))
+                        .foregroundStyle(accentGold)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .buttonStyle(.plain)
@@ -642,7 +644,7 @@ struct SetupWizardView: View {
                         Text("Get API key at platform.openai.com")
                     }
                     .font(.system(size: 11))
-                    .foregroundStyle(accentCyan)
+                    .foregroundStyle(accentGold)
                 }
             }
             .padding(16)
@@ -782,7 +784,7 @@ struct SetupWizardView: View {
                     .padding(.vertical, 10)
                     .background(
                         LinearGradient(
-                            colors: [accentCyan, accentCyan.opacity(0.7)],
+                            colors: [accentGold, accentPink],
                             startPoint: .leading,
                             endPoint: .trailing
                         )

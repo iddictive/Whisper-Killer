@@ -334,9 +334,14 @@ struct SettingsView: View {
     private var aboutSection: some View {
         Section {
             VStack(spacing: 20) {
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.primary)
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [SW.accent, SW.accentPink], startPoint: .topLeading, endPoint: .bottomTrailing).opacity(0.1))
+                    Image(systemName: "microphone.fill")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundStyle(LinearGradient(colors: [SW.accent, SW.accentPink], startPoint: .top, endPoint: .bottom))
+                }
+                .frame(width: 80, height: 80)
                 
                 VStack(spacing: 8) {
                     Text("Whisper Free").font(.system(size: 28, weight: .bold))
@@ -348,8 +353,8 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                 
                 HStack(spacing: 24) {
-                    Link("GitHub", destination: URL(string: "https://github.com/example")!)
-                    Link("Privacy", destination: URL(string: "https://example.com/privacy")!)
+                    Link("GitHub", destination: URL(string: "https://github.com/iddictive/Whisper-Free")!)
+                    Link("iddictive", destination: URL(string: "https://github.com/iddictive")!)
                 }
                 .font(.caption)
             }

@@ -16,7 +16,7 @@ struct WaveformView: View {
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(
                         LinearGradient(
-                            colors: [Color(red: 0.0, green: 0.85, blue: 1.0), Color(red: 0.0, green: 0.85, blue: 1.0).opacity(0.4)],
+                            colors: [SW.accent, SW.accentPink.opacity(0.7)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -133,8 +133,8 @@ struct RecordingOverlayContent: View {
         if appState.lastError != nil { return .red }
         switch appState.state {
         case .recording: return .red
-        case .processing: return Color(red: 0.0, green: 0.85, blue: 1.0)
-        case .typing: return Color(red: 0.0, green: 0.85, blue: 1.0)
+        case .processing: return SW.accentPink
+        case .typing: return SW.accentPink
         default: return .clear
         }
     }

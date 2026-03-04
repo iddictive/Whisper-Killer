@@ -5,8 +5,10 @@ import SwiftUI
 /// Shared design tokens for the entire app.
 /// Extracted from the SetupWizard's premium dark theme.
 enum SW {
-    // MARK: Colors
-    static let accent = Color(red: 0.0, green: 0.85, blue: 1.0)     // Cyan
+    // MARK: Colors — matches app icon gradient (gold → pink → purple)
+    static let accent     = Color(red: 1.0, green: 0.72, blue: 0.2)    // Warm gold (primary accent)
+    static let accentPink = Color(red: 0.85, green: 0.4, blue: 0.65)   // Pink (secondary)
+    static let accentMag  = Color(red: 0.65, green: 0.3, blue: 0.8)    // Magenta/purple (tertiary)
     static let bg     = Color(red: 0.07, green: 0.07, blue: 0.12)    // Dark background
     static let card   = Color(white: 1.0, opacity: 0.06)             // Card surface
     static let cardHover = Color(white: 1.0, opacity: 0.09)          // Card hover
