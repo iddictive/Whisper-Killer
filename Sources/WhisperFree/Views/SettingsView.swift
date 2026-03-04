@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject var appState: AppState
 
     private var modelManager: ModelManager { appState.modelManager }
+    @ObservedObject private var updater = GitHubUpdater.shared
     @State private var selectedTab = "general"
     @State private var isTestingAPI = false
     @State private var apiTestResult: String?
@@ -118,11 +119,35 @@ struct SettingsView: View {
                     Toggle("Automatically download updates", isOn: $appState.settings.automaticallyDownloadsUpdates)
                         .disabled(!appState.settings.automaticallyChecksForUpdates)
                     
-                    Button("Check for Updates Now...") {
-                        GitHubUpdater.shared.checkForUpdates(manual: true)
+                    if let error = updater.error {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
                     }
-                    .padding(.top, 4)
-                    .font(.caption)
+                    
+                    if updater.isDownloading {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ProgressView(value: updater.downloadProgress)
+                                .progressViewStyle(.linear)
+                            Text("Downloading update... \(Int(updater.downloadProgress * 100))%")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    } else if updater.updateAvailable {
+                        Button("Download & Install (v\(updater.latestVersion ?? ""))") {
+                            updater.startDownload()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    } else {
+                        Button(updater.isChecking ? "Checking..." : "Check for Updates Now...") {
+                            updater.checkForUpdates(manual: true)
+                        }
+                        .disabled(updater.isChecking)
+                        .padding(.top, 4)
+                        .font(.caption)
+                    }
                 }
             }
         }

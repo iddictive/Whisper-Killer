@@ -1,16 +1,33 @@
 import Foundation
 import AppKit
+import Combine
 
-class GitHubUpdater {
+class GitHubUpdater: ObservableObject {
     static let shared = GitHubUpdater()
     private let repo = "iddictive/Whisper-Free"
     private let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0.0"
-    private var isChecking = false
+    
+    @Published var isChecking = false
+    @Published var updateAvailable = false
+    @Published var latestVersion: String?
+    @Published var downloadUrl: String?
+    @Published var isDownloading = false
+    @Published var downloadProgress: Double = 0
+    @Published var error: String?
+    
+    private var downloadTask: URLSessionDownloadTask?
+    private var observation: NSKeyValueObservation?
 
     func checkForUpdates(manual: Bool = false) {
-        // In a real app, we'd check AppSettings here for auto-update flag
         guard !isChecking else { return }
+        
+        // Check settings
+        let defaults = UserDefaults.standard
+        let autoCheck = defaults.bool(forKey: "automaticallyChecksForUpdates")
+        if !manual && !autoCheck { return }
+        
         isChecking = true
+        error = nil
         
         print("🔍 Checking for updates at https://api.github.com/repos/\(repo)/releases/latest")
         
@@ -19,38 +36,41 @@ class GitHubUpdater {
         request.setValue("WhisperFreeUpdater", forHTTPHeaderField: "User-Agent")
         
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            defer { self?.isChecking = false }
-            guard let data = data, error == nil else { 
-                print("❌ Update check network error: \(error?.localizedDescription ?? "unknown")")
-                return 
-            }
-            
-            do {
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let tagName = json["tag_name"] as? String {
-                    
-                    let latestVersion = tagName.replacingOccurrences(of: "v", with: "")
-                    print("📡 Latest version found: \(latestVersion) (current: \(self?.currentVersion ?? "unknown"))")
-                    
-                    if self?.compareVersions(current: self?.currentVersion ?? "", latest: latestVersion) == true {
-                        let assets = json["assets"] as? [[String: Any]]
-                        let dmgAsset = assets?.first(where: { ($0["name"] as? String)?.hasSuffix(".dmg") == true })
-                        let downloadUrl = dmgAsset?["browser_download_url"] as? String
+            DispatchQueue.main.async {
+                self?.isChecking = false
+                guard let data = data, error == nil else { 
+                    self?.error = error?.localizedDescription ?? "Network error"
+                    return 
+                }
+                
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let tagName = json["tag_name"] as? String {
                         
-                        DispatchQueue.main.async {
-                            self?.showUpdateAlert(version: latestVersion, downloadUrl: downloadUrl)
-                        }
-                    } else if manual {
-                        DispatchQueue.main.async {
+                        let latest = tagName.replacingOccurrences(of: "v", with: "")
+                        self?.latestVersion = latest
+                        
+                        if self?.compareVersions(current: self?.currentVersion ?? "", latest: latest) == true {
+                            self?.updateAvailable = true
+                            let assets = json["assets"] as? [[String: Any]]
+                            let dmgAsset = assets?.first(where: { ($0["name"] as? String)?.hasSuffix(".dmg") == true })
+                            self?.downloadUrl = dmgAsset?["browser_download_url"] as? String
+                            
+                            if manual {
+                                self?.showUpdateAlert(version: latest, downloadUrl: self?.downloadUrl)
+                            } else if defaults.bool(forKey: "automaticallyDownloadsUpdates") {
+                                self?.startDownload()
+                            }
+                        } else if manual {
                             let alert = NSAlert()
                             alert.messageText = "You're up to date!"
                             alert.informativeText = "WhisperFree \(self?.currentVersion ?? "") is the latest version."
                             alert.runModal()
                         }
                     }
+                } catch {
+                    self?.error = "JSON error"
                 }
-            } catch {
-                print("❌ Update check JSON error: \(error)")
             }
         }.resume()
     }
@@ -66,80 +86,82 @@ class GitHubUpdater {
         alert.addButton(withTitle: "Download & Install")
         alert.addButton(withTitle: "Later")
         
-        if alert.runModal() == .alertFirstButtonReturn, let urlString = downloadUrl, let url = URL(string: urlString) {
-            startAutomatedUpdate(url: url)
+        if alert.runModal() == .alertFirstButtonReturn {
+            startDownload()
         }
     }
 
-    private func startAutomatedUpdate(url: URL) {
-        // Show a simple progress alert
-        let progress = NSAlert()
-        progress.messageText = "Downloading update..."
-        let indicator = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 200, height: 20))
-        indicator.isIndeterminate = true
-        indicator.startAnimation(nil)
-        progress.accessoryView = indicator
+    func startDownload() {
+        guard let urlString = downloadUrl, let url = URL(string: urlString), !isDownloading else { return }
         
-        // Use a background task to not block the modal if possible, 
-        // though runModal is blocking. In a real app, we'd use a custom window.
-        let downloadTask = URLSession.shared.downloadTask(with: url) { [weak self] localURL, _, error in
+        isDownloading = true
+        downloadProgress = 0
+        error = nil
+        
+        downloadTask = URLSession.shared.downloadTask(with: url) { [weak self] localURL, _, error in
             DispatchQueue.main.async {
+                self?.isDownloading = false
+                self?.observation = nil
+                
                 if let localURL = localURL, error == nil {
-                    // Create a temporary path that survives the alert closing
                     let tempPath = NSTemporaryDirectory() + "WhisperFreeUpdate.dmg"
                     try? FileManager.default.removeItem(atPath: tempPath)
                     try? FileManager.default.copyItem(at: localURL, to: URL(fileURLWithPath: tempPath))
-                    
-                    progress.window.close()
                     self?.performInstallation(dmgPath: tempPath)
                 } else {
-                    let fail = NSAlert()
-                    fail.messageText = "Update Failed"
-                    fail.informativeText = error?.localizedDescription ?? "Download failed."
-                    fail.runModal()
+                    self?.error = error?.localizedDescription ?? "Download failed"
                 }
             }
         }
         
-        downloadTask.resume()
-        progress.runModal()
+        // Track progress
+        observation = downloadTask?.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
+            DispatchQueue.main.async {
+                self?.downloadProgress = progress.fractionCompleted
+            }
+        }
+        
+        downloadTask?.resume()
     }
 
     private func performInstallation(dmgPath: String) {
-        let installAlert = NSAlert()
-        installAlert.messageText = "Installing update..."
-        let indicator = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 200, height: 20))
-        indicator.isIndeterminate = true
-        indicator.startAnimation(nil)
-        installAlert.accessoryView = indicator
-        
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let script = """
-            mkdir -p /tmp/whisperfree_update
-            hdiutil attach "\(dmgPath)" -mountpoint /tmp/whisperfree_update -nobrowse -quiet
-            cp -R /tmp/whisperfree_update/WhisperFree.app /Applications/
-            hdiutil detach /tmp/whisperfree_update -quiet
-            """
+        // Show install prompt if it was a background download
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Installation Ready"
+            alert.informativeText = "The update has been downloaded. WhisperFree will close to install the new version."
+            alert.addButton(withTitle: "Install & Relaunch")
+            alert.addButton(withTitle: "Later")
             
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/bash")
-            process.arguments = ["-c", script]
-            try? process.run()
-            process.waitUntilExit()
-            
-            DispatchQueue.main.async {
-                installAlert.window.close()
-                if process.terminationStatus == 0 {
-                    self?.relaunch()
-                } else {
-                    let fail = NSAlert()
-                    fail.messageText = "Installation failed"
-                    fail.informativeText = "Could not copy the new version to /Applications."
-                    fail.runModal()
-                }
+            if alert.runModal() == .alertFirstButtonReturn {
+                self.runInstallScript(dmgPath: dmgPath)
             }
         }
-        installAlert.runModal()
+    }
+
+    private func runInstallScript(dmgPath: String) {
+        let script = """
+        mkdir -p /tmp/whisperfree_update
+        hdiutil attach "\(dmgPath)" -mountpoint /tmp/whisperfree_update -nobrowse -quiet
+        # Force copy even if folder exists
+        rm -rf /Applications/WhisperFree.app
+        cp -R /tmp/whisperfree_update/WhisperFree.app /Applications/
+        hdiutil detach /tmp/whisperfree_update -quiet
+        """
+        
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", script]
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus == 0 {
+                relaunch()
+            }
+        } catch {
+            print("❌ Installation error: \(error)")
+        }
     }
 
     private func relaunch() {

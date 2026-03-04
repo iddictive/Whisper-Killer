@@ -57,6 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.showSetupWizard()
             }
+        } else {
+            // Check for updates if setup is done
+            GitHubUpdater.shared.checkForUpdates()
         }
     }
     
