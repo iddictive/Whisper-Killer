@@ -247,7 +247,7 @@ struct MenuBarIconView: View {
             }
             .offset(x: 6.8, y: 6.5)
             // Pulse or Blink depending on state
-            .opacity(color == nil ? 0 : ((state == .processing || state == .typing) && !blink ? 0.4 : 1.0))
+            .opacity(color == nil ? 0 : (state == .recording ? 1.0 : (blink ? 1.0 : 0.3)))
         }
         .onAppear {
             startAnimation()

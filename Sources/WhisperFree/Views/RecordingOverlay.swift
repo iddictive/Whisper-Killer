@@ -37,6 +37,20 @@ struct RecordingOverlayContent: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // Status Indicator (Unified) - Back to Left
+            ZStack {
+                Circle()
+                    .fill(statusColor.opacity(0.3))
+                    .frame(width: 8, height: 8)
+                    .scaleEffect(appState.state == .recording && isPulsing ? 1.4 : 1.0)
+                
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 8, height: 8)
+            }
+            .opacity(appState.state == .processing || appState.state == .typing ? (isPulsing ? 1.0 : 0.3) : 1.0)
+            .animation(appState.state == .processing || appState.state == .typing ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : (appState.state == .recording ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default), value: appState.state)
+            .animation(appState.state == .processing || appState.state == .typing ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : (appState.state == .recording ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default), value: isPulsing)
 
             if appState.state == .recording {
                 WaveformView(levels: recorder.audioLevels)
@@ -81,19 +95,7 @@ struct RecordingOverlayContent: View {
                     .transition(.opacity)
             }
             
-            // Status Indicator (Unified) - Moved to Right
-            ZStack {
-                Circle()
-                    .fill(statusColor.opacity(0.3))
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(isPulsing ? 1.4 : 1.0)
-                
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
-            }
-            .animation(isPulsing ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: appState.state)
-            
+            // The right-side indicator is removed, and the error button is moved here.
             if let _ = appState.lastError {
                 Button {
                     appState.lastError = nil
