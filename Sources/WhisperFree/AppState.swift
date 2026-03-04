@@ -56,6 +56,11 @@ final class AppState: ObservableObject {
         self.settings = Storage.shared.loadSettings()
         self.history = Storage.shared.loadHistory()
         self.updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        
+        // Sync Sparkle with loaded settings
+        self.updaterController.updater.automaticallyChecksForUpdates = settings.automaticallyChecksForUpdates
+        self.updaterController.updater.automaticallyDownloadsUpdates = settings.automaticallyDownloadsUpdates
+        
         self.isHotkeyTrusted = hotkeyManager.isTrusted
         setupHotkey()
         startPermissionCheckTimer()

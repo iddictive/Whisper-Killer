@@ -120,6 +120,26 @@ struct SettingsView: View {
             .onChange(of: appState.settings.language) { _, _ in
                 appState.saveSettings()
             }
+            
+            Section("Software Updates") {
+                Toggle("Automatically check for updates", isOn: $appState.settings.automaticallyChecksForUpdates)
+                    .onChange(of: appState.settings.automaticallyChecksForUpdates) { _, newValue in
+                        appState.saveSettings()
+                        appState.updaterController.updater.automaticallyChecksForUpdates = newValue
+                    }
+                
+                Toggle("Download updates automatically", isOn: $appState.settings.automaticallyDownloadsUpdates)
+                    .onChange(of: appState.settings.automaticallyDownloadsUpdates) { _, newValue in
+                        appState.saveSettings()
+                        appState.updaterController.updater.automaticallyDownloadsUpdates = newValue
+                    }
+                
+                Button("Check for Updates Now...") {
+                    appState.updaterController.updater.checkForUpdates()
+                }
+                .buttonStyle(.link)
+                .font(.caption)
+            }
         }
     }
 

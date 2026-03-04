@@ -326,6 +326,8 @@ struct AppSettings: Codable {
     var setupCompleted: Bool = false
     var hotkeyConfig: HotkeyConfig = HotkeyConfig()
     var insertionMethod: InsertionMethod = .type
+    var automaticallyChecksForUpdates: Bool = true
+    var automaticallyDownloadsUpdates: Bool = true
 
     var allModes: [TranscriptionMode] {
         TranscriptionMode.builtInModes + customModes
