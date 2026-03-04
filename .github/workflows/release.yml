@@ -19,10 +19,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Swift
-        uses: swift-actions/setup-swift@v2
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
         with:
-          swift-version: '5.9'
+          xcode-version: '16.0'
+
+      - name: Clean DerivedData
+        run: rm -rf ~/Library/Developer/Xcode/DerivedData
 
       - name: Calculate Version
         id: versioning
@@ -49,7 +52,7 @@ jobs:
           cp "$ACTUAL_BINARY" WhisperFree.app/Contents/MacOS/
           cp Sources/WhisperFree/Resources/Info.plist WhisperFree.app/Contents/
           
-          # Inject version into Info.plist
+          # Inject metadata into Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ env.APP_VERSION }}" "WhisperFree.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ env.APP_VERSION }}" "WhisperFree.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable WhisperFree" "WhisperFree.app/Contents/Info.plist"
