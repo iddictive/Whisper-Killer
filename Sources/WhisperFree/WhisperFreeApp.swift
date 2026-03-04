@@ -4,6 +4,7 @@ import AppKit
 
 // MARK: - App Delegate
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Static reference so views can access the delegate directly
     static var shared: AppDelegate!

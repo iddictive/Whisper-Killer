@@ -16,7 +16,7 @@ struct WaveformView: View {
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(
                         LinearGradient(
-                            colors: [SW.accent, SW.accentPink.opacity(0.7)],
+                            colors: [SW.accent, SW.accentBlue.opacity(0.7)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -133,8 +133,8 @@ struct RecordingOverlayContent: View {
         if appState.lastError != nil { return .red }
         switch appState.state {
         case .recording: return .red
-        case .processing: return SW.accentPink
-        case .typing: return SW.accentPink
+        case .processing: return SW.accentBlue
+        case .typing: return SW.accentBlue
         default: return .clear
         }
     }
@@ -154,14 +154,23 @@ struct RecordingOverlayContent: View {
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
-        let seconds = Int(duration) % 60
+        let totalSeconds = Int(duration)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
         let tenths = Int(duration * 10) % 10
-        return String(format: "%02d.%1d", seconds, tenths)
+        
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d.%1d", hours, minutes, seconds, tenths)
+        } else {
+            return String(format: "%02d:%02d.%1d", minutes, seconds, tenths)
+        }
     }
 }
 
 // MARK: - Floating Overlay Window Controller
 
+@MainActor
 final class OverlayWindowController: NSObject, ObservableObject {
     private var panel: NSPanel?
 

@@ -11,12 +11,18 @@ struct TranscriptionMode: Codable, Identifiable, Hashable {
     var id: String { name }
     let name: String
     let icon: String
+    let description: String
+    let exampleInput: String
+    let exampleOutput: String
     let systemPrompt: String
     let isBuiltIn: Bool
 
     static let dictation = TranscriptionMode(
         name: "Dictation",
         icon: "text.bubble",
+        description: "Fixes grammar and removes filler words while keeping the exact original meaning.",
+        exampleInput: "So um I think that we should like probably go to the meeting or something you know.",
+        exampleOutput: "I think that we should go to the meeting.",
         systemPrompt: """
         Clean up this transcribed speech. Remove filler words (um, uh, like, you know), \
         fix grammar, add proper punctuation and capitalization. Keep the original meaning \
@@ -28,6 +34,9 @@ struct TranscriptionMode: Codable, Identifiable, Hashable {
     static let email = TranscriptionMode(
         name: "Email",
         icon: "envelope",
+        description: "Formats speech into a professional email with greetings and a clear structure.",
+        exampleInput: "Tell John that I finished the report and I will send it by five pm today thanks.",
+        exampleOutput: "Hi John,\n\nI have finished the report and will send it to you by 5:00 PM today.\n\nBest regards,",
         systemPrompt: """
         Format this transcribed speech as a professional email. Clean up filler words, \
         fix grammar, add proper greeting and sign-off if not present. Keep a professional \
@@ -39,6 +48,9 @@ struct TranscriptionMode: Codable, Identifiable, Hashable {
     static let code = TranscriptionMode(
         name: "Code",
         icon: "chevron.left.forwardslash.chevron.right",
+        description: "Converts ideas into clean code comments or technical documentation.",
+        exampleInput: "This function basically calculates the total price by adding tax to the base amount.",
+        exampleOutput: "// Calculates total price by applying tax to base amount",
         systemPrompt: """
         Convert this transcribed speech into code comments or documentation. Format as \
         proper code comments (// or /* */). Clean up filler words, be concise and technical. \
@@ -50,6 +62,9 @@ struct TranscriptionMode: Codable, Identifiable, Hashable {
     static let notes = TranscriptionMode(
         name: "Notes",
         icon: "list.bullet",
+        description: "Extracts key points and organizes them into a clean markdown list.",
+        exampleInput: "We need to buy milk eggs and bread also don't forget to call mom at six.",
+        exampleOutput: "• Buy milk, eggs, and bread\n• Call mom at 6:00 PM",
         systemPrompt: """
         Convert this transcribed speech into organized bullet-point notes. Extract key \
         points, organize logically, remove filler words. Use markdown bullet points. \
@@ -59,9 +74,35 @@ struct TranscriptionMode: Codable, Identifiable, Hashable {
     )
 
     static let builtInModes: [TranscriptionMode] = [.dictation, .email, .code, .notes]
+    
+    // Placeholder values for UI creation
+    static let placeholderName = "Summary"
+    static let placeholderDescription = "Extracts key points into a short summary."
+    static let placeholderExampleInput = "So we talked about the budget and we decided to increase it by 10% next quarter."
+    static let placeholderExampleOutput = "Budget increased by 10% for the next quarter."
+    static let placeholderPrompt = "Summarize this transcription professionally. Focus on decisions and actions."
 }
 
-// MARK: - History Entry
+// MARK: - Usage & History
+    
+struct UsageLog: Codable, Identifiable {
+    var id: UUID = UUID()
+    let date: Date
+    let modeName: String
+    let engine: String // "openai", "perplexity", "local"
+    let promptTokens: Int
+    let completionTokens: Int
+    let totalTokens: Int
+    let estimatedCost: Double
+    
+    // Estimates based on gpt-4o-mini ($0.15 / 1M input, $0.60 / 1M output)
+    static func estimateCost(prompt: Int, completion: Int, engine: TranscriptionEngineType) -> Double {
+        if engine == .local { return 0.0 }
+        let pRate = 0.15 / 1_000_000.0
+        let cRate = 0.60 / 1_000_000.0
+        return (Double(prompt) * pRate) + (Double(completion) * cRate)
+    }
+}
 
 struct TranscriptionHistoryEntry: Codable {
     let entryId: UUID
@@ -70,9 +111,10 @@ struct TranscriptionHistoryEntry: Codable {
     let processedText: String
     let modeName: String
     let duration: TimeInterval
-    let engineUsed: String // "cloud" or "local"
+    let engineUsed: String
+    var usage: UsageLog?
 
-    init(rawText: String, processedText: String, modeName: String, duration: TimeInterval, engineUsed: String) {
+    init(rawText: String, processedText: String, modeName: String, duration: TimeInterval, engineUsed: String, usage: UsageLog? = nil) {
         self.entryId = UUID()
         self.date = Date()
         self.rawText = rawText
@@ -80,6 +122,7 @@ struct TranscriptionHistoryEntry: Codable {
         self.modeName = modeName
         self.duration = duration
         self.engineUsed = engineUsed
+        self.usage = usage
     }
 }
 
@@ -328,6 +371,8 @@ struct AppSettings: Codable {
     var insertionMethod: InsertionMethod = .type
     var automaticallyChecksForUpdates: Bool = true
     var automaticallyDownloadsUpdates: Bool = true
+    var enablePostProcessing: Bool = true
+    var usageLogs: [UsageLog] = []
 
     var allModes: [TranscriptionMode] {
         TranscriptionMode.builtInModes + customModes

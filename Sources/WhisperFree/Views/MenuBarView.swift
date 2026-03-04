@@ -249,7 +249,7 @@ struct MenuBarView: View {
             Divider()
 
             menuButton(icon: "arrow.clockwise", title: "Check for Updates...") {
-                appState.updaterController.updater.checkForUpdates()
+                GitHubUpdater.shared.checkForUpdates(manual: true)
             }
         }
         .frame(width: 340)

@@ -5,18 +5,21 @@ import SwiftUI
 /// Shared design tokens for the entire app.
 /// Extracted from the SetupWizard's premium dark theme.
 enum SW {
-    // MARK: Colors — matches app icon gradient (gold → pink → purple)
-    static let accent     = Color(red: 1.0, green: 0.72, blue: 0.2)    // Warm gold (primary accent)
-    static let accentPink = Color(red: 0.85, green: 0.4, blue: 0.65)   // Pink (secondary)
-    static let accentMag  = Color(red: 0.65, green: 0.3, blue: 0.8)    // Magenta/purple (tertiary)
-    static let bg     = Color(red: 0.07, green: 0.07, blue: 0.12)    // Dark background
-    static let card   = Color(white: 1.0, opacity: 0.06)             // Card surface
-    static let cardHover = Color(white: 1.0, opacity: 0.09)          // Card hover
-    static let border = Color(white: 1.0, opacity: 0.08)             // Subtle borders
-    static let text1  = Color.white                                   // Primary text
-    static let text2  = Color(white: 0.55)                            // Secondary text
-    static let danger = Color(red: 1.0, green: 0.35, blue: 0.35)     // Red/danger
-    static let success = Color(red: 0.3, green: 0.85, blue: 0.4)     // Green/success
+    // MARK: Colors — Native Premium Palette (Blue/Indigo based)
+    static let accent      = Color.accentColor                              // System accent (usually blue)
+    static let accentBlue  = Color(red: 0.0, green: 0.48, blue: 1.0)        // Vibrant Blue
+    static let accentIndigo = Color(red: 0.35, green: 0.34, blue: 0.84)     // Indigo
+    
+    static let bg          = Color(red: 0.1, green: 0.1, blue: 0.14)        // Slightly lighter dark background
+    static let card        = Color(white: 1.0, opacity: 0.04)               // More subtle card surface
+    static let cardHover   = Color(white: 1.0, opacity: 0.07)               // Subtle hover
+    static let border      = Color(white: 1.0, opacity: 0.1)                // Clearer border
+    static let text1       = Color.white                                    // Primary text
+    static let text2       = Color(white: 0.7)                              // More readable secondary text
+    static let text3       = Color(white: 0.5)                              // Tertiary text
+    
+    static let danger      = Color(red: 1.0, green: 0.27, blue: 0.27)       // Refined Red
+    static let success     = Color(red: 0.2, green: 0.8, blue: 0.45)        // Refined Green
 
     // MARK: Spacing
     static let cornerRadius: CGFloat = 12

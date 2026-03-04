@@ -1,6 +1,5 @@
 import SwiftUI
 import Combine
-import Sparkle
 
 // MARK: - App State
 
@@ -18,13 +17,14 @@ enum ProcessingStage: String {
     case none = ""
 }
 
+@MainActor
 final class AppState: ObservableObject {
     static let shared = AppState()
     // MARK: - Published State
     @Published var state: AppRecordingState = .idle
     @Published var processingStage: ProcessingStage = .none
     @Published var settings: AppSettings
-    @Published var history: [TranscriptionHistoryEntry]
+    @Published var history: [TranscriptionHistoryEntry] = []
     @Published var lastError: String?
     @Published var lastTranscription: String?
     @Published var copiedFeedback = false
@@ -46,24 +46,30 @@ final class AppState: ObservableObject {
     private let hotkeyManager = HotkeyManager()
     private var cancellables = Set<AnyCancellable>()
     var overlayCancellables = Set<AnyCancellable>()
-    let updaterController: SPUStandardUpdaterController
-
+    
     // Hold-mode tracking
     private var keyDownTime: Date?
     private var isHoldActive = false
 
-    init() {
+    private init() {
+        print("🚀 AppState initializing...")
         self.settings = Storage.shared.loadSettings()
         self.history = Storage.shared.loadHistory()
-        self.updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        print("📦 Settings and History loaded")
         
-        // Sync Sparkle with loaded settings
-        self.updaterController.updater.automaticallyChecksForUpdates = settings.automaticallyChecksForUpdates
-        self.updaterController.updater.automaticallyDownloadsUpdates = settings.automaticallyDownloadsUpdates
+        // Initial setup
+        Task {
+            if settings.automaticallyChecksForUpdates {
+                print("🔄 Triggering automatic update check")
+                GitHubUpdater.shared.checkForUpdates()
+            }
+        }
         
         self.isHotkeyTrusted = hotkeyManager.isTrusted
+        print("🔑 Hotkey trusted: \(isHotkeyTrusted)")
         setupHotkey()
         startPermissionCheckTimer()
+        print("✅ AppState init complete")
     }
 
     // MARK: - Settings
@@ -303,5 +309,9 @@ final class AppState: ObservableObject {
     func clearHistory() {
         Storage.shared.clearHistory()
         history.removeAll()
+    
+    private func cleanupOldLogs() {
+        let sevenDaysAgo = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+        settings.usageLogs.removeAll { $0.date < sevenDaysAgo }
     }
 }

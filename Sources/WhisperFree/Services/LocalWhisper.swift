@@ -12,7 +12,11 @@ final class LocalWhisper: TranscriptionEngine {
     }
 
     func transcribe(audioURL: URL, language: String?) async throws -> String {
-        guard let modelPath = AppState.shared.modelManager.findModelPath(for: modelSize)?.path else {
+        let modelPath = await MainActor.run {
+            AppState.shared.modelManager.findModelPath(for: self.modelSize)?.path
+        }
+        
+        guard let path = modelPath else {
             throw TranscriptionError.modelNotDownloaded
         }
 
@@ -34,7 +38,7 @@ final class LocalWhisper: TranscriptionEngine {
                 process.executableURL = URL(fileURLWithPath: binary)
 
                 var args = [
-                    "--model", modelPath,
+                    "--model", path,
                     "--file", wavURL.path,
                     "--output-txt",
                     "--no-timestamps",

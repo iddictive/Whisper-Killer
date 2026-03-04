@@ -21,10 +21,10 @@ struct SetupWizardView: View {
     // MARK: - Colors
 
     private let accentGold = SW.accent
-    private let accentPink = SW.accentPink
-    private let accentMag  = SW.accentMag
-    private let bgDark = Color(red: 0.07, green: 0.07, blue: 0.12)
-    private let bgCard = Color(white: 1.0, opacity: 0.06)
+    private let accentPink = SW.accentBlue
+    private let accentMag  = SW.accentIndigo
+    private let bgDark = SW.bg
+    private let bgCard = SW.card
     private let bgCardHover = Color(white: 1.0, opacity: 0.09)
     private let borderSubtle = Color(white: 1.0, opacity: 0.08)
     private let textPrimary = Color.white
@@ -419,14 +419,30 @@ struct SetupWizardView: View {
 
     private var localEngineCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Pros
+            localEngineStatusRow
+            
+            Text("MODEL")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundStyle(textSecondary)
+
+            ForEach(LocalModelSize.allCases, id: \.self) { size in
+                modelRow(size)
+            }
+        }
+        .padding(16)
+        .background(bgCard)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
+    }
+
+    private var localEngineStatusRow: some View {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) {
                 Image(systemName: "lock.shield.fill").foregroundStyle(.green).font(.system(size: 11))
                 Text("Private · Offline · Free")
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(textSecondary)
             }
 
-            // whisper-cpp status
             HStack(spacing: 10) {
                 Image(systemName: whisperInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .foregroundStyle(whisperInstalled ? .green : .red)
@@ -452,20 +468,7 @@ struct SetupWizardView: View {
             .padding(10)
             .background(whisperInstalled ? Color.green.opacity(0.06) : Color.red.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 8))
-
-            // Model picker
-            Text("MODEL")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(textSecondary)
-
-            ForEach(LocalModelSize.allCases, id: \.self) { size in
-                modelRow(size)
-            }
         }
-        .padding(16)
-        .background(bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
     }
 
     private func modelRow(_ size: LocalModelSize) -> some View {

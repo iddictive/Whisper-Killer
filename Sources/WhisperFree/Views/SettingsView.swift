@@ -9,8 +9,11 @@ struct SettingsView: View {
     @State private var apiTestResult: String?
     @State private var transcriptionTab = 0
     @State private var newModeName = ""
+    @State private var newModeDescription = ""
+    @State private var newModeExampleInput = ""
+    @State private var newModeExampleOutput = ""
     @State private var newModePrompt = ""
-    @State private var newModeIcon = "text.bubble"
+    @State private var newModeIcon = "sparkles"
 
     var body: some View {
         NavigationSplitView {
@@ -52,31 +55,30 @@ struct SettingsView: View {
     }
 
     private var permissionBanner: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Accessibility Permission Required")
-                    .font(.headline)
-                Text("Global hotkeys won't work without this permission.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        Section {
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Accessibility Permission Required")
+                        .font(.headline)
+                    Text("Global hotkeys won't work without this permission.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                Button("Grant Access…") {
+                    let options = [kAXTrustedCheckOptionPrompt.takeRetainedValue(): true] as CFDictionary
+                    AXIsProcessTrustedWithOptions(options)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
             }
-            
-            Spacer()
-            
-            Button("Grant Access…") {
-                let options = [kAXTrustedCheckOptionPrompt.takeRetainedValue(): true] as CFDictionary
-                AXIsProcessTrustedWithOptions(options)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
+            .padding(.vertical, 4)
         }
-        .padding(12)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: .black.opacity(0.1), radius: 5, y: 2)
     }
 
     // MARK: - Sections
@@ -123,21 +125,14 @@ struct SettingsView: View {
             
             Section("Software Updates") {
                 Toggle("Automatically check for updates", isOn: $appState.settings.automaticallyChecksForUpdates)
-                    .onChange(of: appState.settings.automaticallyChecksForUpdates) { _, newValue in
-                        appState.saveSettings()
-                        appState.updaterController.updater.automaticallyChecksForUpdates = newValue
-                    }
-                
-                Toggle("Download updates automatically", isOn: $appState.settings.automaticallyDownloadsUpdates)
-                    .onChange(of: appState.settings.automaticallyDownloadsUpdates) { _, newValue in
-                        appState.saveSettings()
-                        appState.updaterController.updater.automaticallyDownloadsUpdates = newValue
-                    }
+                    
+                Toggle("Automatically download updates", isOn: $appState.settings.automaticallyDownloadsUpdates)
+                    .disabled(!appState.settings.automaticallyChecksForUpdates)
                 
                 Button("Check for Updates Now...") {
-                    appState.updaterController.updater.checkForUpdates()
+                    GitHubUpdater.shared.checkForUpdates(manual: true)
                 }
-                .buttonStyle(.link)
+                .padding(.top, 4)
                 .font(.caption)
             }
         }
@@ -296,57 +291,90 @@ struct SettingsView: View {
 
     private var modesSection: some View {
         Group {
-            Section("Current Mode") {
-                Picker("Active AI Mode", selection: $appState.settings.selectedModeName) {
-                    ForEach(appState.settings.allModes) { mode in
-                        Label(mode.name, systemImage: mode.icon).tag(mode.name)
-                    }
-                }
-                .onChange(of: appState.settings.selectedModeName) { _, _ in
-                    appState.saveSettings()
-                }
-            }
-            
-            Section("Custom Modes") {
-                ForEach(appState.settings.customModes) { mode in
-                    HStack {
-                        Image(systemName: mode.icon)
-                        Text(mode.name)
-                        Spacer()
-                        Button(role: .destructive) {
-                            appState.settings.customModes.removeAll { $0.id == mode.id }
+            Section("Active Transcription Mode") {
+                ForEach(appState.settings.allModes) { mode in
+                    ModeCard(
+                        mode: mode,
+                        isSelected: appState.settings.selectedModeName == mode.name,
+                        onSelect: {
+                            appState.settings.selectedModeName = mode.name
                             appState.saveSettings()
-                        } label: {
-                            Image(systemName: "minus.circle")
+                        },
+                        onDelete: mode.isBuiltIn ? nil : {
+                            appState.settings.customModes.removeAll { $0.id == mode.id }
+                            if appState.settings.selectedModeName == mode.name {
+                                appState.settings.selectedModeName = TranscriptionMode.dictation.name
+                            }
+                            appState.saveSettings()
                         }
-                        .buttonStyle(.plain)
-                    }
+                    )
                 }
             }
             
-            Section("New Mode") {
+            Section("Create Custom Mode") {
+                TextField("Mode Name", text: $newModeName)
+                TextField("Description", text: $newModeDescription)
+                
                 VStack(alignment: .leading, spacing: 12) {
-                    TextField("Mode Name", text: $newModeName)
-                        .textFieldStyle(.roundedBorder)
+                    HStack(spacing: 20) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Example Input").font(.caption).foregroundStyle(.secondary)
+                            TextEditor(text: $newModeExampleInput)
+                                .frame(height: 60)
+                                .font(.system(size: 11))
+                                .padding(4)
+                                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                                .cornerRadius(4)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Example Output").font(.caption).foregroundStyle(.secondary)
+                            TextEditor(text: $newModeExampleOutput)
+                                .frame(height: 60)
+                                .font(.system(size: 11))
+                                .padding(4)
+                                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                                .cornerRadius(4)
+                        }
+                    }
                     
-                    TextEditor(text: $newModePrompt)
-                        .frame(minHeight: 80)
-                        .font(.system(size: 12, design: .monospaced))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.secondary.opacity(0.2))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("System Prompt (Instructions for AI)").font(.caption).foregroundStyle(.secondary)
+                        TextEditor(text: $newModePrompt)
+                            .frame(minHeight: 100)
+                            .font(.system(size: 12, design: .monospaced))
+                            .padding(4)
+                            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                            .cornerRadius(4)
+                    }
+                    
+                    Button {
+                        let mode = TranscriptionMode(
+                            name: newModeName,
+                            icon: newModeIcon,
+                            description: newModeDescription,
+                            exampleInput: newModeExampleInput,
+                            exampleOutput: newModeExampleOutput,
+                            systemPrompt: newModePrompt,
+                            isBuiltIn: false
                         )
-                    
-                    Button("Create Mode") {
-                        let mode = TranscriptionMode(name: newModeName, icon: "sparkles", systemPrompt: newModePrompt, isBuiltIn: false)
                         appState.settings.customModes.append(mode)
                         appState.saveSettings()
                         newModeName = ""
+                        newModeDescription = ""
+                        newModeExampleInput = ""
+                        newModeExampleOutput = ""
                         newModePrompt = ""
+                    } label: {
+                        Label("Save Custom Mode", systemImage: "plus.circle.fill")
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     .disabled(newModeName.isEmpty || newModePrompt.isEmpty)
+                    .padding(.top, 8)
                 }
+                .padding(.vertical, 8)
             }
         }
     }
@@ -356,10 +384,10 @@ struct SettingsView: View {
             VStack(spacing: 20) {
                 ZStack {
                     Circle()
-                        .fill(LinearGradient(colors: [SW.accent, SW.accentPink], startPoint: .topLeading, endPoint: .bottomTrailing).opacity(0.1))
+                        .fill(LinearGradient(colors: [SW.accent, SW.accentBlue], startPoint: .topLeading, endPoint: .bottomTrailing).opacity(0.1))
                     Image(systemName: "microphone.fill")
                         .font(.system(size: 32, weight: .bold))
-                        .foregroundStyle(LinearGradient(colors: [SW.accent, SW.accentPink], startPoint: .top, endPoint: .bottom))
+                        .foregroundStyle(LinearGradient(colors: [SW.accent, SW.accentBlue], startPoint: .top, endPoint: .bottom))
                 }
                 .frame(width: 80, height: 80)
                 
@@ -405,6 +433,86 @@ struct SettingsView: View {
                 apiTestResult = "✗ Connection error: \(error.localizedDescription)"
             }
             isTestingAPI = false
+        }
+    }
+}
+
+// MARK: - Helper Views
+
+struct ModeCard: View {
+    let mode: TranscriptionMode
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onDelete: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(mode.name, systemImage: mode.icon)
+                    .font(.headline)
+                    .foregroundStyle(isSelected ? SW.accent : .primary)
+                
+                Spacer()
+                
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(SW.accent)
+                }
+                
+                if let onDelete = onDelete {
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 8)
+                }
+            }
+            
+            Text(mode.description)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            
+            VStack(alignment: .leading, spacing: 10) {
+                ExampleBox(title: "Input:", text: mode.exampleInput, icon: "mic")
+                ExampleBox(title: "Output:", text: mode.exampleOutput, icon: "sparkles", isOutput: true)
+            }
+        }
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+    }
+}
+
+struct ExampleBox: View {
+    let title: String
+    let text: String
+    let icon: String
+    var isOutput: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .bold))
+                Text(title.uppercased())
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+            }
+            .foregroundStyle(isOutput ? SW.accentBlue : SW.text3)
+            
+            Text(text)
+                .font(.system(size: 11, weight: .regular))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(isOutput ? SW.accentBlue.opacity(0.3) : Color.primary.opacity(0.05), lineWidth: 1)
+                )
+                .cornerRadius(6)
+                .foregroundStyle(.primary)
         }
     }
 }
