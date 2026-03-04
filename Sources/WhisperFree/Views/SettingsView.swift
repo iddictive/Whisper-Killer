@@ -109,7 +109,7 @@ struct SettingsView: View {
                         Text(lang.name).tag(lang.code)
                     }
                 }
-                .onChange(of: appState.settings.language) {
+                .onChange(of: appState.settings.language) { _, _ in
                     appState.saveSettings()
                 }
                 
@@ -161,7 +161,7 @@ struct SettingsView: View {
                         Label(mode.rawValue, systemImage: mode.icon).tag(mode)
                     }
                 }
-                .onChange(of: appState.settings.recordingMode) {
+                .onChange(of: appState.settings.recordingMode) { _, _ in
                     appState.saveSettings()
                 }
                 
@@ -173,7 +173,7 @@ struct SettingsView: View {
             Section("Shortcut") {
                 HotkeyRecorderView(config: $appState.settings.hotkeyConfig)
                     .padding(.vertical, 4)
-                    .onChange(of: appState.settings.hotkeyConfig) {
+                    .onChange(of: appState.settings.hotkeyConfig) { _, _ in
                         appState.saveSettings()
                         appState.reloadHotkeyManager()
                     }
@@ -181,12 +181,12 @@ struct SettingsView: View {
             
             Section("Preferences") {
                 Toggle("Auto-type into active app", isOn: $appState.settings.autoTypeResult)
-                    .onChange(of: appState.settings.autoTypeResult) {
+                    .onChange(of: appState.settings.autoTypeResult) { _, _ in
                         appState.saveSettings()
                     }
                 
                 Toggle("Show floating recording pill", isOn: $appState.settings.showOverlay)
-                    .onChange(of: appState.settings.showOverlay) {
+                    .onChange(of: appState.settings.showOverlay) { _, _ in
                         appState.saveSettings()
                     }
             }
@@ -221,7 +221,7 @@ struct SettingsView: View {
                         Text(lang.name).tag(lang.code)
                     }
                 }
-                .onChange(of: appState.settings.language) {
+                .onChange(of: appState.settings.language) { _, _ in
                     appState.saveSettings()
                 }
             }
@@ -279,7 +279,7 @@ struct SettingsView: View {
 
             Section("Advanced") {
                 Toggle("Auto-insert into active app", isOn: $appState.settings.autoTypeResult)
-                    .onChange(of: appState.settings.autoTypeResult) {
+                    .onChange(of: appState.settings.autoTypeResult) { _, _ in
                         appState.saveSettings()
                     }
             }
@@ -519,7 +519,7 @@ struct AIConfigView: View {
     var body: some View {
         VStack(spacing: 12) {
             Toggle("Enable AI Refinement Globally", isOn: $settings.enablePostProcessing)
-                .onChange(of: settings.enablePostProcessing) {
+                .onChange(of: settings.enablePostProcessing) { _, _ in
                     settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
                     onSave()
                 }
@@ -531,7 +531,7 @@ struct AIConfigView: View {
             }
             .pickerStyle(.segmented)
             .disabled(!settings.enablePostProcessing)
-            .onChange(of: settings.postProcessingEngine) {
+            .onChange(of: settings.postProcessingEngine) { _, _ in
                 settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
                 onSave()
             }
@@ -545,11 +545,11 @@ struct AIConfigView: View {
                     HStack {
                         SecureField("sk-...", text: isOpenAI ? $settings.apiKey : $settings.perplexityApiKey)
                             .textFieldStyle(.roundedBorder)
-                            .onChange(of: settings.apiKey) {
+                            .onChange(of: settings.apiKey) { _, _ in
                                 settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
                                 onSave()
                             }
-                            .onChange(of: settings.perplexityApiKey) {
+                            .onChange(of: settings.perplexityApiKey) { _, _ in
                                 settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
                                 onSave()
                             }
