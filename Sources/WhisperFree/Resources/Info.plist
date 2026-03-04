@@ -18,5 +18,15 @@
     <string>2.0.0</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon.icns</string>
+    <key>SUFeedURL</key>
+    <string>https://raw.githubusercontent.com/iddictive/Whisper-Free/main/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>UNSET_SIGNING_KEY_PLEASE_REPLACE</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
 </dict>
 </plist>

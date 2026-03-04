@@ -245,6 +245,12 @@ struct MenuBarView: View {
             menuButton(icon: "power", title: "Quit") {
                 NSApplication.shared.terminate(nil)
             }
+
+            Divider()
+
+            menuButton(icon: "arrow.clockwise", title: "Check for Updates...") {
+                appState.updaterController.updater.checkForUpdates()
+            }
         }
         .frame(width: 340)
         .onAppear {

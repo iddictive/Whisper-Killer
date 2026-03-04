@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import Sparkle
 
 // MARK: - App State
 
@@ -45,6 +46,7 @@ final class AppState: ObservableObject {
     private let hotkeyManager = HotkeyManager()
     private var cancellables = Set<AnyCancellable>()
     var overlayCancellables = Set<AnyCancellable>()
+    let updaterController: SPUStandardUpdaterController
 
     // Hold-mode tracking
     private var keyDownTime: Date?
@@ -53,6 +55,7 @@ final class AppState: ObservableObject {
     init() {
         self.settings = Storage.shared.loadSettings()
         self.history = Storage.shared.loadHistory()
+        self.updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
         self.isHotkeyTrusted = hotkeyManager.isTrusted
         setupHotkey()
         startPermissionCheckTimer()
