@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 
@@ -31,12 +33,15 @@ jobs:
 
       - name: Create DMG
         run: |
-          ./create_dmg.sh
+          hdiutil create -volname "WhisperFree" -srcfolder "WhisperFree.app" -ov -format UDZO "WhisperFree.dmg"
 
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v2.0-{0}', github.run_number) }}
           files: |
             WhisperFree.dmg
+          draft: false
+          prerelease: ${{ github.ref_type != 'tag' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
