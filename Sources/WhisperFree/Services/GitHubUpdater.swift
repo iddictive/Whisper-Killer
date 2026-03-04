@@ -50,6 +50,9 @@ class GitHubUpdater: ObservableObject {
                         let latest = tagName.replacingOccurrences(of: "v", with: "")
                         self?.latestVersion = latest
                         
+                        let defaults = UserDefaults.standard
+                        let automaticallyDownloadsUpdates = defaults.bool(forKey: "automaticallyDownloadsUpdates")
+                        
                         if self?.compareVersions(current: self?.currentVersion ?? "", latest: latest) == true {
                             self?.updateAvailable = true
                             let assets = json["assets"] as? [[String: Any]]
@@ -58,7 +61,7 @@ class GitHubUpdater: ObservableObject {
                             
                             if manual {
                                 self?.showUpdateAlert(version: latest, downloadUrl: self?.downloadUrl)
-                            } else if defaults.bool(forKey: "automaticallyDownloadsUpdates") {
+                            } else if automaticallyDownloadsUpdates {
                                 self?.startDownload()
                             }
                         } else if manual {

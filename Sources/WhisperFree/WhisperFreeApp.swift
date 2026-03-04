@@ -9,8 +9,7 @@ struct WhisperFreeApp: App {
     @StateObject private var appState = AppState.shared
     
     init() {
-        // Ensure app can run without dock icon but with menu bar
-        NSApp.setActivationPolicy(.accessory)
+        print("🚀 WhisperFreeApp initializing...")
     }
     
     var body: some Scene {
@@ -18,7 +17,8 @@ struct WhisperFreeApp: App {
             MenuBarView()
                 .environmentObject(appState)
         } label: {
-            MenuBarIconView(state: appState.state)
+            MenuBarIconView()
+                .environmentObject(appState)
         }
         .menuBarExtraStyle(.window)
     }
@@ -35,11 +35,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
+        print("🚀 applicationDidFinishLaunching...")
+        
+        // Ensure app can run without dock icon but with menu bar
+        NSApp.setActivationPolicy(.accessory)
+        
+        // Bridge AppState.showOverlayWindow → OverlayWindowController
+        let appState = AppState.shared
+        appState.$showOverlayWindow
+            .sink { [weak self] show in
+                guard let self = self else { return }
+                if show {
+                    self.overlayController.show(appState: appState)
+                } else {
+                    self.overlayController.hide()
+                }
+            }
+            .store(in: &appState.overlayCancellables)
         
         // Show setup wizard if needed
-        if !AppState.shared.settings.setupCompleted {
+        if !appState.settings.setupCompleted {
+            print("🪄 Showing Setup Wizard...")
             showSetupWizard()
         }
+        print("✨ Launch sequence complete")
     }
     
     func showSetupWizard() {
@@ -174,85 +193,90 @@ final class HistoryWindowController: NSObject {
 // MARK: - Menu Bar Icon
 
 struct MenuBarIconView: View {
-    let state: AppRecordingState
-    @State private var blink = false
+    @EnvironmentObject var appState: AppState
+    @State private var pulseOpacity: CGFloat = 1.0
+    @State private var timer: Timer?
+    @State private var pulseUp = false
     
     var body: some View {
-        ZStack {
-            // Main App Icon (Spoof Style)
-            if let icon = NSApp.applicationIconImage {
-                Image(nsImage: createMenuImage(from: icon))
-                    .font(.system(size: 14, weight: .medium))
-            } else {
-                // Fallback
-                Image(systemName: "microphone.fill")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(state == .recording ? .red : .primary)
-            }
-            
-            // "Flame/Lightning" indicator for AI activity (Sparkle)
-            if state == .processing {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.orange)
-                    .offset(x: -8, y: -4)
-                    .scaleEffect(blink ? 1.2 : 0.8)
-                    .opacity(blink ? 1.0 : 0.4)
-            }
-            
-            // Status Dot Overlay (Spoof Style)
-            let color = statusColor
-            ZStack {
-                // White "Halo" for contrast
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 6.5, height: 6.5)
-                
-                Circle()
-                    .fill(color ?? Color.green) // Spoof uses green for active/running
-                    .frame(width: 4.5, height: 4.5)
-            }
-            .offset(x: 6.0, y: 6.0)
-            // Pulse/Blink only during processing
-            .opacity(state == .processing || state == .typing ? (blink ? 1.0 : 0.4) : 1.0)
-        }
-        .onAppear {
-            startAnimation()
-        }
-        .onChange(of: state) { _, _ in
-            startAnimation()
-        }
+        Image(nsImage: createMenuImage())
+            .onAppear { startPulse() }
+            .onChange(of: appState.state) { _, _ in startPulse() }
     }
     
-    private func createMenuImage(from icon: NSImage) -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let image = NSImage(size: size)
-        image.lockFocus()
-        icon.draw(in: NSRect(origin: .zero, size: size), 
-                 from: .zero, 
-                 operation: .sourceOver, 
-                 fraction: 1.0)
-        image.unlockFocus()
-        image.isTemplate = false // Keep original colors
-        return image
+    private var isAnimated: Bool {
+        appState.state == .recording || appState.state == .processing
     }
-
-    private func startAnimation() {
-        if state == .processing || state == .typing {
-            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                blink = true
+    
+    private func startPulse() {
+        timer?.invalidate()
+        if isAnimated {
+            timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+                Task { @MainActor in
+                    if pulseUp {
+                        pulseOpacity += 0.04
+                        if pulseOpacity >= 1.0 { pulseUp = false }
+                    } else {
+                        pulseOpacity -= 0.04
+                        if pulseOpacity <= 0.3 { pulseUp = true }
+                    }
+                }
             }
         } else {
-            blink = false
+            pulseOpacity = 1.0
         }
     }
     
-    private var statusColor: Color? {
-        switch state {
-        case .recording: return .red
-        case .processing: return .orange
-        case .typing: return SW.accent
-        case .idle: return nil
+    private var dotColor: NSColor {
+        switch appState.state {
+        case .recording: return .systemRed
+        case .processing: return .systemOrange
+        default: return .clear
         }
+    }
+    
+    private func createMenuImage() -> NSImage {
+        let size = NSSize(width: 22, height: 22)
+        let isMonochrome = appState.settings.useMonochromeMenuIcon
+        let image = NSImage(size: size)
+        image.lockFocus()
+        
+        if isMonochrome {
+            // SF Symbol for native monochrome look
+            if let sfImage = NSImage(systemSymbolName: "microphone.fill", accessibilityDescription: nil) {
+                let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+                let configured = sfImage.withSymbolConfiguration(config) ?? sfImage
+                let sfSize = configured.size
+                let x = (size.width - sfSize.width) / 2
+                let y = (size.height - sfSize.height) / 2
+                configured.draw(in: NSRect(x: x, y: y, width: sfSize.width, height: sfSize.height),
+                               from: .zero, operation: .sourceOver, fraction: 1.0)
+            }
+        } else {
+            // Colored app icon
+            if let icon = NSApp.applicationIconImage {
+                let iconRect = NSRect(x: 2, y: 2, width: 18, height: 18)
+                icon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+            }
+        }
+        
+        // Draw status dot ONLY during recording or processing (skip in monochrome — isTemplate kills colors)
+        if !isMonochrome && (appState.state == .recording || appState.state == .processing) {
+            let dotSize: CGFloat = 6
+            let dotX = size.width - dotSize - 1
+            let dotY: CGFloat = 1
+            let dotRect = NSRect(x: dotX, y: dotY, width: dotSize, height: dotSize)
+            
+            NSColor.white.setFill()
+            NSBezierPath(ovalIn: dotRect.insetBy(dx: -0.5, dy: -0.5)).fill()
+            
+            let opacity = appState.state == .processing ? pulseOpacity : 1.0
+            dotColor.withAlphaComponent(opacity).setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+        }
+        
+        image.unlockFocus()
+        image.isTemplate = isMonochrome
+        return image
     }
 }

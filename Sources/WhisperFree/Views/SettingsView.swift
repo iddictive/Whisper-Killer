@@ -113,6 +113,11 @@ struct SettingsView: View {
                     appState.saveSettings()
                 }
                 
+                Toggle("Monochrome menu bar icon", isOn: $appState.settings.useMonochromeMenuIcon)
+                    .onChange(of: appState.settings.useMonochromeMenuIcon) { _, _ in
+                        appState.saveSettings()
+                    }
+                
                 Section("Software Updates") {
                     Toggle("Automatically check for updates", isOn: $appState.settings.automaticallyChecksForUpdates)
                         

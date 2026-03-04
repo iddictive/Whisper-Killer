@@ -200,7 +200,7 @@ enum LocalModelSize: String, Codable, CaseIterable {
 
     var downloadURL: URL {
         let base = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
-        return URL(string: "\(base)/\(fileName)")!
+        return URL(string: "\(base)/\(fileName)") ?? URL(string: "https://huggingface.co")!
     }
 
     var sizeDescription: String {
@@ -371,6 +371,7 @@ struct AppSettings: Codable {
     var automaticallyChecksForUpdates: Bool = true
     var automaticallyDownloadsUpdates: Bool = true
     var enablePostProcessing: Bool = true
+    var useMonochromeMenuIcon: Bool = false
     var usageLogs: [UsageLog] = []
 
     var allModes: [TranscriptionMode] {
