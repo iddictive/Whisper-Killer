@@ -221,7 +221,7 @@ struct HotkeyConfig: Codable, Equatable, Hashable {
         if useShift   { parts.append("⇧") }
         if useCommand { parts.append("⌘") }
         parts.append(keyName)
-        return parts.joined()
+        return parts.joined(separator: " ")
     }
 
     var keyName: String {

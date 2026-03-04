@@ -162,6 +162,7 @@ struct MenuBarView: View {
                     .clipShape(Capsule())
                     .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
                     .frame(height: 24)
+                    .fixedSize()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
