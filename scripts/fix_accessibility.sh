@@ -28,11 +28,12 @@ safe_xattr() {
     find "$1" -exec xattr -c {} + 2>/dev/null || sudo find "$1" -exec xattr -c {} + 2>/dev/null
 }
 
-# 1. Reset Accessibility permissions for all known bundle IDs
-echo "🛡️ Resetting TCC Accessibility permissions..."
+# 1. Reset Accessibility & Microphone permissions for all known bundle IDs
+echo "🛡️ Resetting TCC permissions..."
 for id in "${OLD_BUNDLE_IDS[@]}"; do
     echo "  - Cleaning up $id..."
     tccutil reset Accessibility "$id" 2>/dev/null
+    tccutil reset Microphone "$id" 2>/dev/null
 done
 
 # 2. Kill all existing instances

@@ -76,4 +76,66 @@ final class PostProcessor {
             completionTokens: usage["completion_tokens"] as? Int ?? 0
         )
     }
+
+    func diarize(text: String) async throws -> ProcessedResult {
+        guard settings.postProcessingEngine == .openai else {
+            return ProcessedResult(text: text, promptTokens: 0, completionTokens: 0)
+        }
+        
+        let apiKey = settings.apiKey
+        guard !apiKey.isEmpty else { return ProcessedResult(text: text, promptTokens: 0, completionTokens: 0) }
+        guard !text.isEmpty else { return ProcessedResult(text: text, promptTokens: 0, completionTokens: 0) }
+
+        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
+        let model = "gpt-4o-mini"
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let systemPrompt = """
+        Analyze the following transcription and format it by spliting speech between different speakers based on context, tone, and turn-taking. 
+        Use the format:
+        Speaker A: [speech]
+        Speaker B: [speech]
+        ...
+        Output ONLY the diarized text. Do not add any introduction or conclusion. Keep the original words exactly as transcribed.
+        """
+
+        let payload: [String: Any] = [
+            "model": model,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": text]
+            ],
+            "temperature": 0.2,
+            "max_tokens": 4096
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw TranscriptionError.networkError("OpenAI diarization failed: \(errorText)")
+        }
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let firstChoice = choices.first,
+              let message = firstChoice["message"] as? [String: Any],
+              let content = message["content"] as? String,
+              let usage = json["usage"] as? [String: Any]
+        else {
+            throw TranscriptionError.invalidResponse
+        }
+
+        return ProcessedResult(
+            text: content.trimmingCharacters(in: .whitespacesAndNewlines),
+            promptTokens: usage["prompt_tokens"] as? Int ?? 0,
+            completionTokens: usage["completion_tokens"] as? Int ?? 0
+        )
+    }
 }

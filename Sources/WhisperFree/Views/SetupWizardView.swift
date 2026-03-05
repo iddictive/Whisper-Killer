@@ -272,15 +272,6 @@ struct SetupWizardView: View {
                 granted: appState.isHotkeyTrusted
             ) {
                 appState.requestAccessibilityPermission()
-                if !appState.isHotkeyTrusted {
-                    // Try to open the most specific privacy pane for accessibility
-                    let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-                    if !NSWorkspace.shared.open(url) {
-                        // Fallback if specific URL fails
-                        let fallback = URL(string: "x-apple.systempreferences:com.apple.preference.security")!
-                        NSWorkspace.shared.open(fallback)
-                    }
-                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { refreshStatus() }
             }
 

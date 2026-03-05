@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private var setupWizardController: SetupWizardWindowController?
     private var settingsWindowController: SettingsWindowController?
     private var historyWindowController: HistoryWindowController?
+    private var fileTranscriptionController: FileTranscriptionWindowController?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -80,6 +81,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             historyWindowController = HistoryWindowController()
         }
         historyWindowController?.show()
+    }
+    
+    func showFileTranscription() {
+        if fileTranscriptionController == nil {
+            fileTranscriptionController = FileTranscriptionWindowController()
+        }
+        fileTranscriptionController?.show()
     }
 }
 
@@ -151,8 +159,11 @@ final class SettingsWindowController: NSObject {
         window.center()
         window.contentView = hostingView
         window.title = "WhisperKiller Settings"
-        window.titleVisibility = .visible
-        window.isReleasedWhenClosed = false
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
         
         self.window = window
         window.makeKeyAndOrderFront(nil)
@@ -175,14 +186,54 @@ final class HistoryWindowController: NSObject {
         let hostingView = NSHostingView(rootView: view)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.center()
         window.contentView = hostingView
         window.title = "Transcription History"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        
+        self.window = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+@MainActor
+final class FileTranscriptionWindowController: NSObject {
+    private var window: NSWindow?
+    
+    func show() {
+        if window != nil {
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        
+        let view = FileTranscriptionView().environmentObject(AppState.shared)
+        let hostingView = NSHostingView(rootView: view)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 480),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.center()
+        window.contentView = hostingView
+        window.title = "Transcribe File"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.isReleasedWhenClosed = false
+        window.backgroundColor = .clear
+        window.isOpaque = false
         
         self.window = window
         window.makeKeyAndOrderFront(nil)

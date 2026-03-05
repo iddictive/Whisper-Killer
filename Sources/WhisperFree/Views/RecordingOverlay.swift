@@ -81,9 +81,27 @@ struct RecordingOverlayContent: View {
             }
             
             if let _ = appState.lastError {
-                Button { appState.clearError() } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(.white.opacity(0.6))
-                }.buttonStyle(.plain)
+                HStack(spacing: 8) {
+                    if recorder.isMicrophoneDenied || appState.isMicrophoneDenied {
+                        Button {
+                            appState.openMicrophoneSettings()
+                        } label: {
+                            Text("Settings")
+                                .font(.system(size: 11, weight: .bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.red.opacity(0.3))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
+                    Button { appState.clearError() } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }.buttonStyle(.plain)
+                }
             }
         }
         .padding(.horizontal, 20)
@@ -93,7 +111,6 @@ struct RecordingOverlayContent: View {
             ZStack {
                 Capsule().fill(.ultraThinMaterial)
                 Capsule().fill(Color.black.opacity(0.45))
-                Capsule().strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
             }
         )
         .clipShape(Capsule())

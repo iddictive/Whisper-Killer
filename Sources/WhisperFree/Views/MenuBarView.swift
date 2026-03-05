@@ -5,18 +5,18 @@ struct MenuBarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            mainContent
+        }
+        .frame(width: 340)
+        .background(VisualEffectView(material: .hudWindow, blendingMode: .withinWindow).ignoresSafeArea())
+    }
+
+    private var mainContent: some View {
+        VStack(spacing: 0) {
             // ─── Accessibility Warning ─────────────
-            if !AXIsProcessTrusted() {
+            if !appState.isHotkeyTrusted {
                 Button {
-                    let options = [kAXTrustedCheckOptionPrompt.takeRetainedValue(): true] as CFDictionary
-                    let trusted = AXIsProcessTrustedWithOptions(options)
-                    if !trusted {
-                        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-                        if !NSWorkspace.shared.open(url) {
-                            let fallback = URL(string: "x-apple.systempreferences:com.apple.preference.security")!
-                            NSWorkspace.shared.open(fallback)
-                        }
-                    }
+                    appState.requestAccessibilityPermission()
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -52,6 +52,53 @@ struct MenuBarView: View {
                     .foregroundStyle(.secondary)
                 Text("WhisperKiller")
                     .font(.system(size: 13, weight: .bold))
+
+                // Input Source Dropdown
+                Menu {
+                    Button {
+                        appState.settings.selectedInputDeviceID = nil
+                        appState.saveSettings()
+                    } label: {
+                        HStack {
+                            Text("System Default")
+                            if appState.settings.selectedInputDeviceID == nil {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    ForEach(appState.availableInputDevices, id: \.uniqueID) { device in
+                        Button {
+                            appState.settings.selectedInputDeviceID = device.uniqueID
+                            appState.saveSettings()
+                        } label: {
+                            HStack {
+                                Text(device.localizedName)
+                                if appState.settings.selectedInputDeviceID == device.uniqueID {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 8))
+                        Text(appState.availableInputDevices.first(where: { $0.uniqueID == appState.settings.selectedInputDeviceID })?.localizedName ?? "Default")
+                            .font(.system(size: 10, weight: .medium))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 6))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(0.06))
+                    .clipShape(Capsule())
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
 
                 Spacer()
 
@@ -217,8 +264,6 @@ struct MenuBarView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
 
-            // ─── Background Jobs ────────────────
-            BackgroundJobsView()
 
             // ─── Last Transcription ─────────────
             if let lastText = appState.lastTranscription {
@@ -301,8 +346,9 @@ struct MenuBarView: View {
                     AppDelegate.shared?.showHistory()
                 }
                 menuButton(icon: "doc.badge.plus", title: "Transcribe File...") {
-                    appState.transcribeSelectedFile()
+                    AppDelegate.shared?.showFileTranscription()
                 }
+
                 menuButton(icon: "wand.and.stars", title: "Setup Wizard") {
                     AppDelegate.shared?.showSetupWizard()
                 }
@@ -346,66 +392,5 @@ struct MenuBarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-}
-
-struct BackgroundJobsView: View {
-    @EnvironmentObject var appState: AppState
-    
-    var body: some View {
-        if !appState.backgroundJobs.isEmpty {
-            VStack(spacing: 0) {
-                Divider()
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("BACKGROUND JOBS")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
-                    
-                    ForEach(appState.backgroundJobs) { job in
-                        JobRow(job: job)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-            }
-        }
-    }
-}
-
-struct JobRow: View {
-    let job: BackgroundJob
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Image(systemName: "doc.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                Text(job.name)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-                Spacer()
-                if job.isPaused {
-                    HStack(spacing: 3) {
-                        Image(systemName: "pause.fill").font(.system(size: 8))
-                        Text("Priority Wait").font(.system(size: 10))
-                    }
-                    .foregroundStyle(.orange)
-                } else {
-                    Text("\(Int(job.progress * 100))%")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.accentColor)
-                }
-            }
-            
-            ProgressView(value: job.progress)
-                .progressViewStyle(.linear)
-                .tint(job.isPaused ? .orange : Color.accentColor)
-                .scaleEffect(x: 1, y: 0.5, anchor: .center)
-        }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .background(Color.primary.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }

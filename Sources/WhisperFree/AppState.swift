@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import AVFoundation
 
 // MARK: - App State
 
@@ -17,17 +18,6 @@ enum ProcessingStage: String {
     case none = ""
 }
 
-struct BackgroundJob: Identifiable, Equatable {
-    let id: UUID
-    let name: String
-    var progress: Float
-    var isPaused: Bool
-    var engine: TranscriptionEngine?
-
-    static func == (lhs: BackgroundJob, rhs: BackgroundJob) -> Bool {
-        lhs.id == rhs.id && lhs.progress == rhs.progress && lhs.isPaused == rhs.isPaused
-    }
-}
 
 @MainActor
 final class AppState: ObservableObject {
@@ -39,8 +29,28 @@ final class AppState: ObservableObject {
     @Published var history: [TranscriptionHistoryEntry] = []
     @Published var lastError: String?
     @Published var lastTranscription: String?
-    @Published var backgroundJobs: [BackgroundJob] = []
+
     @Published var copiedFeedback = false
+    @Published var availableInputDevices: [AVCaptureDevice] = []
+
+    // Statistics calculated directly from history for accuracy/self-healing
+    var totalWords: Int {
+        history.reduce(0) { $0 + $1.processedText.split { $0.isWhitespace }.count }
+    }
+    var totalDuration: TimeInterval {
+        history.reduce(0) { $0 + $1.duration }
+    }
+    var averageWPM: Int {
+        let minutes = totalDuration / 60.0
+        // Safeguard: only show WPM if we have enough data to be meaningful
+        guard minutes > 0.05, totalWords > 0 else { return 0 } 
+        return Int(Double(totalWords) / minutes)
+    }
+    var estimatedTimeSaved: TimeInterval {
+        // Average person types at ~40 WPM. Dictation + AI is much faster.
+        // Formula: (Words / 40) - (Words / WPM) -> approximated as 2.5x duration
+        return totalDuration * 2.5
+    }
     @Published var showOverlayWindow = false {
         didSet {
             if !showOverlayWindow {
@@ -50,6 +60,8 @@ final class AppState: ObservableObject {
         }
     }
     @Published var isHotkeyTrusted = false
+    @Published var isMicrophoneGranted = false
+    @Published var isMicrophoneDenied = false
     @Published var isTranslocated = false
     @Published var isRecordingHotkey = false {
         didSet {
@@ -88,11 +100,37 @@ final class AppState: ObservableObject {
         }
         
         checkTranslocation()
+        checkAccessibility()
+        refreshAvailableDevices()
+        
+        // Listen for device changes
+        NotificationCenter.default.addObserver(forName: .AVCaptureDeviceWasConnected, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshAvailableDevices()
+        }
+        NotificationCenter.default.addObserver(forName: .AVCaptureDeviceWasDisconnected, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshAvailableDevices()
+        }
         self.isHotkeyTrusted = hotkeyManager.isTrusted
+        self.isMicrophoneGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        
         print("🔑 Hotkey trusted: \(isHotkeyTrusted)")
+        print("🎤 Microphone granted: \(isMicrophoneGranted)")
         setupHotkey()
         startPermissionCheckTimer()
         print("✅ AppState init complete")
+    }
+
+    private func checkAccessibility() {
+        self.isHotkeyTrusted = hotkeyManager.isTrusted
+    }
+
+    func refreshAvailableDevices() {
+        let session = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInMicrophone, .externalUnknown],
+            mediaType: .audio,
+            position: .unspecified
+        )
+        self.availableInputDevices = session.devices
     }
 
     private func checkTranslocation() {
@@ -138,11 +176,25 @@ final class AppState: ObservableObject {
     }
 
     func requestAccessibilityPermission() {
+        // First check silently — if already trusted, just update state
+        if hotkeyManager.isTrusted {
+            self.isHotkeyTrusted = true
+            reloadHotkeyManager()
+            return
+        }
+        // Not trusted — AXIsProcessTrustedWithOptions(prompt: true) shows the native
+        // system dialog with "Deny" / "Open System Settings" buttons.
+        // Do NOT manually open System Settings — that causes duplicate windows.
         let trusted = hotkeyManager.checkTrust(prompt: true)
         self.isHotkeyTrusted = trusted
         if trusted {
             reloadHotkeyManager()
         }
+    }
+
+    func openMicrophoneSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
+        NSWorkspace.shared.open(url)
     }
 
     private func startPermissionCheckTimer() {
@@ -157,6 +209,23 @@ final class AppState: ObservableObject {
                     if trusted {
                         // Automatically start manager if it was blocked before
                         self.reloadHotkeyManager()
+                    }
+                }
+                
+                let micStatus = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+                if self.isMicrophoneGranted != micStatus {
+                    self.isMicrophoneGranted = micStatus
+                }
+                
+                let denied = AVCaptureDevice.authorizationStatus(for: .audio) == .denied
+                if self.isMicrophoneDenied != denied {
+                    self.isMicrophoneDenied = denied
+                    // Auto-dismiss permission error overlay when access is granted
+                    if !denied, let error = self.lastError, error.contains("Microphone access denied") {
+                        self.lastError = nil
+                        if self.state == .idle {
+                            self.showOverlayWindow = false
+                        }
                     }
                 }
             }
@@ -229,43 +298,32 @@ final class AppState: ObservableObject {
         guard state == .idle else { return }
 
         // Validate API key for cloud engine
-        if settings.engineType == .cloud && settings.apiKey.isEmpty {
-            lastError = "No API key configured. Go to Settings → General to add your OpenAI API key."
-            showOverlayWindow = true
+        if settings.engineType == .cloud && settings.apiKey.trimmingCharacters(in: .whitespaces).isEmpty {
+            showError("No API key configured. Go to Settings → General to add your OpenAI API key.")
             return
         }
 
         // Validate model for local engine
         if settings.engineType == .local && !modelManager.isModelDownloaded(settings.localModelSize) {
-            lastError = "Model '\(settings.localModelSize.rawValue)' not downloaded. Go to Settings → Engine to download."
-            showOverlayWindow = true
+            showError("Model '\(settings.localModelSize.rawValue)' not downloaded. Go to Settings → Engine to download.")
+            return
+        }
+
+        // Validate Microphone permission - only block if DENIED. 
+        // If not determined, recorder.startRecording() will handle the prompt.
+        if isMicrophoneDenied { // Using the existing `isMicrophoneDenied` property
+            showError("Microphone access denied. Please enable it in System Settings → Privacy & Security.")
             return
         }
 
         lastError = nil
         state = .recording
         showOverlayWindow = true
-        pauseBackgroundJobs()
-        recorder.startRecording()
+
+        recorder.startRecording(inputDeviceID: settings.selectedInputDeviceID)
     }
 
-    private func pauseBackgroundJobs() {
-        for i in 0..<backgroundJobs.count {
-            if !backgroundJobs[i].isPaused {
-                backgroundJobs[i].isPaused = true
-                backgroundJobs[i].engine?.pause()
-            }
-        }
-    }
 
-    private func resumeBackgroundJobs() {
-        for i in 0..<backgroundJobs.count {
-            if backgroundJobs[i].isPaused {
-                backgroundJobs[i].isPaused = false
-                backgroundJobs[i].engine?.resume()
-            }
-        }
-    }
 
 
     func cancelRecording() {
@@ -273,14 +331,14 @@ final class AppState: ObservableObject {
         recorder.cleanup()
         state = .idle
         showOverlayWindow = false
-        resumeBackgroundJobs()
     }
 
     func stopAndTranscribe() {
         guard state == .recording else { return }
 
-        guard let audioURL = recorder.stopRecording() else {
-            // Recording too short
+        let (audioURLOptional, recordingDuration) = recorder.stopRecording()
+        guard let audioURL = audioURLOptional else {
+            // Recording too short or failed
             state = .idle
             showOverlayWindow = false
             return
@@ -288,17 +346,33 @@ final class AppState: ObservableObject {
 
         state = .processing
         processingStage = .transcribing
-        let recordingDuration = recorder.recordingDuration
 
         Task { @MainActor in
             do {
+                // Diagnostic: check audio file before sending
+                let fileAttrs = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
+                let fileSize = fileAttrs?[.size] as? Int64 ?? 0
+                print("whisper_debug: 📁 Audio file for transcription: \(audioURL.lastPathComponent), size: \(fileSize) bytes")
+                
+                if fileSize < 1000 {
+                    print("whisper_debug: ⚠️ WARNING: Audio file is suspiciously small (\(fileSize) bytes)!")
+                }
+                
                 // 1. Transcribe
                 let engine = TranscriptionEngineFactory.create(for: settings.engineType, settings: settings)
                 let lang = settings.language == "auto" ? nil : settings.language
                 let rawText = try await engine.transcribe(audioURL: audioURL, language: lang, onProgress: nil)
+                
+                print("whisper_debug: 📝 Raw transcription result: '\(rawText)' (length: \(rawText.count))")
 
                 guard !rawText.isEmpty else {
-                    lastError = "No speech detected. Try speaking more clearly or check your microphone."
+                   if rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    showError("No speech detected. Try speaking more clearly or check your microphone.")
+                    state = .idle
+                    processingStage = .none
+                    recorder.cleanup()
+                    return
+                }
                     state = .idle
                     processingStage = .none
                     showOverlayWindow = true // Keep open to show error
@@ -332,9 +406,35 @@ final class AppState: ObservableObject {
                             )
                         }
                     } catch {
-                        // Log error but STILL use raw text as fallback
-                        self.lastError = "AI refinement failed: \(error.localizedDescription). Using raw transcription."
-                        print("Post-processing error: \(error)")
+                        print("⚠️ AI refinement failed: \(error)")
+                        self.showError("AI refinement failed. Using raw text.")
+                    }
+                }
+
+                // 3. Diarization (if enabled)
+                if settings.enableSpeakerDiarization && settings.postProcessingEngine == .openai {
+                    processingStage = .postProcessing // reuse stage
+                    do {
+                        let processor = PostProcessor(settings: settings)
+                        let diarizationResult = try await processor.diarize(text: processedText)
+                        processedText = diarizationResult.text
+                        
+                        // Accumulate tokens
+                        let currentTokens = (usage?.totalTokens ?? 0) + diarizationResult.promptTokens + diarizationResult.completionTokens
+                        let currentPromptTokens = (usage?.promptTokens ?? 0) + diarizationResult.promptTokens
+                        let currentCompletionTokens = (usage?.completionTokens ?? 0) + diarizationResult.completionTokens
+                        
+                        usage = UsageLog(
+                            date: Date(),
+                            modeName: settings.selectedMode.name,
+                            engine: PostProcessingEngine.openai.rawValue,
+                            promptTokens: currentPromptTokens,
+                            completionTokens: currentCompletionTokens,
+                            totalTokens: currentTokens,
+                            estimatedCost: UsageLog.estimateCost(prompt: currentPromptTokens, completion: currentCompletionTokens, engine: .openai)
+                        )
+                    } catch {
+                        print("⚠️ Diarization failed: \(error)")
                     }
                 }
 
@@ -356,12 +456,18 @@ final class AppState: ObservableObject {
                 }
 
                 // 7. Save to history & usage logs
+                // 6. Update Stats
+                let wordCount = processedText.split { $0.isWhitespace || $0.isPunctuation }.count
+                settings.lifetimeWords += wordCount
+                settings.lifetimeDuration += recordingDuration
+                saveSettings()
+
                 let entry = TranscriptionHistoryEntry(
                     rawText: rawText,
                     processedText: processedText,
                     modeName: settings.selectedMode.name,
                     duration: recordingDuration,
-                    engineUsed: settings.engineType.rawValue,
+                    engineUsed: settings.engineType.rawValue + (settings.enablePostProcessing ? " + AI" : "") + (settings.enableSpeakerDiarization ? " + Diarization" : ""),
                     usage: usage
                 )
                 Storage.shared.addTranscriptionHistoryEntry(entry)
@@ -378,26 +484,26 @@ final class AppState: ObservableObject {
                 state = .idle
                 processingStage = .none
                 recorder.cleanup()
-                resumeBackgroundJobs()
+
 
             } catch {
-                lastError = error.localizedDescription
-                state = .idle
-                processingStage = .none
-                showOverlayWindow = true // Keep open to show error
-                
-                // Auto-dismiss error after 4 seconds
-                errorTimer = Just(())
-                    .delay(for: .seconds(4), scheduler: RunLoop.main)
-                    .sink { [weak self] in
-                        self?.showOverlayWindow = false
-                        self?.lastError = nil
-                    }
-                
+                showError(error.localizedDescription)
                 recorder.cleanup()
-                resumeBackgroundJobs()
             }
         }
+    }
+
+    func showError(_ message: String) {
+        lastError = message
+        showOverlayWindow = true
+        
+        errorTimer?.cancel()
+        errorTimer = Just(())
+            .delay(for: .seconds(5), scheduler: RunLoop.main)
+            .sink { [weak self] in
+                self?.lastError = nil
+                self?.showOverlayWindow = false
+            }
     }
 
     // MARK: - Tray toggle (always uses toggle behavior)
@@ -427,74 +533,4 @@ final class AppState: ObservableObject {
         settings.usageLogs.removeAll { $0.date < sevenDaysAgo }
     }
 
-    // MARK: - File Transcription
-
-    func transcribeSelectedFile() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowedContentTypes = [.audio, .video, .movie, .quickTimeMovie, .mpeg4Movie]
-        panel.title = "Select Audio or Video File"
-        panel.prompt = "Transcribe"
-
-        if panel.runModal() == .OK, let url = panel.url {
-            Task {
-                await processFileTranscription(url: url)
-            }
-        }
-    }
-
-    private func processFileTranscription(url: URL) async {
-        let jobID = UUID()
-        let fileName = url.lastPathComponent
-        let engine = TranscriptionEngineFactory.create(for: settings.engineType, settings: settings)
-        
-        let initialJob = BackgroundJob(id: jobID, name: fileName, progress: 0, isPaused: false, engine: engine)
-        backgroundJobs.append(initialJob)
-        
-        lastError = nil
-
-        do {
-            let result = try await engine.transcribe(audioURL: url, language: settings.language == "auto" ? nil : settings.language) { progress in
-                Task { @MainActor in
-                    if let index = self.backgroundJobs.firstIndex(where: { $0.id == jobID }) {
-                        self.backgroundJobs[index].progress = progress
-                    }
-                }
-            }
-            
-            // Success
-            backgroundJobs.removeAll { $0.id == jobID }
-            lastTranscription = result
-            let entry = TranscriptionHistoryEntry(
-                rawText: result,
-                processedText: result,
-                modeName: "File Import",
-                duration: 0,
-                engineUsed: settings.engineType.rawValue
-            )
-            Storage.shared.addTranscriptionHistoryEntry(entry)
-            history.insert(entry, at: 0)
-            
-            // Save to desktop by default
-            let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
-            let outputName = url.deletingPathExtension().lastPathComponent + "_transcription.txt"
-            let outputURL = desktop.appendingPathComponent(outputName)
-            try result.write(to: outputURL, atomically: true, encoding: .utf8)
-            
-            // Notify user of success
-            await MainActor.run {
-                lastError = "Success! Transcription of \(fileName) saved to Desktop."
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    if self.lastError?.contains("Success") == true {
-                        self.clearError()
-                    }
-                }
-            }
-        } catch {
-            backgroundJobs.removeAll { $0.id == jobID }
-            lastError = "File transcription failed: \(error.localizedDescription)"
-        }
-    }
 }

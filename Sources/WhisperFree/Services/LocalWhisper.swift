@@ -28,7 +28,28 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         currentProcess?.terminate()
     }
 
-    func transcribe(audioURL: URL, language: String?, onProgress: ((Float) -> Void)?) async throws -> String {
+    func transcribe(audioURL: URL, language: String?, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> String {
+        let startTime = Date()
+        
+        // Stage 1: Convert/Extract audio (0-10% of total progress)
+        // Skip conversion if file is already 16kHz WAV (recorded by AudioRecorder)
+        let wavURL: URL
+        let shouldCleanupWav: Bool
+        
+        if isAlready16kHzWav(audioURL) {
+            print("whisper_debug: ✅ Audio is already 16kHz WAV, skipping conversion")
+            wavURL = audioURL
+            shouldCleanupWav = false
+        } else {
+            print("whisper_debug: 🔄 Converting audio to 16kHz WAV...")
+            wavURL = try await convertTo16kHzWav(audioURL) { conversionProgress in
+                let totalProgress = conversionProgress * 0.1
+                onProgress?(totalProgress, nil)
+            }
+            shouldCleanupWav = true
+        }
+        defer { if shouldCleanupWav { try? FileManager.default.removeItem(at: wavURL) } }
+
         let modelPath = await MainActor.run {
             AppState.shared.modelManager.findModelPath(for: self.modelSize)?.path
         }
@@ -42,9 +63,6 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             throw TranscriptionError.transcriptionFailed("whisper-cpp not found.")
         }
 
-        let wavURL = try await convertTo16kHzWav(audioURL)
-        defer { try? FileManager.default.removeItem(at: wavURL) }
-
         return try await withCheckedThrowingContinuation { continuation in
             let process = Process()
             self.currentProcess = process
@@ -53,7 +71,6 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             var args = [
                 "--model", path,
                 "--file", wavURL.path,
-                "--output-txt",
                 "--no-timestamps",
                 "--threads", "\(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))"
             ]
@@ -63,54 +80,113 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             }
 
             process.arguments = args
+            print("whisper_debug: 🚀 Running: \(binary) \(args.joined(separator: " "))")
 
             let outputPipe = Pipe()
             let errorPipe = Pipe()
             process.standardOutput = outputPipe
             process.standardError = errorPipe
 
-            // Watch stderr for progress
-            errorPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
+            // Thread-safe accumulator for stdout data
+            // readabilityHandler consumes data from the pipe — we MUST accumulate it
+            // because readDataToEndOfFile() after readabilityHandler returns empty.
+            let lock = NSLock()
+            var outputAccumulator = Data()
+            var errorAccumulator = Data()
+
+            outputPipe.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                guard !chunk.isEmpty else { return }
+                lock.lock()
+                outputAccumulator.append(chunk)
+                lock.unlock()
                 
-                // whisper.cpp progress format: "whisper_print_progress: progress =  20%"
-                if output.contains("progress =") {
-                    let parts = output.components(separatedBy: "progress =")
-                    if let lastPart = parts.last?.trimmingCharacters(in: .whitespaces),
-                       let percentStr = lastPart.components(separatedBy: "%").first,
-                       let percent = Float(percentStr.trimmingCharacters(in: .whitespaces)) {
-                        onProgress?(percent / 100.0)
+                // Parse progress from stdout (some whisper versions output here)
+                if let text = String(data: chunk, encoding: .utf8), text.contains("progress =") {
+                    let lines = text.components(separatedBy: .newlines)
+                    for line in lines where line.contains("progress =") {
+                        let parts = line.components(separatedBy: "progress =")
+                        if let lastPart = parts.last?.trimmingCharacters(in: .whitespaces),
+                           let percentStr = lastPart.components(separatedBy: "%").first,
+                           let percent = Float(percentStr.trimmingCharacters(in: .whitespaces)) {
+                            let whisperProgress = percent / 100.0
+                            let totalProgress = 0.15 + (whisperProgress * 0.85)
+                            var remainingTime: TimeInterval?
+                            if totalProgress > 0.20 {
+                                let elapsed = Date().timeIntervalSince(startTime)
+                                let estimatedTotal = elapsed / Double(totalProgress)
+                                remainingTime = max(0, estimatedTotal - elapsed)
+                            }
+                            onProgress?(totalProgress, remainingTime)
+                        }
+                    }
+                }
+            }
+
+            errorPipe.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                guard !chunk.isEmpty else { return }
+                lock.lock()
+                errorAccumulator.append(chunk)
+                lock.unlock()
+                
+                // Parse progress from stderr (some whisper versions output here)
+                if let text = String(data: chunk, encoding: .utf8), text.contains("progress =") {
+                    let lines = text.components(separatedBy: .newlines)
+                    for line in lines where line.contains("progress =") {
+                        let parts = line.components(separatedBy: "progress =")
+                        if let lastPart = parts.last?.trimmingCharacters(in: .whitespaces),
+                           let percentStr = lastPart.components(separatedBy: "%").first,
+                           let percent = Float(percentStr.trimmingCharacters(in: .whitespaces)) {
+                            let whisperProgress = percent / 100.0
+                            let totalProgress = 0.15 + (whisperProgress * 0.85)
+                            var remainingTime: TimeInterval?
+                            if totalProgress > 0.20 {
+                                let elapsed = Date().timeIntervalSince(startTime)
+                                let estimatedTotal = elapsed / Double(totalProgress)
+                                remainingTime = max(0, estimatedTotal - elapsed)
+                            }
+                            onProgress?(totalProgress, remainingTime)
+                        }
                     }
                 }
             }
 
             process.terminationHandler = { [weak self] p in
                 self?.currentProcess = nil
+                // Drain any remaining data
                 outputPipe.fileHandleForReading.readabilityHandler = nil
                 errorPipe.fileHandleForReading.readabilityHandler = nil
                 
-                if p.terminationStatus == 0 {
-                    let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                    let output = String(data: outputData, encoding: .utf8) ?? ""
-                    let text = self?.parseWhisperOutput(output) ?? ""
-                    continuation.resume(returning: text)
-                } else {
-                    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                    let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-                    continuation.resume(throwing: TranscriptionError.transcriptionFailed(errorOutput))
+                // Small delay to let final readability callbacks flush
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {
+                    lock.lock()
+                    let finalOutput = outputAccumulator
+                    let finalError = errorAccumulator
+                    lock.unlock()
+                    
+                    if p.terminationStatus == 0 {
+                        let output = String(data: finalOutput, encoding: .utf8) ?? ""
+                        print("whisper_debug: 📦 Accumulated \(finalOutput.count) bytes from stdout")
+                        let text = self?.parseWhisperOutput(output) ?? ""
+                        continuation.resume(returning: text)
+                    } else {
+                        let errorOutput = String(data: finalError, encoding: .utf8) ?? "Unknown error"
+                        print("whisper_debug: ❌ whisper-cli failed (status \(p.terminationStatus)): \(errorOutput)")
+                        continuation.resume(throwing: TranscriptionError.transcriptionFailed(errorOutput))
+                    }
                 }
             }
 
             do {
                 try process.run()
+                // Immediately report small progress to show "Initializing" state
+                onProgress?(0.12, nil)
             } catch {
                 continuation.resume(throwing: TranscriptionError.transcriptionFailed(error.localizedDescription))
             }
         }
     }
-
-    // MARK: - Find whisper binary
 
     private func findWhisperBinary() -> String? {
         let possiblePaths = [
@@ -126,17 +202,13 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         ]
 
         for path in possiblePaths {
-            print("🔍 Checking path: \(path)")
             if FileManager.default.fileExists(atPath: path) && FileManager.default.isExecutableFile(atPath: path) {
-                print("✅ Found executable: \(path)")
                 return path
             }
             // Try resolving symlinks as a fallback
             let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
             if url.path != path {
-                print("🔗 Resolved symlink: \(path) -> \(url.path)")
                 if FileManager.default.fileExists(atPath: url.path) && FileManager.default.isExecutableFile(atPath: url.path) {
-                    print("✅ Found executable via symlink: \(url.path)")
                     return url.path
                 }
             }
@@ -162,11 +234,13 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         return nil
     }
 
-    private func convertTo16kHzWav(_ inputURL: URL) async throws -> URL {
+    private func convertTo16kHzWav(_ inputURL: URL, onProgress: @escaping (Float) -> Void) async throws -> URL {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("whisper_input_\(UUID().uuidString).wav")
 
         let asset = AVURLAsset(url: inputURL)
+        let duration = try await asset.load(.duration).seconds
+        
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
             throw TranscriptionError.transcriptionFailed("Could not load audio track")
         }
@@ -194,23 +268,24 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         writer.startWriting()
         writer.startSession(atSourceTime: .zero)
 
-        // Use a wrapper to safely pass non-sendable types into the Sendable closure
         final class ConversionContext: @unchecked Sendable {
             let reader: AVAssetReader
             let writer: AVAssetWriter
             let writerInput: AVAssetWriterInput
             let trackOutput: AVAssetReaderTrackOutput
+            let duration: Double
             var isResumed = false
             
-            init(reader: AVAssetReader, writer: AVAssetWriter, writerInput: AVAssetWriterInput, trackOutput: AVAssetReaderTrackOutput) {
+            init(reader: AVAssetReader, writer: AVAssetWriter, writerInput: AVAssetWriterInput, trackOutput: AVAssetReaderTrackOutput, duration: Double) {
                 self.reader = reader
                 self.writer = writer
                 self.writerInput = writerInput
                 self.trackOutput = trackOutput
+                self.duration = duration
             }
         }
         
-        let context = ConversionContext(reader: reader, writer: writer, writerInput: writerInput, trackOutput: trackOutput)
+        let context = ConversionContext(reader: reader, writer: writer, writerInput: writerInput, trackOutput: trackOutput, duration: duration)
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let queue = DispatchQueue(label: "audioConvertQueue")
@@ -218,6 +293,10 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             context.writerInput.requestMediaDataWhenReady(on: queue) {
                 while context.writerInput.isReadyForMoreMediaData {
                     if let buffer = context.trackOutput.copyNextSampleBuffer() {
+                        let time = CMSampleBufferGetPresentationTimeStamp(buffer).seconds
+                        let progress = Float(time / context.duration)
+                        onProgress(progress)
+                        
                         context.writerInput.append(buffer)
                     } else {
                         if !context.isResumed {
@@ -237,12 +316,35 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         }
         
         await writer.finishWriting()
+        onProgress(1.0)
         return outputURL
+    }
+
+    // MARK: - Check if already 16kHz WAV
+    
+    private func isAlready16kHzWav(_ url: URL) -> Bool {
+        guard url.pathExtension.lowercased() == "wav" else { return false }
+        do {
+            let file = try AVAudioFile(forReading: url)
+            let format = file.processingFormat
+            let is16k = abs(format.sampleRate - 16000) < 100 // tolerance
+            let isMono = format.channelCount == 1
+            print("whisper_debug: File check: \(url.lastPathComponent) → \(format.sampleRate)Hz, \(format.channelCount)ch → skip=\(is16k && isMono)")
+            return is16k && isMono
+        } catch {
+            print("whisper_debug: Cannot read audio file for format check: \(error)")
+            return false
+        }
     }
 
     // MARK: - Parse output
 
     private func parseWhisperOutput(_ raw: String) -> String {
+        print("whisper_debug: 🔍 Raw whisper-cli output (\(raw.count) chars):")
+        print("whisper_debug: ---BEGIN---")
+        print(raw)
+        print("whisper_debug: ---END---")
+        
         // whisper-cpp outputs lines like "[00:00:00.000 --> 00:00:05.000]  Hello world"
         // or plain text depending on flags. We use --no-timestamps so it's plain text
         let lines = raw.components(separatedBy: .newlines)
@@ -250,6 +352,8 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix("[") && !$0.hasPrefix("whisper_") && !$0.hasPrefix("main:") }
 
-        return textLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = textLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        print("whisper_debug: 📝 Parsed result: '\(result)' (kept \(textLines.count)/\(lines.count) lines)")
+        return result
     }
 }

@@ -397,13 +397,18 @@ struct AppSettings: Codable {
     var useMonochromeMenuIcon: Bool = false
     var usageLogs: [UsageLog] = []
     var experimentalAutoEnter: Bool = false
+    var enableSpeakerDiarization: Bool = false
+    var selectedInputDeviceID: String? = nil
+    var lifetimeWords: Int = 0
+    var lifetimeDuration: Double = 0
 
     enum CodingKeys: String, CodingKey {
         case apiKey, perplexityApiKey, postProcessingEngine, autoTypeResult, language,
              selectedModeName, customModes, recordingMode, engineType, localModelSize,
              showOverlay, setupCompleted, hotkeyConfig, insertionMethod,
              automaticallyChecksForUpdates, automaticallyDownloadsUpdates,
-             enablePostProcessing, useMonochromeMenuIcon, usageLogs, experimentalAutoEnter
+             enablePostProcessing, useMonochromeMenuIcon, usageLogs, experimentalAutoEnter,
+             enableSpeakerDiarization, selectedInputDeviceID, lifetimeWords, lifetimeDuration
     }
 
     init() {}
@@ -430,6 +435,10 @@ struct AppSettings: Codable {
         useMonochromeMenuIcon = try container.decodeIfPresent(Bool.self, forKey: .useMonochromeMenuIcon) ?? false
         usageLogs = try container.decodeIfPresent([UsageLog].self, forKey: .usageLogs) ?? []
         experimentalAutoEnter = try container.decodeIfPresent(Bool.self, forKey: .experimentalAutoEnter) ?? false
+        enableSpeakerDiarization = try container.decodeIfPresent(Bool.self, forKey: .enableSpeakerDiarization) ?? false
+        selectedInputDeviceID = try container.decodeIfPresent(String.self, forKey: .selectedInputDeviceID)
+        lifetimeWords = try container.decodeIfPresent(Int.self, forKey: .lifetimeWords) ?? 0
+        lifetimeDuration = try container.decodeIfPresent(Double.self, forKey: .lifetimeDuration) ?? 0
     }
 
     var allModes: [TranscriptionMode] {
