@@ -40,13 +40,16 @@ struct FileTranscriptionView: View {
                 configBar
                 Divider()
                 
-                if isProcessing {
-                    progressView
-                } else if result != nil {
-                    resultView
-                } else {
-                    dropZoneView
+                Group {
+                    if isProcessing {
+                        progressView
+                    } else if result != nil {
+                        resultView
+                    } else {
+                        dropZoneView
+                    }
                 }
+                .padding(.top, 20)
                 
                 Spacer(minLength: 0)
             }
