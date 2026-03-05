@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject var recorder: AudioRecorder
 
     private var modelManager: ModelManager { appState.modelManager }
     @ObservedObject private var updater = GitHubUpdater.shared
@@ -113,64 +114,108 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var appSection: some View {
-        Section("Preferences") {
-            Picker("Preferred Language", selection: $appState.settings.language) {
-                ForEach(AppSettings.supportedLanguages, id: \.code) { lang in
-                    Text(lang.name).tag(lang.code)
-                }
-            }
-            .onChange(of: appState.settings.language) { _, _ in
-                appState.saveSettings()
-            }
+        VStack(alignment: .leading, spacing: 16) {
+            Text("General Preferences")
+                .font(.headline)
+                .foregroundStyle(.secondary)
             
-            Toggle("Monochrome menu bar icon", isOn: $appState.settings.useMonochromeMenuIcon)
-                .onChange(of: appState.settings.useMonochromeMenuIcon) { _, _ in
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Preferred Language")
+                    Spacer()
+                    Picker("", selection: $appState.settings.language) {
+                        ForEach(AppSettings.supportedLanguages, id: \.code) { lang in
+                            Text(lang.name).tag(lang.code)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                }
+                .padding()
+                .onChange(of: appState.settings.language) { _, _ in
                     appState.saveSettings()
                 }
+                
+                Divider().padding(.horizontal)
+                
+                Toggle("Monochrome menu bar icon", isOn: $appState.settings.useMonochromeMenuIcon)
+                    .padding()
+                    .onChange(of: appState.settings.useMonochromeMenuIcon) { _, _ in
+                        appState.saveSettings()
+                    }
+            }
+            .background(Color.primary.opacity(0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         
-        Section("Software Updates") {
-            Toggle("Automatically check for updates", isOn: $appState.settings.automaticallyChecksForUpdates)
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Software Updates")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            
+            VStack(spacing: 0) {
+                Toggle("Automatically check for updates", isOn: $appState.settings.automaticallyChecksForUpdates)
+                    .padding()
                 
-            Toggle("Automatically download updates", isOn: $appState.settings.automaticallyDownloadsUpdates)
-                .disabled(!appState.settings.automaticallyChecksForUpdates)
-            
-            if let error = updater.error {
-                VStack(alignment: .leading) {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-                .onAppear {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                        updater.error = nil
+                Divider().padding(.horizontal)
+                
+                Toggle("Automatically download updates", isOn: $appState.settings.automaticallyDownloadsUpdates)
+                    .disabled(!appState.settings.automaticallyChecksForUpdates)
+                    .padding()
+                
+                if updater.updateAvailable || updater.isDownloading || updater.error != nil {
+                    Divider().padding(.horizontal)
+                    
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let error = updater.error {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .onAppear {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                                        updater.error = nil
+                                    }
+                                }
+                        }
+                        
+                        if updater.isDownloading {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ProgressView(value: updater.downloadProgress)
+                                    .progressViewStyle(.linear)
+                                Text("Downloading update... \(Int(updater.downloadProgress * 100))%")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else if updater.updateAvailable {
+                            HStack {
+                                Text("Version v\(updater.latestVersion ?? "") is available.")
+                                    .font(.subheadline)
+                                Spacer()
+                                Button("Download & Install") {
+                                    updater.startDownload()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                            }
+                        }
                     }
+                    .padding()
+                } else {
+                    Divider().padding(.horizontal)
+                    HStack {
+                        Spacer()
+                        Button(updater.isChecking ? "Checking..." : "Check for Updates Now...") {
+                            updater.checkForUpdates(manual: true)
+                        }
+                        .disabled(updater.isChecking)
+                        .buttonStyle(.link)
+                        .font(.caption)
+                    }
+                    .padding()
                 }
             }
-            
-            if updater.isDownloading {
-                VStack(alignment: .leading, spacing: 4) {
-                    ProgressView(value: updater.downloadProgress)
-                        .progressViewStyle(.linear)
-                    Text("Downloading update... \(Int(updater.downloadProgress * 100))%")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 4)
-            } else if updater.updateAvailable {
-                Button("Download & Install (v\(updater.latestVersion ?? ""))") {
-                    updater.startDownload()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            } else {
-                Button(updater.isChecking ? "Checking..." : "Check for Updates Now...") {
-                    updater.checkForUpdates(manual: true)
-                }
-                .disabled(updater.isChecking)
-                .padding(.top, 4)
-                .font(.caption)
-            }
+            .background(Color.primary.opacity(0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
     }
 
@@ -196,52 +241,6 @@ struct SettingsView: View {
                     .padding(.horizontal, 4)
             }
             .padding()
-            .background(Color.primary.opacity(0.03))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-        
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Live Microphone Test")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    WaveformView(levels: appState.recorder.audioLevels)
-                        .frame(height: 40)
-                    
-                    Spacer()
-                    
-                    if appState.recorder.isTooQuiet {
-                        Text("SILENCE")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.orange)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.orange.opacity(0.1))
-                            .clipShape(Capsule())
-                    } else {
-                        Text("SIGNAL DETECTED")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.green)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.green.opacity(0.1))
-                            .clipShape(Capsule())
-                    }
-                }
-                
-                Text("Speak to verify the application hears you. If the bars don't move, check your system microphone settings.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                
-                Button("Open System Audio Settings") {
-                    appState.openMicrophoneSettings()
-                }
-                .buttonStyle(.link)
-                .font(.caption)
-            }
-            .padding(20)
             .background(Color.primary.opacity(0.03))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
@@ -475,61 +474,80 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var infoSection: some View {
-        Section("Usage Statistics (7 Days)") {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Usage Statistics (7 Days)")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            
             let logs = appState.settings.usageLogs
             let totalTokens = logs.reduce(0) { $0 + $1.totalTokens }
             let totalCost = logs.reduce(0.0) { $0 + $1.estimatedCost }
             
-            HStack(spacing: 40) {
-                VStack(alignment: .leading) {
-                    Text("Total Tokens").font(.caption).foregroundStyle(.secondary)
-                    Text("\(totalTokens)").font(.title2).bold().foregroundStyle(SW.accent)
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 40) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Total Tokens").font(.caption).foregroundStyle(.secondary)
+                        Text("\(totalTokens)").font(.title2).bold().foregroundStyle(SW.accent)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Est. Cost").font(.caption).foregroundStyle(.secondary)
+                        Text("$\(String(format: "%.4f", totalCost))").font(.title2).bold().foregroundStyle(.green)
+                    }
+                    
+                    Spacer()
+                    
+                    Button("Reset Logs") {
+                        appState.settings.usageLogs.removeAll()
+                        appState.saveSettings()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
                 
-                VStack(alignment: .leading) {
-                    Text("Est. Cost").font(.caption).foregroundStyle(.secondary)
-                    Text("$\(String(format: "%.4f", totalCost))").font(.title2).bold().foregroundStyle(.green)
-                }
-                
-                Spacer()
-                
-                Button("Reset Logs") {
-                    appState.settings.usageLogs.removeAll()
-                    appState.saveSettings()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(.vertical, 8)
-            
-            if !logs.isEmpty {
-                 DisclosureGroup("Recent Activity Details") {
-                    VStack {
-                        ForEach(logs.reversed()) { log in
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(log.modeName).font(.system(size: 12, weight: .bold))
-                                    Text(log.date.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.secondary)
+                if !logs.isEmpty {
+                    Divider()
+                    
+                    DisclosureGroup {
+                        VStack(spacing: 8) {
+                            ForEach(logs.reversed().prefix(20)) { log in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(log.modeName).font(.system(size: 11, weight: .bold))
+                                        Text(log.date.formatted(date: .abbreviated, time: .shortened))
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text("\(log.totalTokens) tokens").font(.system(size: 10, design: .monospaced))
+                                        Text(log.engine).font(.system(size: 8)).foregroundStyle(.secondary).italic()
+                                    }
                                 }
-                                Spacer()
-                                VStack(alignment: .trailing) {
-                                    Text("\(log.totalTokens) tokens").font(.system(size: 11, design: .monospaced))
-                                    Text(log.engine).font(.system(size: 9)).foregroundStyle(.secondary).italic()
+                                if log.id != logs.reversed().prefix(20).last?.id {
+                                    Divider().opacity(0.5)
                                 }
                             }
-                            .padding(.vertical, 2)
-                            Divider()
                         }
+                        .padding(.top, 8)
+                    } label: {
+                        Text("Recent Activity Details")
+                            .font(.caption)
+                            .foregroundStyle(SW.accent)
                     }
-                    .padding(.vertical, 8)
                 }
             }
+            .padding(20)
+            .background(Color.primary.opacity(0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         
-        Section("About Whisper Free") {
-            VStack(spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("About Whisper Killer")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            
+            VStack(spacing: 24) {
                 ZStack {
                     Circle()
                         .fill(LinearGradient(colors: [SW.accent, SW.accentBlue], startPoint: .topLeading, endPoint: .bottomTrailing).opacity(0.1))
@@ -540,8 +558,8 @@ struct SettingsView: View {
                 .frame(width: 80, height: 80)
                 
                 VStack(spacing: 8) {
-                    Text("Whisper Free").font(.system(size: 28, weight: .bold))
-                    Text("Version 2.0").font(.subheadline).foregroundStyle(.secondary)
+                    Text("Whisper Killer").font(.system(size: 28, weight: .bold))
+                    Text("Version 2.0.51").font(.subheadline).foregroundStyle(.secondary)
                 }
                 
                 Text("Hyper-fast voice to text for macOS.")
@@ -555,7 +573,9 @@ struct SettingsView: View {
                 .font(.caption)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 20)
+            .padding(32)
+            .background(Color.primary.opacity(0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
     }
 

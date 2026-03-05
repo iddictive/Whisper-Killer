@@ -159,6 +159,13 @@ struct RecordingOverlayContent: View {
     }
 }
 
+// MARK: - Ghost Panel (never becomes key/main — invisible to window manager)
+
+private class GhostPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
 // MARK: - Floating Overlay Window Controller
 
 @MainActor
@@ -166,45 +173,46 @@ final class OverlayWindowController: NSObject, ObservableObject {
     private var panel: NSPanel?
 
     func show(appState: AppState) {
-        if panel != nil { return }
+        if panel == nil {
+            let content = RecordingOverlayContent(recorder: appState.recorder)
+                .environmentObject(appState)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-        let content = RecordingOverlayContent(recorder: appState.recorder)
-            .environmentObject(appState)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            let hostingView = NSHostingView(rootView: content)
+            hostingView.translatesAutoresizingMaskIntoConstraints = false
 
-        let hostingView = NSHostingView(rootView: content)
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
+            guard let screen = NSScreen.main else { return }
+            let panelWidth: CGFloat = 500
+            let panelHeight: CGFloat = 80
+            let safeTop = screen.frame.maxY - screen.visibleFrame.maxY
+            let x = screen.frame.midX - (panelWidth / 2)
+            let y = screen.frame.maxY - panelHeight - safeTop
 
-        guard let screen = NSScreen.main else { return }
-        let panelWidth: CGFloat = 500
-        let panelHeight: CGFloat = 80
-        let safeTop = screen.frame.maxY - screen.visibleFrame.maxY
-        let x = screen.frame.midX - (panelWidth / 2)
-        let y = screen.frame.maxY - panelHeight - safeTop // Moved closer to notch
+            let newPanel = GhostPanel(
+                contentRect: NSRect(x: x, y: y, width: panelWidth, height: panelHeight),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            newPanel.isFloatingPanel = true
+            newPanel.level = .popUpMenu
+            newPanel.backgroundColor = .clear
+            newPanel.isOpaque = false
+            newPanel.hasShadow = false
+            newPanel.animationBehavior = .none
+            newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+            newPanel.isMovableByWindowBackground = false
+            newPanel.hidesOnDeactivate = false
+            newPanel.ignoresMouseEvents = true
 
-        let panel = NSPanel(
-            contentRect: NSRect(x: x, y: y, width: panelWidth, height: panelHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isFloatingPanel = true
-        panel.level = .statusBar
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = false
-        panel.animationBehavior = .none
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.isMovableByWindowBackground = false
-        panel.hidesOnDeactivate = false
-
-        panel.contentView = hostingView
-        self.panel = panel
-        panel.orderFrontRegardless()
+            newPanel.contentView = hostingView
+            self.panel = newPanel
+        }
+        
+        panel?.orderFront(nil)
     }
 
     func hide() {
         panel?.orderOut(nil)
-        panel = nil
     }
 }

@@ -272,7 +272,10 @@ final class AudioRecorder: ObservableObject {
     // MARK: - Monitor Mode (lightweight, no file writing)
     
     func startMonitoring() {
-        guard !isMonitoring, !isRecording else { return }
+        guard !isMonitoring && !isRecording else { return }
+        
+        // Ensure clean state
+        stopMonitoring()
         
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         guard status == .authorized else {
@@ -315,33 +318,38 @@ final class AudioRecorder: ObservableObject {
         do {
             engine.prepare()
             try engine.start()
-            monitorEngine = engine
-            isMonitoring = true
-            audioLevels = Array(repeating: 0, count: levelHistoryCount)
-            recentLevels.removeAll()
-            isTooQuiet = false
-            print("whisper_debug: Monitor mode started successfully")
+            
+            DispatchQueue.main.async {
+                self.monitorEngine = engine
+                self.isMonitoring = true
+                self.audioLevels = Array(repeating: 0, count: self.levelHistoryCount)
+                self.recentLevels.removeAll()
+                self.isTooQuiet = false
+                print("whisper_debug: Monitor mode started successfully")
+            }
         } catch {
             print("whisper_debug: Failed to start monitor: \(error)")
+            inputNode.removeTap(onBus: 0)
         }
     }
     
     func stopMonitoring() {
-        guard isMonitoring else { return }
-        
         if let engine = monitorEngine {
-            if engine.isRunning {
-                engine.stop()
-            }
+            engine.stop()
             engine.inputNode.removeTap(onBus: 0)
+            monitorEngine = nil
         }
-        monitorEngine = nil
-        isMonitoring = false
-        audioLevels = Array(repeating: 0, count: levelHistoryCount)
-        recentLevels.removeAll()
-        isTooQuiet = false
-        isTooNoisy = false
-        print("whisper_debug: Monitor mode stopped")
+        
+        if isMonitoring {
+            DispatchQueue.main.async {
+                self.isMonitoring = false
+                self.audioLevels = Array(repeating: 0, count: self.levelHistoryCount)
+                self.recentLevels.removeAll()
+                self.isTooQuiet = false
+                self.isTooNoisy = false
+                print("whisper_debug: Monitor mode stopped")
+            }
+        }
     }
 
     func cleanup() {
@@ -364,8 +372,8 @@ final class AudioRecorder: ObservableObject {
         let rms = sqrt(sumSquares / Float(max(frames, 1)))
         
         // Noise floor subtraction and strong amplification (standard professional approach)
-        let adjustedRms = max(0, rms - 0.001)
-        return min(adjustedRms * 45.0, 1.0)
+        let adjustedRms = max(0, rms - 0.0005)
+        return min(adjustedRms * 60.0, 1.0)
     }
 
     private func findDeviceID(uniqueID: String) -> AudioDeviceID? {

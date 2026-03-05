@@ -148,7 +148,8 @@ final class SettingsWindowController: NSObject {
             return
         }
         
-        let view = SettingsView().environmentObject(AppState.shared)
+        let appState = AppState.shared
+        let view = SettingsView(recorder: appState.recorder).environmentObject(appState)
         let hostingView = NSHostingView(rootView: view)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 550),
@@ -162,6 +163,7 @@ final class SettingsWindowController: NSObject {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
+        window.isReleasedWhenClosed = false
         window.backgroundColor = .clear
         window.isOpaque = false
         
@@ -321,7 +323,7 @@ struct MenuBarIconView: View {
             NSColor.white.setFill()
             NSBezierPath(ovalIn: dotRect.insetBy(dx: -0.5, dy: -0.5)).fill()
             
-            let opacity = appState.state == .processing ? pulseOpacity : 1.0
+            let opacity = (appState.state == .recording || appState.state == .processing) ? pulseOpacity : 1.0
             dotColor.withAlphaComponent(opacity).setFill()
             NSBezierPath(ovalIn: dotRect).fill()
         }

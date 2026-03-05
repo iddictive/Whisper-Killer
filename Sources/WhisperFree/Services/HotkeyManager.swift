@@ -42,16 +42,6 @@ final class HotkeyManager {
                                     (1 << CGEventType.keyUp.rawValue) | 
                                     (1 << CGEventType.flagsChanged.rawValue)
 
-        // Try to intercept Dictation key (F5-like system keys)
-        NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { [weak self] event in
-            // Subtype 20 is often associated with the Dictation key trigger
-            if event.subtype.rawValue == 20 {
-                self?.onKeyDown?()
-                // Note: Global monitors don't allow blocking the event, 
-                // but a tap might if we knew the exact CGEvent details for the Dictation key.
-            }
-        }
-
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -87,6 +77,7 @@ final class HotkeyManager {
     }
 
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        // Re-enable tap if system disabled it
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
@@ -94,50 +85,55 @@ final class HotkeyManager {
             return Unmanaged.passUnretained(event)
         }
 
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        let flags = event.flags
-        
-        // DEBUG: Print all keycodes to find Dictation key
-        // print("DEBUG: KeyCode: \(keyCode), Flags: \(flags.rawValue)")
+        let pass = Unmanaged.passUnretained(event)
 
-        // Check against configured hotkey
-        let matchesKey = Int(keyCode) == config.keyCode
-        let matchesMods = checkModifiers(flags)
+        // ── STATE A: No hotkey held ──────────────────────────────────
+        if !isKeyDown {
+            // Only care about keyDown of our exact hotkey — skip EVERYTHING else
+            guard type == .keyDown else { return pass }
+            let kc = Int(event.getIntegerValueField(.keyboardEventKeycode))
+            guard kc == config.keyCode && checkModifiers(event.flags) else { return pass }
 
-        if matchesKey && matchesMods {
-            if type == .keyDown {
-                // Prevent duplicate key-down events from key repeat triggering onKeyDown multiple times
-                if !isKeyDown {
-                    isKeyDown = true
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onKeyDown?()
-                    }
-                }
-                // SWALLOW the event so the OS (or frontmost app) doesn't receive the keystroke
-                return nil
-            } else if type == .keyUp {
-                if isKeyDown {
-                    isKeyDown = false
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onKeyUp?()
-                    }
-                }
-                // SWALLOW the key release too
-                return nil
-            }
+            // Hotkey pressed!
+            isKeyDown = true
+            DispatchQueue.main.async { [weak self] in self?.onKeyDown?() }
+            return nil // swallow
         }
 
-        // Handle modifier key release while key was held.
-        // Only react when the hotkey's OWN required modifiers are released,
-        // NOT when unrelated modifiers change (e.g. Cmd during Cmd-Tab).
-        if type == .flagsChanged && isKeyDown && !hotkeyModifiersStillHeld(flags) {
+        // ── STATE B: Hotkey IS held (recording) ─────────────────────
+        // We only care about TWO things:
+        //   1. Our modifier released → fire onKeyUp
+        //   2. Our key released       → fire onKeyUp
+
+        if type == .flagsChanged {
+            // Quick check: are OUR modifiers still held?
+            // If yes (e.g. user pressed Cmd for Cmd-Tab but our Option is still down) → pass instantly
+            if hotkeyModifiersStillHeld(event.flags) { return pass }
+            // Our modifier was released
             isKeyDown = false
-            DispatchQueue.main.async { [weak self] in
-                self?.onKeyUp?()
-            }
+            DispatchQueue.main.async { [weak self] in self?.onKeyUp?() }
+            return pass
         }
 
-        return Unmanaged.passUnretained(event)
+        if type == .keyUp {
+            let kc = Int(event.getIntegerValueField(.keyboardEventKeycode))
+            if kc == config.keyCode {
+                isKeyDown = false
+                DispatchQueue.main.async { [weak self] in self?.onKeyUp?() }
+                return nil // swallow
+            }
+            return pass
+        }
+
+        if type == .keyDown {
+            let kc = Int(event.getIntegerValueField(.keyboardEventKeycode))
+            if kc == config.keyCode {
+                return nil // swallow key-repeat
+            }
+            return pass
+        }
+
+        return pass
     }
 
     private func checkModifiers(_ flags: CGEventFlags) -> Bool {
