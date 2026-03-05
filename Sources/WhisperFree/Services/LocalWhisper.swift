@@ -88,19 +88,16 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             process.standardOutput = outputPipe
             process.standardError = errorPipe
 
-            // Thread-safe accumulator for stdout data
-            // readabilityHandler consumes data from the pipe — we MUST accumulate it
-            // because readDataToEndOfFile() after readabilityHandler returns empty.
-            let lock = NSLock()
-            var outputAccumulator = Data()
-            var errorAccumulator = Data()
+            let outputAccumulator = DataAccumulator()
+            let errorAccumulator = DataAccumulator()
 
             outputPipe.fileHandleForReading.readabilityHandler = { handle in
                 let chunk = handle.availableData
                 guard !chunk.isEmpty else { return }
-                lock.lock()
-                outputAccumulator.append(chunk)
-                lock.unlock()
+                
+                Task {
+                    await outputAccumulator.append(chunk)
+                }
                 
                 // Parse progress from stdout (some whisper versions output here)
                 if let text = String(data: chunk, encoding: .utf8) {
@@ -123,9 +120,10 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             errorPipe.fileHandleForReading.readabilityHandler = { handle in
                 let chunk = handle.availableData
                 guard !chunk.isEmpty else { return }
-                lock.lock()
-                errorAccumulator.append(chunk)
-                lock.unlock()
+                
+                Task {
+                    await errorAccumulator.append(chunk)
+                }
                 
                 // Parse progress from stderr (some whisper versions output here)
                 if let text = String(data: chunk, encoding: .utf8) {
@@ -152,11 +150,11 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
                 errorPipe.fileHandleForReading.readabilityHandler = nil
                 
                 // Small delay to let final readability callbacks flush
-                DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {
-                    lock.lock()
-                    let finalOutput = outputAccumulator
-                    let finalError = errorAccumulator
-                    lock.unlock()
+                Task {
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+                    
+                    let finalOutput = await outputAccumulator.data
+                    let finalError = await errorAccumulator.data
                     
                     if p.terminationStatus == 0 {
                         let output = String(data: finalOutput, encoding: .utf8) ?? ""
@@ -369,5 +367,13 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             }
         }
         return nil
+    }
+}
+
+actor DataAccumulator {
+    private(set) var data = Data()
+    
+    func append(_ other: Data) {
+        data.append(other)
     }
 }

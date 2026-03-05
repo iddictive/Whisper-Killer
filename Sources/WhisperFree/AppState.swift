@@ -107,10 +107,14 @@ final class AppState: ObservableObject {
         
         // Listen for device changes
         NotificationCenter.default.addObserver(forName: .AVCaptureDeviceWasConnected, object: nil, queue: .main) { [weak self] _ in
-            self?.refreshAvailableDevices()
+            Task { @MainActor in
+                self?.refreshAvailableDevices()
+            }
         }
         NotificationCenter.default.addObserver(forName: .AVCaptureDeviceWasDisconnected, object: nil, queue: .main) { [weak self] _ in
-            self?.refreshAvailableDevices()
+            Task { @MainActor in
+                self?.refreshAvailableDevices()
+            }
         }
         self.isHotkeyTrusted = hotkeyManager.isTrusted
         self.isMicrophoneGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
@@ -128,7 +132,7 @@ final class AppState: ObservableObject {
 
     func refreshAvailableDevices() {
         let session = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInMicrophone, .externalUnknown],
+            deviceTypes: [.microphone, .external],
             mediaType: .audio,
             position: .unspecified
         )

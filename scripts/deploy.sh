@@ -52,12 +52,20 @@ if [ $? -eq 0 ]; then
     
     # Copy binary - find it if path is different
     # Use -not -path to exclude dSYM files which often have the same name as the binary
-    ACTUAL_BINARY=$(find .build -maxdepth 4 -name "$APP_NAME" -type f -not -path "*.dSYM*" | grep release | head -n 1)
+    # Specifically check arm64-apple-macosx directory for arm64 release builds
+    ACTUAL_BINARY=$(find .build/arm64-apple-macosx/release -name "$APP_NAME" -type f -not -path "*.dSYM*" 2>/dev/null | head -n 1)
+    
+    # Fallback to general find if arm64 path fails
+    if [ -z "$ACTUAL_BINARY" ]; then
+        ACTUAL_BINARY=$(find .build -name "$APP_NAME" -type f -not -path "*.dSYM*" | grep release | head -n 1)
+    fi
+    
     if [ -z "$ACTUAL_BINARY" ]; then
         echo "❌ Binary not found in .build directory."
         exit 1
     fi
     
+    echo "📦 Found binary at: $ACTUAL_BINARY"
     cp "$ACTUAL_BINARY" "$BUNDLE_NAME/Contents/MacOS/$APP_NAME"
     chmod +x "$BUNDLE_NAME/Contents/MacOS/$APP_NAME"
     cp "$INFO_PLIST" "$BUNDLE_NAME/Contents/Info.plist"
