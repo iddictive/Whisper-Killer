@@ -47,6 +47,8 @@ struct FileTranscriptionView: View {
                 } else {
                     dropZoneView
                 }
+                
+                Spacer(minLength: 0)
             }
             
             errorOverlay
@@ -92,7 +94,7 @@ struct FileTranscriptionView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 24)
         .padding(.bottom, 8)
     }
 
