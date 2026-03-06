@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import CoreMedia
 
 // MARK: - Queue Item Model
 
@@ -60,9 +61,17 @@ final class QueueItem: ObservableObject, Identifiable {
     @Published var progress: Float = 0
     @Published var result: String?
     @Published var estimatedCost: Double?
+    @Published var rangeStart: Double = 0
+    @Published var rangeEnd: Double = 0
     @Published var durationSeconds: TimeInterval?
     @Published var transcriptionSpeed: Double? // e.g., 12x realtime
     @Published var isExpanded = false
+
+    var selectedDuration: TimeInterval {
+        guard let total = durationSeconds else { return 0 }
+        let end = rangeEnd > 0 ? rangeEnd : total
+        return max(0, end - rangeStart)
+    }
 
     var engine: (any TranscriptionEngine)?
     private var transcriptionTask: Task<Void, Never>?
@@ -76,8 +85,13 @@ final class QueueItem: ObservableObject, Identifiable {
     func loadDuration() async {
         if let dur = await CloudWhisper.fileDuration(url: url) {
             self.durationSeconds = dur
+            self.rangeEnd = dur
             self.estimatedCost = UsageLog.estimateAudioCost(durationSeconds: dur)
         }
+    }
+
+    func updateCost() {
+        self.estimatedCost = UsageLog.estimateAudioCost(durationSeconds: selectedDuration)
     }
 
     func cancel() {
@@ -97,9 +111,15 @@ final class QueueItem: ObservableObject, Identifiable {
             do {
                 self.status = .extracting
 
+                let timeRange: CMTimeRange? = (rangeStart > 0 || (rangeEnd > 0 && rangeEnd < (self.durationSeconds ?? 0))) ? CMTimeRange(
+                    start: CMTime(seconds: rangeStart, preferredTimescale: 1000),
+                    end: CMTime(seconds: rangeEnd, preferredTimescale: 1000)
+                ) : nil
+
                 let text = try await engine.transcribe(
                     audioURL: self.url,
-                    language: settings.language == "auto" ? nil : settings.language
+                    language: settings.language == "auto" ? nil : settings.language,
+                    timeRange: timeRange
                 ) { p, _ in
                     Task { @MainActor in
                         self.progress = p
@@ -422,9 +442,9 @@ struct FileTranscriptionView: View {
                 if appState.settings.engineType == .cloud {
                     let totalCost = queueItems.compactMap(\.estimatedCost).reduce(0, +)
                     if totalCost > 0 {
-                        Text("Total: ~$\(String(format: "%.2f", totalCost))")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
+                        Text("Total Estimated Cost: ~$\(String(format: "%.2f", totalCost))")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.orange)
                     }
                 }
 
@@ -634,6 +654,71 @@ struct FileTranscriptionView: View {
     }
 }
 
+// MARK: - Range Slider Component
+
+struct RangeSlider: View {
+    @Binding var start: Double
+    @Binding var end: Double
+    let range: ClosedRange<Double>
+    let onEditingChanged: () -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                // Background Track
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.primary.opacity(0.1))
+                    .frame(height: 4)
+
+                // Active Track
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.accentColor)
+                    .frame(width: CGFloat((end - start) / (range.upperBound - range.lowerBound)) * geometry.size.width, height: 4)
+                    .offset(x: CGFloat((start - range.lowerBound) / (range.upperBound - range.lowerBound)) * geometry.size.width)
+
+                // Start Thumb
+                ThumbView()
+                    .offset(x: CGFloat((start - range.lowerBound) / (range.upperBound - range.lowerBound)) * geometry.size.width - 10)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let newValue = min(max(range.lowerBound, range.lowerBound + Double(value.location.x / geometry.size.width) * (range.upperBound - range.lowerBound)), end - 1)
+                                start = newValue
+                                onEditingChanged()
+                            }
+                    )
+
+                // End Thumb
+                ThumbView()
+                    .offset(x: CGFloat((end - range.lowerBound) / (range.upperBound - range.lowerBound)) * geometry.size.width - 10)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let newValue = max(min(range.upperBound, range.lowerBound + Double(value.location.x / geometry.size.width) * (range.upperBound - range.lowerBound)), start + 1)
+                                end = newValue
+                                onEditingChanged()
+                            }
+                    )
+            }
+            .frame(height: 20)
+        }
+        .frame(height: 20)
+    }
+
+    struct ThumbView: View {
+        var body: some View {
+            ZStack {
+                Circle()
+                    .fill(Color.white)
+                    .shadow(radius: 1)
+                Circle()
+                    .stroke(Color.accentColor.opacity(0.5), lineWidth: 1)
+            }
+            .frame(width: 18, height: 18)
+        }
+    }
+}
+
 // MARK: - Queue Card View
 
 struct QueueCardView: View {
@@ -669,6 +754,11 @@ struct QueueCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             headerRow
+            
+            if item.status == .queued, let duration = item.durationSeconds, duration > 1 {
+                trimSection(totalDuration: duration)
+            }
+            
             progressRow
             metricsRow
             resultRow
@@ -677,9 +767,10 @@ struct QueueCardView: View {
         .background(Color.primary.opacity(0.03))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(item.status == .done ? Color.green.opacity(0.2) : Color.primary.opacity(0.06), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(item.status == .done ? Color.green.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 1)
         )
+        .padding(.vertical, 2)
     }
 
     // MARK: - Row 1: Header
@@ -737,7 +828,7 @@ struct QueueCardView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(Color.green)
+                    .background(Color.accentColor)
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
@@ -844,6 +935,37 @@ struct QueueCardView: View {
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.secondary)
         }
+    }
+    @ViewBuilder
+    private func trimSection(totalDuration: Double) -> some View {
+        VStack(spacing: 8) {
+            HStack {
+                Label("Trim Segment", systemImage: "scissors")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(formatDuration(item.rangeStart)) — \(formatDuration(item.rangeEnd))")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.accentColor)
+                Text("(\(formatDuration(item.selectedDuration)))")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+            
+            RangeSlider(
+                start: $item.rangeStart,
+                end: $item.rangeEnd,
+                range: 0...totalDuration,
+                onEditingChanged: {
+                    item.updateCost()
+                }
+            )
+            .padding(.horizontal, 4)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
+        .background(Color.primary.opacity(0.02))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     // MARK: - Row 4: Result

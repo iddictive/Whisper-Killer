@@ -367,7 +367,7 @@ final class AppState: ObservableObject {
                 // 1. Transcribe
                 let engine = TranscriptionEngineFactory.create(for: settings.engineType, settings: settings)
                 let lang = settings.language == "auto" ? nil : settings.language
-                let rawText = try await engine.transcribe(audioURL: audioURL, language: lang, onProgress: nil)
+                let rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil, onProgress: nil)
                 
                 print("whisper_debug: 📝 Raw transcription result: '\(rawText)' (length: \(rawText.count))")
 

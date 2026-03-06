@@ -1,5 +1,6 @@
 import Foundation
-@preconcurrency import AVFoundation
+import AVFoundation
+import CoreMedia
 
 /// Local transcription using whisper.cpp CLI binary.
 /// Install via: `brew install whisper-cpp`
@@ -28,7 +29,7 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         currentProcess?.terminate()
     }
 
-    func transcribe(audioURL: URL, language: String?, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> String {
+    func transcribe(audioURL: URL, language: String?, timeRange: CMTimeRange?, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> String {
         let startTime = Date()
         
         // Stage 1: Convert/Extract audio (0-10% of total progress)

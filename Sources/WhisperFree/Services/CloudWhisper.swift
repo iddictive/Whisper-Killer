@@ -16,7 +16,7 @@ final class CloudWhisper: TranscriptionEngine {
 
     // MARK: - Public API
 
-    func transcribe(audioURL: URL, language: String?, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> String {
+    func transcribe(audioURL: URL, language: String?, timeRange: CMTimeRange? = nil, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> String {
         guard !apiKey.isEmpty else {
             throw TranscriptionError.noAPIKey
         }
@@ -25,8 +25,8 @@ final class CloudWhisper: TranscriptionEngine {
 
         // Stage 1: Prepare the file (0–10%)
         onProgress?(0.02, nil)
-
-        let (uploadURL, shouldCleanup) = try await prepareAudioFile(audioURL, onProgress: onProgress)
+        
+        let (uploadURL, shouldCleanup) = try await prepareAudioFile(audioURL, timeRange: timeRange, onProgress: onProgress)
         defer { if shouldCleanup { try? FileManager.default.removeItem(at: uploadURL) } }
 
         // Check if we need to chunk (file too large or too long)
@@ -186,22 +186,22 @@ final class CloudWhisper: TranscriptionEngine {
 
     /// Prepares the audio file for upload, extracting audio from video or compressing if too large.
     /// Returns (URL to upload, shouldCleanup).
-    private func prepareAudioFile(_ inputURL: URL, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> (URL, Bool) {
+    private func prepareAudioFile(_ inputURL: URL, timeRange: CMTimeRange?, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> (URL, Bool) {
         let ext = inputURL.pathExtension.lowercased()
         let videoExtensions = Set(["mp4", "mov", "m4v", "avi", "mkv", "webm"])
         let isVideo = videoExtensions.contains(ext)
 
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: inputURL.path)[.size] as? Int) ?? 0
 
-        if !isVideo && fileSize < maxUploadBytes {
-            // Small audio file — upload directly
+        if !isVideo && fileSize < maxUploadBytes && timeRange == nil {
+            // Small audio file and no trimming — upload directly
             print("whisper_debug: ☁️ File is small audio (\(fileSize) bytes), uploading directly")
             return (inputURL, false)
         }
 
         // Extract audio track using AVAssetExportSession (reliable for all codecs)
         print("whisper_debug: ☁️ Extracting/compressing audio from \(ext) file (\(fileSize) bytes)...")
-        let outputURL = try await extractAudioAsM4A(inputURL, onProgress: onProgress)
+        let outputURL = try await extractAudioAsM4A(inputURL, timeRange: timeRange, onProgress: onProgress)
         let outputSize = (try? FileManager.default.attributesOfItem(atPath: outputURL.path)[.size] as? Int) ?? 0
         print("whisper_debug: ☁️ Extracted audio: \(outputSize) bytes")
 
@@ -209,7 +209,7 @@ final class CloudWhisper: TranscriptionEngine {
     }
 
     /// Extracts audio from any media file using AVAssetExportSession (reliable, handles all codecs).
-    private func extractAudioAsM4A(_ inputURL: URL, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> URL {
+    private func extractAudioAsM4A(_ inputURL: URL, timeRange: CMTimeRange?, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> URL {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("cloud_audio_\(UUID().uuidString).m4a")
 
@@ -227,6 +227,10 @@ final class CloudWhisper: TranscriptionEngine {
 
         session.outputURL = outputURL
         session.outputFileType = .m4a
+        
+        if let range = timeRange {
+            session.timeRange = range
+        }
 
         // Report progress during extraction
         let progressTask = Task {
