@@ -263,16 +263,35 @@ struct SettingsView: View {
             
             VStack(spacing: 0) {
                 Toggle("Auto-type into active app", isOn: $appState.settings.autoTypeResult)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                 
                 Divider().padding(.horizontal)
                 
                 Toggle("Auto-Enter automatically", isOn: $appState.settings.experimentalAutoEnter)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                 
                 Divider().padding(.horizontal)
                 
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Instant Typing (skip AI)", isOn: $appState.settings.instantTyping)
+                        .disabled(!appState.settings.autoTypeResult)
+                        .onChange(of: appState.settings.instantTyping) { _, _ in
+                            appState.saveSettings()
+                        }
+                    Text("Type raw transcription directly — no AI cleanup or formatting")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 22)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                Divider().padding(.horizontal)
+                
                 Toggle("Show floating recording pill", isOn: $appState.settings.showOverlay)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
             }
             .background(Color.primary.opacity(0.03))
@@ -283,84 +302,107 @@ struct SettingsView: View {
     @ViewBuilder
     private var engineSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Transcription Engine")
+            Text("1. Transcription Engine")
                 .font(.headline)
                 .foregroundStyle(.secondary)
             
-            Picker("Model Source", selection: $appState.settings.engineType) {
-                ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
-                    Label(type.rawValue, systemImage: type.icon).tag(type)
+            VStack(alignment: .leading, spacing: 16) {
+                Picker("Model Source", selection: $appState.settings.engineType) {
+                    ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
+                        Label(type.rawValue, systemImage: type.icon).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                
+                Divider().padding(.horizontal)
+                
+                if appState.settings.engineType == .cloud {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Cloud transcription uses OpenAI's Whisper API. It is fast and highly accurate, but requires an internet connection.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("OpenAI API Key").font(.caption).foregroundStyle(.secondary)
+                            SecureField("sk-...", text: $appState.settings.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .onChange(of: appState.settings.apiKey) { _, _ in
+                                    appState.settings.selectedModeName = appState.settings.validatedModeName(currentName: appState.settings.selectedModeName)
+                                    appState.saveSettings()
+                                }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom)
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Local models run entirely on your Mac. They are private and work offline. Larger models are more accurate but use more memory.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                        
+                        VStack(spacing: 0) {
+                            ForEach(LocalModelSize.allCases, id: \.self) { size in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(size.rawValue)
+                                            .font(.system(size: 14, weight: .semibold))
+                                        Text(size.sizeDescription)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    if modelManager.isModelDownloaded(size) {
+                                        if appState.settings.localModelSize == size {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(.green)
+                                                .font(.title3)
+                                        } else {
+                                            Button("Use") {
+                                                appState.settings.localModelSize = size
+                                                appState.saveSettings()
+                                            }
+                                            .buttonStyle(.bordered)
+                                        }
+                                        
+                                        Button(role: .destructive) {
+                                            modelManager.deleteModel(size)
+                                        } label: {
+                                            Image(systemName: "trash")
+                                                .foregroundStyle(.red.opacity(0.7))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(.leading, 8)
+                                    } else if let state = modelManager.activeDownloads[size.rawValue] {
+                                        if state.error != nil {
+                                            Button("Retry") { modelManager.downloadModel(size) }
+                                                .buttonStyle(.plain).font(.caption2).foregroundStyle(SW.accent)
+                                        } else {
+                                            ProgressView(value: state.progress).frame(width: 80)
+                                        }
+                                    } else {
+                                        Button("Download") { modelManager.downloadModel(size) }
+                                            .buttonStyle(.borderedProminent)
+                                    }
+                                }
+                                .padding(.horizontal)
+                                .padding(.vertical, 12)
+                                if size != LocalModelSize.allCases.last { Divider().padding(.horizontal) }
+                            }
+                        }
+                    }
                 }
             }
-            .pickerStyle(.radioGroup)
-            .padding()
+            .padding(.vertical)
             .background(Color.primary.opacity(0.03))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
 
-        if appState.settings.engineType == .local {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Local Models (whisper.cpp)")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                
-                VStack(spacing: 0) {
-                    ForEach(LocalModelSize.allCases, id: \.self) { size in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(size.rawValue)
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text(size.sizeDescription)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            if modelManager.isModelDownloaded(size) {
-                                if appState.settings.localModelSize == size {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(.green)
-                                        .font(.title3)
-                                } else {
-                                    Button("Use") {
-                                        appState.settings.localModelSize = size
-                                        appState.saveSettings()
-                                    }
-                                    .buttonStyle(.bordered)
-                                }
-                                
-                                Button(role: .destructive) {
-                                    modelManager.deleteModel(size)
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .foregroundStyle(.red.opacity(0.7))
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.leading, 8)
-                            } else if let state = modelManager.activeDownloads[size.rawValue] {
-                                if state.error != nil {
-                                    Button("Retry") { modelManager.downloadModel(size) }
-                                        .buttonStyle(.plain).font(.caption2).foregroundStyle(SW.accent)
-                                } else {
-                                    ProgressView(value: state.progress).frame(width: 80)
-                                }
-                            } else {
-                                Button("Download") { modelManager.downloadModel(size) }
-                                    .buttonStyle(.borderedProminent)
-                            }
-                        }
-                        .padding()
-                        if size != LocalModelSize.allCases.last { Divider().padding(.horizontal) }
-                    }
-                }
-                .background(Color.primary.opacity(0.03))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-        }
-
         VStack(alignment: .leading, spacing: 16) {
-            Text("AI Refinement & API Keys")
+            Text("2. AI Refinement (Post-Processing)")
                 .font(.headline)
                 .foregroundStyle(.secondary)
             
@@ -610,36 +652,40 @@ struct AIConfigView: View {
     var onSave: () -> Void
     
     var body: some View {
-        VStack(spacing: 12) {
-            Toggle("Enable AI Refinement Globally", isOn: $settings.enablePostProcessing)
-                .onChange(of: settings.enablePostProcessing) { _, _ in
-                    settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
-                    onSave()
-                }
-            
-            Picker("AI Engine", selection: $settings.postProcessingEngine) {
-                ForEach(PostProcessingEngine.allCases, id: \.self) { engine in
-                    Text(engine.rawValue).tag(engine)
-                }
-            }
-            .pickerStyle(.segmented)
-            .disabled(!settings.enablePostProcessing)
-            .onChange(of: settings.postProcessingEngine) { _, _ in
-                settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
-                onSave()
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Enable AI Refinement", isOn: $settings.enablePostProcessing)
+                    .onChange(of: settings.enablePostProcessing) { _, _ in
+                        settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
+                        onSave()
+                    }
+                Text("Applies formatting, custom prompts, and grammar fixes after transcription is complete.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 22)
             }
             
-            let requiresOpenAI = settings.engineType == .cloud || (settings.enablePostProcessing && settings.postProcessingEngine == .openai)
-            let requiresPerplexity = settings.enablePostProcessing && settings.postProcessingEngine == .perplexity
-            
-            if requiresOpenAI || requiresPerplexity {
+            if settings.enablePostProcessing {
+                Divider()
+                
                 VStack(alignment: .leading, spacing: 12) {
-                    if requiresOpenAI {
+                    Picker("AI Engine", selection: $settings.postProcessingEngine) {
+                        ForEach(PostProcessingEngine.allCases, id: \.self) { engine in
+                            Text(engine.rawValue).tag(engine)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: settings.postProcessingEngine) { _, _ in
+                        settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
+                        onSave()
+                    }
+                    
+                    if settings.postProcessingEngine == .openai {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Text("OpenAI API Key").font(.caption).foregroundStyle(.secondary)
                                 if settings.engineType == .cloud {
-                                    Text("(Required for Transcription)").font(.system(size: 9)).foregroundStyle(.orange)
+                                    Text("(Using key from Transcription Engine)").font(.system(size: 9)).foregroundStyle(.green)
                                 }
                             }
                             SecureField("sk-...", text: $settings.apiKey)
@@ -648,10 +694,11 @@ struct AIConfigView: View {
                                     settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
                                     onSave()
                                 }
+                            Text("OpenAI GPT: Reliable formatting and structuring.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                    }
-                    
-                    if requiresPerplexity {
+                    } else if settings.postProcessingEngine == .perplexity {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Perplexity API Key").font(.caption).foregroundStyle(.secondary)
                             SecureField("pplx-...", text: $settings.perplexityApiKey)
@@ -660,31 +707,29 @@ struct AIConfigView: View {
                                     settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
                                     onSave()
                                 }
+                            Text("Perplexity Sonar: Best for intelligent grammar/flow.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    
-                    if settings.enablePostProcessing {
-                        Text(settings.postProcessingEngine == .perplexity 
-                             ? "Perplexity Sonar: Best for intelligent grammar/flow." 
-                             : "OpenAI GPT: Reliable formatting and structuring.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if requiresOpenAI {
-                        Divider()
-                        
-                        Toggle("Speaker Diarization (AI-powered)", isOn: $settings.enableSpeakerDiarization)
-                            .onChange(of: settings.enableSpeakerDiarization) { _, _ in 
-                                onSave() 
-                            }
-                        
-                        Text("Uses AI to identify and split different speakers in the transcription. Best for interviews and meetings.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
                 }
-                .padding(.top, 4)
+            }
+            
+            let requiresOpenAI = settings.engineType == .cloud || (settings.enablePostProcessing && settings.postProcessingEngine == .openai)
+            
+            if requiresOpenAI {
+                Divider()
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Speaker Diarization (AI-powered)", isOn: $settings.enableSpeakerDiarization)
+                        .onChange(of: settings.enableSpeakerDiarization) { _, _ in 
+                            onSave() 
+                        }
+                    
+                    Text("Uses AI to identify and split different speakers in the transcription. Best for interviews and meetings.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }

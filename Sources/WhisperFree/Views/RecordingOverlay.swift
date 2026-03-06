@@ -72,6 +72,8 @@ struct RecordingOverlayContent: View {
                 Text(formatDuration(recorder.recordingDuration))
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundStyle(.white)
+                
+                cancelButton
             } else if appState.state == .processing || appState.state == .typing {
                 Text(appState.state == .processing ? appState.processingStage.rawValue : "Typing...")
                     .font(.system(size: 13, weight: .bold))
@@ -144,6 +146,27 @@ struct RecordingOverlayContent: View {
         }
     }
 
+    private var cancelButton: some View {
+        Button {
+            appState.cancelRecording()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(.white.opacity(0.1)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+    }
+
     private func formatDuration(_ duration: TimeInterval) -> String {
         let totalSeconds = Int(duration)
         let hours = totalSeconds / 3600
@@ -203,7 +226,7 @@ final class OverlayWindowController: NSObject, ObservableObject {
             newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
             newPanel.isMovableByWindowBackground = false
             newPanel.hidesOnDeactivate = false
-            newPanel.ignoresMouseEvents = true
+            newPanel.ignoresMouseEvents = false
 
             newPanel.contentView = hostingView
             self.panel = newPanel

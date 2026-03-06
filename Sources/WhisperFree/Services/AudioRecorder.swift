@@ -180,7 +180,7 @@ final class AudioRecorder: ObservableObject {
                 if self.recentLevels.count >= 10 {
                     let avg = self.recentLevels.reduce(0, +) / Float(self.recentLevels.count)
                     self.isTooQuiet = avg < 0.02
-                    self.isTooNoisy = avg > 0.95
+                    self.isTooNoisy = avg > 0.99
                 }
             }
 

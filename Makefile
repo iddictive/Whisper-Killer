@@ -14,7 +14,7 @@ help:
 
 # One-click install (verify + build + sign + move to /Applications + launch)
 install: verify
-	@bash scripts/deploy.sh
+	@bash scripts/deploy.command
 
 # Verify the whole project compiles without errors
 verify:

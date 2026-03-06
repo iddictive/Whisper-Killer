@@ -94,12 +94,18 @@ struct UsageLog: Codable, Identifiable {
     let completionTokens: Int
     let totalTokens: Int
     let estimatedCost: Double
+    var audioDurationSeconds: TimeInterval? = nil
     
     // Estimates based on gpt-4o-mini ($0.15 / 1M input, $0.60 / 1M output)
     static func estimateCost(prompt: Int, completion: Int, engine: PostProcessingEngine) -> Double {
         let pRate = 0.15 / 1_000_000.0
         let cRate = 0.60 / 1_000_000.0
-        return (Double(prompt) * pRate) + (Double(completion) * cRate)
+        return Double(prompt) * pRate + Double(completion) * cRate
+    }
+    
+    // Estimates based on Whisper API ($0.006 / minute = $0.0001 / second)
+    static func estimateAudioCost(durationSeconds: TimeInterval) -> Double {
+        return durationSeconds * 0.0001
     }
 }
 
@@ -399,6 +405,7 @@ struct AppSettings: Codable {
     var useMonochromeMenuIcon: Bool = false
     var usageLogs: [UsageLog] = []
     var experimentalAutoEnter: Bool = false
+    var instantTyping: Bool = false
     var enableSpeakerDiarization: Bool = false
     var selectedInputDeviceID: String? = nil
     var lifetimeWords: Int = 0
@@ -410,7 +417,7 @@ struct AppSettings: Codable {
              showOverlay, setupCompleted, hotkeyConfig, insertionMethod,
              automaticallyChecksForUpdates, automaticallyDownloadsUpdates,
              enablePostProcessing, useMonochromeMenuIcon, usageLogs, experimentalAutoEnter,
-             enableSpeakerDiarization, selectedInputDeviceID, lifetimeWords, lifetimeDuration
+             instantTyping, enableSpeakerDiarization, selectedInputDeviceID, lifetimeWords, lifetimeDuration
     }
 
     init() {}
@@ -437,6 +444,7 @@ struct AppSettings: Codable {
         useMonochromeMenuIcon = try container.decodeIfPresent(Bool.self, forKey: .useMonochromeMenuIcon) ?? false
         usageLogs = try container.decodeIfPresent([UsageLog].self, forKey: .usageLogs) ?? []
         experimentalAutoEnter = try container.decodeIfPresent(Bool.self, forKey: .experimentalAutoEnter) ?? false
+        instantTyping = try container.decodeIfPresent(Bool.self, forKey: .instantTyping) ?? false
         enableSpeakerDiarization = try container.decodeIfPresent(Bool.self, forKey: .enableSpeakerDiarization) ?? false
         selectedInputDeviceID = try container.decodeIfPresent(String.self, forKey: .selectedInputDeviceID)
         lifetimeWords = try container.decodeIfPresent(Int.self, forKey: .lifetimeWords) ?? 0
