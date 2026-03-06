@@ -718,43 +718,53 @@ struct QueueCardView: View {
         if isFinished {
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary.opacity(0.5))
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary.opacity(0.6))
+                    .padding(4)
             }
             .buttonStyle(.plain)
+            .help("Remove from queue")
         } else if item.status == .queued {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Button {
                     item.startTranscription(settings: AppState.shared.settings, appState: AppState.shared)
                 } label: {
-                    HStack(spacing: 3) {
+                    HStack(spacing: 4) {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 8))
+                            .font(.system(size: 10))
                         Text("Start")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.green.opacity(0.1))
-                    .foregroundStyle(.green)
-                    .clipShape(Capsule())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.green)
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
                 .buttonStyle(.plain)
 
                 Button(action: onCancel) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary.opacity(0.5))
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary.opacity(0.6))
+                        .padding(4)
                 }
                 .buttonStyle(.plain)
+                .help("Cancel")
             }
         } else {
             Button(action: onCancel) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary.opacity(0.5))
+                ZStack {
+                    Circle()
+                        .fill(Color.red.opacity(0.1))
+                        .frame(width: 22, height: 22)
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.red)
+                }
             }
             .buttonStyle(.plain)
+            .help("Stop Processing")
         }
     }
 
