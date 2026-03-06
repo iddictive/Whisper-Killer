@@ -33,17 +33,19 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         let startTime = Date()
         
         // Stage 1: Convert/Extract audio (0-10% of total progress)
-        // Skip conversion if file is already 16kHz WAV (recorded by AudioRecorder)
+        // Skip conversion if file is already 16kHz WAV AND no trimming is needed
         let wavURL: URL
         let shouldCleanupWav: Bool
         
-        if isAlready16kHzWav(audioURL) {
-            print("whisper_debug: ✅ Audio is already 16kHz WAV, skipping conversion")
+        let needsTrimming = timeRange != nil
+        
+        if isAlready16kHzWav(audioURL) && !needsTrimming {
+            print("whisper_debug: ✅ Audio is already 16kHz WAV and no trimming required, skipping conversion")
             wavURL = audioURL
             shouldCleanupWav = false
         } else {
-            print("whisper_debug: 🔄 Converting audio to 16kHz WAV...")
-            wavURL = try await convertTo16kHzWav(audioURL) { conversionProgress in
+            print("whisper_debug: 🔄 Converting/Trimming audio to 16kHz WAV (Trimming: \(needsTrimming))...")
+            wavURL = try await convertTo16kHzWav(audioURL, timeRange: timeRange) { conversionProgress in
                 let totalProgress = conversionProgress * 0.1
                 onProgress?(totalProgress, nil)
             }
@@ -226,18 +228,28 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         return nil
     }
 
-    private func convertTo16kHzWav(_ inputURL: URL, onProgress: @escaping (Float) -> Void) async throws -> URL {
+    private func convertTo16kHzWav(_ inputURL: URL, timeRange: CMTimeRange?, onProgress: @escaping (Float) -> Void) async throws -> URL {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("whisper_input_\(UUID().uuidString).wav")
 
         let asset = AVURLAsset(url: inputURL)
-        let duration = try await asset.load(.duration).seconds
+        
+        // Use provided timeRange or full duration
+        let actualDuration: Double
+        if let range = timeRange {
+            actualDuration = range.duration.seconds
+        } else {
+            actualDuration = try await asset.load(.duration).seconds
+        }
         
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
             throw TranscriptionError.transcriptionFailed("Could not load audio track")
         }
 
         let reader = try AVAssetReader(asset: asset)
+        if let range = timeRange {
+            reader.timeRange = range
+        }
         let outputSettings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVSampleRateKey: 16000,
@@ -277,7 +289,7 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             }
         }
         
-        let context = ConversionContext(reader: reader, writer: writer, writerInput: writerInput, trackOutput: trackOutput, duration: duration)
+        let context = ConversionContext(reader: reader, writer: writer, writerInput: writerInput, trackOutput: trackOutput, duration: actualDuration)
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let queue = DispatchQueue(label: "audioConvertQueue")
@@ -286,8 +298,12 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
                 while context.writerInput.isReadyForMoreMediaData {
                     if let buffer = context.trackOutput.copyNextSampleBuffer() {
                         let time = CMSampleBufferGetPresentationTimeStamp(buffer).seconds
-                        let progress = Float(time / context.duration)
-                        onProgress(progress)
+                        
+                        // Calculate relative progress within the segment
+                        let startTime = context.reader.timeRange.start.seconds
+                        let relativeTime = time - (startTime > 0 ? startTime : 0)
+                        let progress = Float(max(0, relativeTime) / context.duration)
+                        onProgress(min(1.0, progress))
                         
                         context.writerInput.append(buffer)
                     } else {
@@ -340,10 +356,44 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         let lines = raw.components(separatedBy: .newlines)
         let textLines = lines
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && !$0.hasPrefix("[") && !$0.hasPrefix("whisper_") && !$0.hasPrefix("main:") && !$0.contains("progress =") }
+            .filter { line in
+                // Filter out obvious whisper-cpp status/metadata lines
+                let isMetadata = line.hasPrefix("whisper_") || line.hasPrefix("main:") || line.contains("progress =")
+                guard !line.isEmpty && !isMetadata else {
+                    return false
+                }
+                
+                // Hallucination/Credits Blacklist
+                let blacklist = [
+                    "DimaTorzok",
+                    "субтитры сделал",
+                    "Добавил субтитры",
+                    "Субтитры подготовил",
+                    "Отредактировал",
+                    "Продолжение следует",
+                    "To be continued",
+                    "Subtitles by",
+                    "Translated by",
+                    "Edited by"
+                ]
+                
+                let isBlacklisted = blacklist.contains { phrase in
+                    line.localizedCaseInsensitiveContains(phrase)
+                }
+                
+                return !isBlacklisted
+            }
 
-        let result = textLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        print("whisper_debug: 📝 Parsed result: '\(result)' (kept \(textLines.count)/\(lines.count) lines)")
+        // Repetition Filter: Remove exact duplicate lines that often appear at the end
+        var uniqueLines: [String] = []
+        for line in textLines {
+            if uniqueLines.last != line {
+                uniqueLines.append(line)
+            }
+        }
+
+        let result = uniqueLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        print("whisper_debug: 📝 Parsed result: '\(result)' (kept \(uniqueLines.count)/\(lines.count) lines)")
         return result
     }
 

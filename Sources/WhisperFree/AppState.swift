@@ -390,7 +390,7 @@ final class AppState: ObservableObject {
                 var processedText = rawText
                 var usage: UsageLog? = nil
                 
-                if settings.enablePostProcessing && !settings.instantTyping && !settings.selectedMode.systemPrompt.isEmpty {
+                if settings.enablePostProcessing && settings.selectedMode.name != "Raw" && !settings.selectedMode.systemPrompt.isEmpty {
                     processingStage = .postProcessing
                     do {
                         let processor = PostProcessor(settings: settings)
@@ -417,8 +417,8 @@ final class AppState: ObservableObject {
                     }
                 }
 
-                // 3. Diarization (if enabled and instant typing is OFF)
-                if settings.enableSpeakerDiarization && !settings.instantTyping && settings.postProcessingEngine == .openai {
+                // 3. Diarization (if enabled and NOT in Raw mode)
+                if settings.enableSpeakerDiarization && settings.selectedMode.name != "Raw" && settings.postProcessingEngine == .openai {
                     processingStage = .postProcessing // reuse stage
                     do {
                         let processor = PostProcessor(settings: settings)

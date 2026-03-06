@@ -347,11 +347,11 @@ struct SetupWizardView: View {
         HStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(granted ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
+                    .fill(granted ? Color.accentColor.opacity(0.15) : Color.orange.opacity(0.15))
                     .frame(width: 40, height: 40)
                 Image(systemName: icon)
                     .font(.system(size: 16))
-                    .foregroundStyle(granted ? .green : .orange)
+                    .foregroundStyle(granted ? Color.accentColor : .orange)
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -368,10 +368,10 @@ struct SetupWizardView: View {
                     Text("Granted")
                         .font(.system(size: 11, weight: .medium))
                 }
-                .foregroundStyle(.green)
+                .foregroundStyle(Color.accentColor)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(Color.green.opacity(0.12))
+                .background(Color.accentColor.opacity(0.12))
                 .clipShape(Capsule())
             } else {
                 Button(action: action) {
@@ -391,7 +391,7 @@ struct SetupWizardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(granted ? Color.green.opacity(0.15) : borderSubtle, lineWidth: 1)
+                .strokeBorder(granted ? Color.accentColor.opacity(0.15) : borderSubtle, lineWidth: 1)
         )
     }
 
@@ -447,7 +447,7 @@ struct SetupWizardView: View {
             }
 
             tagRow(items: [
-                ("checkmark", "OpenAI Whisper API", .green),
+                ("checkmark", "OpenAI Whisper API", Color.accentColor),
                 ("wifi", "Requires internet", .orange),
                 ("key", "Requires API key", .orange),
             ])
@@ -483,17 +483,17 @@ struct SetupWizardView: View {
     private var localEngineStatusRow: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) {
-                Image(systemName: "lock.shield.fill").foregroundStyle(.green).font(.system(size: 11))
+                Image(systemName: "lock.shield.fill").foregroundStyle(Color.accentColor).font(.system(size: 11))
                 Text("Private · Offline · Free")
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(textSecondary)
             }
 
             HStack(spacing: 10) {
                 Image(systemName: whisperInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(whisperInstalled ? .green : .red)
+                    .foregroundStyle(whisperInstalled ? Color.accentColor : .red)
                 Text(whisperInstalled ? "whisper-cpp detected" : "whisper-cpp not found")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(whisperInstalled ? .green : .red)
+                    .foregroundStyle(whisperInstalled ? Color.accentColor : .red)
                 Spacer()
                 if !whisperInstalled {
                     Button {
@@ -511,7 +511,7 @@ struct SetupWizardView: View {
                 }
             }
             .padding(10)
-            .background(whisperInstalled ? Color.green.opacity(0.06) : Color.red.opacity(0.06))
+            .background(whisperInstalled ? Color.accentColor.opacity(0.06) : Color.red.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }
@@ -557,7 +557,7 @@ struct SetupWizardView: View {
 
             if downloaded {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Color.accentColor)
                     .font(.system(size: 14))
             } else if let state = modelManager.activeDownloads[size.rawValue] {
                 if state.error != nil {
@@ -685,7 +685,7 @@ struct SetupWizardView: View {
                         Text(result)
                     }
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(result.contains("✓") ? .green : .red)
+                    .foregroundStyle(result.contains("✓") ? Color.accentColor : .red)
                 }
 
                 Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
@@ -763,12 +763,12 @@ struct SetupWizardView: View {
         HStack(spacing: 10) {
             Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.circle")
                 .font(.system(size: 14))
-                .foregroundStyle(ok ? .green : .orange)
+                .foregroundStyle(ok ? Color.accentColor : .orange)
             Text(label).font(.system(size: 13)).foregroundStyle(textPrimary)
             Spacer()
             Text(ok ? "Ready" : "Skipped")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(ok ? .green : .orange)
+                .foregroundStyle(ok ? Color.accentColor : .orange)
         }
     }
 

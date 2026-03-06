@@ -274,22 +274,6 @@ struct SettingsView: View {
                 
                 Divider().padding(.horizontal)
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Toggle("Instant Typing (skip AI)", isOn: $appState.settings.instantTyping)
-                        .disabled(!appState.settings.autoTypeResult)
-                        .onChange(of: appState.settings.instantTyping) { _, _ in
-                            appState.saveSettings()
-                        }
-                    Text("Type raw transcription directly — no AI cleanup or formatting")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 22)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                
-                Divider().padding(.horizontal)
-                
                 Toggle("Show floating recording pill", isOn: $appState.settings.showOverlay)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
@@ -358,7 +342,7 @@ struct SettingsView: View {
                                     if modelManager.isModelDownloaded(size) {
                                         if appState.settings.localModelSize == size {
                                             Image(systemName: "checkmark.circle.fill")
-                                                .foregroundStyle(.green)
+                                                .foregroundStyle(Color.accentColor)
                                                 .font(.title3)
                                         } else {
                                             Button("Use") {
@@ -534,7 +518,7 @@ struct SettingsView: View {
                     
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Est. Cost").font(.caption).foregroundStyle(.secondary)
-                        Text("$\(String(format: "%.4f", totalCost))").font(.title2).bold().foregroundStyle(.green)
+                        Text("$\(String(format: "%.4f", totalCost))").font(.title2).bold().foregroundStyle(Color.accentColor)
                     }
                     
                     Spacer()
@@ -685,7 +669,7 @@ struct AIConfigView: View {
                             HStack {
                                 Text("OpenAI API Key").font(.caption).foregroundStyle(.secondary)
                                 if settings.engineType == .cloud {
-                                    Text("(Using key from Transcription Engine)").font(.system(size: 9)).foregroundStyle(.green)
+                                    Text("(Using key from Transcription Engine)").font(.system(size: 9)).foregroundStyle(Color.accentColor)
                                 }
                             }
                             SecureField("sk-...", text: $settings.apiKey)

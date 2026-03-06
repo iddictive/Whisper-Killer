@@ -19,7 +19,7 @@ enum SW {
     static let text3       = Color(white: 0.5)                              // Tertiary text
     
     static let danger      = Color(red: 1.0, green: 0.27, blue: 0.27)       // Refined Red
-    static let success     = Color(red: 0.2, green: 0.8, blue: 0.45)        // Refined Green
+    static let success     = Color.accentColor                              // Changed from green to blue
 
     // MARK: Spacing
     static let cornerRadius: CGFloat = 12

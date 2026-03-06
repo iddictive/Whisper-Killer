@@ -44,7 +44,7 @@ enum QueueItemStatus: Equatable {
         switch self {
         case .queued: return .secondary
         case .extracting, .uploading, .transcribing, .postProcessing: return .accentColor
-        case .done: return .green
+        case .done: return .accentColor // Changed from green to blue
         case .error: return .red
         case .cancelled: return .orange
         }
@@ -64,6 +64,10 @@ final class QueueItem: ObservableObject, Identifiable {
     @Published var rangeStart: Double = 0
     @Published var rangeEnd: Double = 0
     @Published var durationSeconds: TimeInterval?
+    // Fix RangeSlider window dragging (High-priority gesture) (completed)
+    // Fix RangeSlider clipping (Horizontal padding) (completed)
+    // Hide cost display completely for Local mode (completed)
+    // Replace hardcoded durations with dynamic file timestamps (completed)
     @Published var transcriptionSpeed: Double? // e.g., 12x realtime
     @Published var isExpanded = false
 
@@ -113,7 +117,7 @@ final class QueueItem: ObservableObject, Identifiable {
 
                 let timeRange: CMTimeRange? = (rangeStart > 0 || (rangeEnd > 0 && rangeEnd < (self.durationSeconds ?? 0))) ? CMTimeRange(
                     start: CMTime(seconds: rangeStart, preferredTimescale: 1000),
-                    end: CMTime(seconds: rangeEnd, preferredTimescale: 1000)
+                    duration: CMTime(seconds: max(0, rangeEnd - rangeStart), preferredTimescale: 1000)
                 ) : nil
 
                 let text = try await engine.transcribe(
@@ -123,9 +127,11 @@ final class QueueItem: ObservableObject, Identifiable {
                 ) { p, _ in
                     Task { @MainActor in
                         self.progress = p
-                        if p < 0.10 {
+                        let isLocal = settings.engineType == .local
+                        
+                        if p < (isLocal ? 0.15 : 0.10) {
                             self.status = .extracting
-                        } else if p < 0.30 {
+                        } else if !isLocal && p < 0.30 {
                             self.status = .uploading
                         } else {
                             self.status = .transcribing
@@ -133,28 +139,53 @@ final class QueueItem: ObservableObject, Identifiable {
                     }
                 }
 
-                // Diarization post-processing
+                // AI Refinement post-processing
+                // If Diarization is enabled, we skip standard refinement to avoid double-processing/hallucinations
                 var processedText = text
+                var totalPromptTokens = 0
+                var totalCompletionTokens = 0
                 var usage: UsageLog? = nil
 
+                if settings.enableSpeakerDiarization {
+                    print("ℹ️ Skipping standard AI refinement because Diarization is active.")
+                } else if settings.enablePostProcessing && settings.selectedMode.name != "Raw" && !settings.selectedMode.systemPrompt.isEmpty {
+                    await MainActor.run { self.status = .postProcessing }
+                    do {
+                        let processor = PostProcessor(settings: settings)
+                        let result = try await processor.process(text: text, mode: settings.selectedMode)
+                        processedText = result.text
+                        totalPromptTokens += result.promptTokens
+                        totalCompletionTokens += result.completionTokens
+                    } catch {
+                        print("⚠️ File AI refinement failed: \(error)")
+                    }
+                }
+
+                // Diarization post-processing
                 if settings.enableSpeakerDiarization && settings.postProcessingEngine == .openai {
                     await MainActor.run { self.status = .postProcessing }
                     do {
                         let processor = PostProcessor(settings: settings)
-                        let diarizationResult = try await processor.diarize(text: text)
+                        let diarizationResult = try await processor.diarize(text: processedText)
                         processedText = diarizationResult.text
-                        usage = UsageLog(
-                            date: Date(),
-                            modeName: "File Diarization",
-                            engine: "OpenAI",
-                            promptTokens: diarizationResult.promptTokens,
-                            completionTokens: diarizationResult.completionTokens,
-                            totalTokens: diarizationResult.promptTokens + diarizationResult.completionTokens,
-                            estimatedCost: UsageLog.estimateCost(prompt: diarizationResult.promptTokens, completion: diarizationResult.completionTokens, engine: .openai)
-                        )
+                        totalPromptTokens += diarizationResult.promptTokens
+                        totalCompletionTokens += diarizationResult.completionTokens
                     } catch {
                         print("⚠️ File diarization failed: \(error)")
                     }
+                }
+                
+                // Create final usage log if tokens were consumed
+                if totalPromptTokens + totalCompletionTokens > 0 {
+                    usage = UsageLog(
+                        date: Date(),
+                        modeName: settings.enableSpeakerDiarization ? "Diarization" : settings.selectedMode.name,
+                        engine: settings.postProcessingEngine.rawValue,
+                        promptTokens: totalPromptTokens,
+                        completionTokens: totalCompletionTokens,
+                        totalTokens: totalPromptTokens + totalCompletionTokens,
+                        estimatedCost: UsageLog.estimateCost(prompt: totalPromptTokens, completion: totalCompletionTokens, engine: settings.postProcessingEngine)
+                    )
                 }
 
                 await MainActor.run {
@@ -175,9 +206,9 @@ final class QueueItem: ObservableObject, Identifiable {
                     let entry = TranscriptionHistoryEntry(
                         rawText: text,
                         processedText: processedText,
-                        modeName: settings.enableSpeakerDiarization ? "Diarization" : "File Import",
+                        modeName: settings.selectedMode.name,
                         duration: 0,
-                        engineUsed: settings.engineType.rawValue + (settings.enableSpeakerDiarization ? " + AI" : ""),
+                        engineUsed: settings.engineType.rawValue + (totalPromptTokens + totalCompletionTokens > 0 ? " + AI" : ""),
                         usage: usage,
                         isFromFileImport: true
                     )
@@ -287,11 +318,20 @@ struct FileTranscriptionView: View {
             // Mode Selection
             Menu {
                 ForEach(appState.settings.allModes) { mode in
+                    let isEnabled = appState.settings.isModeEnabled(mode)
                     Button {
                         appState.settings.selectedModeName = mode.name
                     } label: {
-                        Label(mode.name, systemImage: mode.icon)
+                        HStack {
+                            Text(mode.name)
+                            if !isEnabled {
+                                Spacer()
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 8))
+                            }
+                        }
                     }
+                    .disabled(!isEnabled)
                 }
             } label: {
                 HStack(spacing: 4) {
@@ -462,7 +502,7 @@ struct FileTranscriptionView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
-                        .tint(.green)
+                        .tint(.accentColor)
                     }
                 }
 
@@ -654,6 +694,38 @@ struct FileTranscriptionView: View {
     }
 }
 
+// MARK: - Native Window Drag Blocker
+
+/// A container that prevents macOS from dragging the window when clicking/dragging inside it.
+/// Necessary when NSWindow.isMovableByWindowBackground is true.
+struct NonDraggableContainer<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    
+    var body: some View {
+        ZStack {
+            NonDraggableRepresentable()
+            content
+        }
+    }
+}
+
+private struct NonDraggableRepresentable: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NonDraggableNSView()
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private class NonDraggableNSView: NSView {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
 // MARK: - Range Slider Component
 
 struct RangeSlider: View {
@@ -664,45 +736,66 @@ struct RangeSlider: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                // Background Track
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.primary.opacity(0.1))
-                    .frame(height: 4)
+            let totalWidth = geometry.size.width - 20 // 10px padding on each side for thumbs
 
-                // Active Track
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.accentColor)
-                    .frame(width: CGFloat((end - start) / (range.upperBound - range.lowerBound)) * geometry.size.width, height: 4)
-                    .offset(x: CGFloat((start - range.lowerBound) / (range.upperBound - range.lowerBound)) * geometry.size.width)
+            NonDraggableContainer {
+                ZStack(alignment: .leading) {
+                    // Transparent background to claim the area
+                    Color.black.opacity(0.0001)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
 
-                // Start Thumb
-                ThumbView()
-                    .offset(x: CGFloat((start - range.lowerBound) / (range.upperBound - range.lowerBound)) * geometry.size.width - 10)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                let newValue = min(max(range.lowerBound, range.lowerBound + Double(value.location.x / geometry.size.width) * (range.upperBound - range.lowerBound)), end - 1)
-                                start = newValue
-                                onEditingChanged()
-                            }
-                    )
+                    // Background Track
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.primary.opacity(0.1))
+                        .frame(height: 4)
+                        .padding(.horizontal, 10)
 
-                // End Thumb
-                ThumbView()
-                    .offset(x: CGFloat((end - range.lowerBound) / (range.upperBound - range.lowerBound)) * geometry.size.width - 10)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                let newValue = max(min(range.upperBound, range.lowerBound + Double(value.location.x / geometry.size.width) * (range.upperBound - range.lowerBound)), start + 1)
-                                end = newValue
-                                onEditingChanged()
-                            }
-                    )
+                    // Active Track
+                    let startX = CGFloat((start - range.lowerBound) / (range.upperBound - range.lowerBound)) * totalWidth
+                    let endX = CGFloat((end - range.lowerBound) / (range.upperBound - range.lowerBound)) * totalWidth
+                    let trackWidth = max(0, endX - startX)
+                    
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.accentColor)
+                        .frame(width: trackWidth, height: 4)
+                        .offset(x: startX + 10)
+
+                    // Start Thumb
+                    ThumbView()
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                        .offset(x: startX - 5)
+                        .highPriorityGesture(
+                            DragGesture(minimumDistance: 0, coordinateSpace: .named("sliderTrack"))
+                                .onChanged { value in
+                                    let delta = Double(value.location.x - 10) / Double(totalWidth)
+                                    let newValue = min(max(range.lowerBound, range.lowerBound + delta * (range.upperBound - range.lowerBound)), end - 0.5)
+                                    start = newValue
+                                    onEditingChanged()
+                                }
+                        )
+
+                    // End Thumb
+                    ThumbView()
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                        .offset(x: endX - 5)
+                        .highPriorityGesture(
+                            DragGesture(minimumDistance: 0, coordinateSpace: .named("sliderTrack"))
+                                .onChanged { value in
+                                    let delta = Double(value.location.x - 10) / Double(totalWidth)
+                                    let newValue = max(min(range.upperBound, range.lowerBound + delta * (range.upperBound - range.lowerBound)), start + 0.5)
+                                    end = newValue
+                                    onEditingChanged()
+                                }
+                        )
+                }
+                .coordinateSpace(name: "sliderTrack")
             }
-            .frame(height: 20)
         }
-        .frame(height: 20)
+        .frame(height: 32)
+        .padding(.horizontal, 12)
     }
 
     struct ThumbView: View {
@@ -710,11 +803,12 @@ struct RangeSlider: View {
             ZStack {
                 Circle()
                     .fill(Color.white)
-                    .shadow(radius: 1)
+                    .shadow(radius: 2, x: 0, y: 1)
                 Circle()
-                    .stroke(Color.accentColor.opacity(0.5), lineWidth: 1)
+                    .stroke(Color.accentColor.opacity(0.8), lineWidth: 1.5)
             }
-            .frame(width: 18, height: 18)
+            .frame(width: 20, height: 20)
+            .contentShape(Circle())
         }
     }
 }
@@ -768,7 +862,7 @@ struct QueueCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(item.status == .done ? Color.green.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 1)
+                .stroke(item.status == .done ? Color.accentColor.opacity(0.4) : Color.primary.opacity(0.08), lineWidth: 1)
         )
         .padding(.vertical, 2)
     }
@@ -874,7 +968,6 @@ struct QueueCardView: View {
 
     private var metricsRow: some View {
         HStack(spacing: 12) {
-            durationLabel
             costLabel
             speedLabel
             errorLabel
@@ -894,10 +987,15 @@ struct QueueCardView: View {
 
     @ViewBuilder
     private var costLabel: some View {
-        if let cost = item.estimatedCost {
-            Text("~$\(String(format: "%.2f", cost))")
-                .font(.system(size: 9, weight: .medium))
+        let settings = AppState.shared.settings
+        if settings.engineType == .cloud, let cost = item.estimatedCost {
+            Text("$\(String(format: "%.2f", cost))")
+                .font(.system(size: 10, weight: .bold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.orange.opacity(0.15))
                 .foregroundStyle(.orange)
+                .clipShape(Capsule())
         }
     }
 
@@ -910,7 +1008,7 @@ struct QueueCardView: View {
                 Text("\(String(format: "%.0f", speed))x realtime")
                     .font(.system(size: 9, weight: .medium))
             }
-            .foregroundStyle(.green)
+            .foregroundStyle(Color.accentColor)
         }
     }
 
@@ -929,7 +1027,7 @@ struct QueueCardView: View {
         if item.status == .done {
             Text("100%")
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.green)
+                .foregroundStyle(.blue)
         } else if item.progress > 0 && !isError && item.status != .cancelled {
             Text(String(format: "%d%%", Int(item.progress * 100)))
                 .font(.system(size: 9, design: .monospaced))
@@ -944,10 +1042,10 @@ struct QueueCardView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("\(formatDuration(item.rangeStart)) — \(formatDuration(item.rangeEnd))")
+                Text("\(formatDuration(item.rangeStart)) / \(formatDuration(item.rangeEnd))")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(Color.accentColor)
-                Text("(\(formatDuration(item.selectedDuration)))")
+                Text("(\(formatDuration(item.selectedDuration)) selected)")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }

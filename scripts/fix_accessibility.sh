@@ -28,9 +28,10 @@ safe_xattr() {
     find "$1" -exec xattr -c {} + 2>/dev/null || sudo find "$1" -exec xattr -c {} + 2>/dev/null
 }
 
-# 1. Reset Accessibility & Microphone permissions (DISABLED for active ID to avoid annoyance)
-echo "🛡️ Cleaning up old TCC permissions (skipping active ID)..."
-for id in "com.whisperfree.app" "com.whisperflow.app" "WhisperFree" "WhisperFlow"; do
+# 1. Reset Accessibility & Microphone permissions
+echo "🛡️ Resetting TCC permissions for all IDs (including active)..."
+IDS=("com.whisperkiller.app" "com.whisperfree.app" "com.whisperflow.app" "WhisperFree" "WhisperFlow")
+for id in "${IDS[@]}"; do
     echo "  - Resetting $id..."
     tccutil reset Accessibility "$id" 2>/dev/null
     tccutil reset Microphone "$id" 2>/dev/null

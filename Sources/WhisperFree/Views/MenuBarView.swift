@@ -297,7 +297,7 @@ struct MenuBarView: View {
                         .foregroundStyle(.white)
                         .background(
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(appState.copiedFeedback ? Color.green : Color.accentColor)
+                                .fill(appState.copiedFeedback ? Color.accentColor.opacity(0.3) : Color.accentColor)
                         )
                     }
                     .buttonStyle(.plain)

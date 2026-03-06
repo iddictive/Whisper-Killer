@@ -17,6 +17,16 @@ struct TranscriptionMode: Codable, Identifiable, Hashable {
     let systemPrompt: String
     let isBuiltIn: Bool
 
+    static let raw = TranscriptionMode(
+        name: "Raw",
+        icon: "quote.opening",
+        description: "Exact transcription without any changes or formatting.",
+        exampleInput: "So um I think that we should like probably go to the meeting.",
+        exampleOutput: "So um I think that we should like probably go to the meeting.",
+        systemPrompt: "",
+        isBuiltIn: true
+    )
+
     static let dictation = TranscriptionMode(
         name: "Dictation",
         icon: "text.bubble",
@@ -73,7 +83,7 @@ struct TranscriptionMode: Codable, Identifiable, Hashable {
         isBuiltIn: true
     )
 
-    static let builtInModes: [TranscriptionMode] = [.dictation, .email, .code, .notes]
+    static let builtInModes: [TranscriptionMode] = [.raw, .dictation, .email, .code, .notes]
     
     // Placeholder values for UI creation
     static let placeholderName = "Summary"
@@ -405,7 +415,6 @@ struct AppSettings: Codable {
     var useMonochromeMenuIcon: Bool = false
     var usageLogs: [UsageLog] = []
     var experimentalAutoEnter: Bool = false
-    var instantTyping: Bool = false
     var enableSpeakerDiarization: Bool = false
     var selectedInputDeviceID: String? = nil
     var lifetimeWords: Int = 0
@@ -417,7 +426,7 @@ struct AppSettings: Codable {
              showOverlay, setupCompleted, hotkeyConfig, insertionMethod,
              automaticallyChecksForUpdates, automaticallyDownloadsUpdates,
              enablePostProcessing, useMonochromeMenuIcon, usageLogs, experimentalAutoEnter,
-             instantTyping, enableSpeakerDiarization, selectedInputDeviceID, lifetimeWords, lifetimeDuration
+             enableSpeakerDiarization, selectedInputDeviceID, lifetimeWords, lifetimeDuration
     }
 
     init() {}
@@ -444,7 +453,6 @@ struct AppSettings: Codable {
         useMonochromeMenuIcon = try container.decodeIfPresent(Bool.self, forKey: .useMonochromeMenuIcon) ?? false
         usageLogs = try container.decodeIfPresent([UsageLog].self, forKey: .usageLogs) ?? []
         experimentalAutoEnter = try container.decodeIfPresent(Bool.self, forKey: .experimentalAutoEnter) ?? false
-        instantTyping = try container.decodeIfPresent(Bool.self, forKey: .instantTyping) ?? false
         enableSpeakerDiarization = try container.decodeIfPresent(Bool.self, forKey: .enableSpeakerDiarization) ?? false
         selectedInputDeviceID = try container.decodeIfPresent(String.self, forKey: .selectedInputDeviceID)
         lifetimeWords = try container.decodeIfPresent(Int.self, forKey: .lifetimeWords) ?? 0
@@ -460,10 +468,10 @@ struct AppSettings: Codable {
     }
 
     func isModeEnabled(_ mode: TranscriptionMode) -> Bool {
-        // Dictation is the fallback, always technically "on" but skips AI if no key
-        if mode.name == TranscriptionMode.dictation.name { return true }
+        // Raw is always available (it's the only non-AI mode).
+        if mode.name == TranscriptionMode.raw.name { return true }
         
-        // AI modes require global enablement AND keys
+        // All other modes (Dictation, Email, etc.) require global AI enablement AND keys
         guard enablePostProcessing else { return false }
         
         switch postProcessingEngine {
@@ -475,9 +483,9 @@ struct AppSettings: Codable {
     }
 
     func validatedModeName(currentName: String) -> String {
-        let currentMode = allModes.first { $0.name == currentName } ?? .dictation
+        let currentMode = allModes.first { $0.name == currentName } ?? .raw
         if !isModeEnabled(currentMode) {
-            return TranscriptionMode.dictation.name
+            return TranscriptionMode.raw.name
         }
         return currentName
     }
