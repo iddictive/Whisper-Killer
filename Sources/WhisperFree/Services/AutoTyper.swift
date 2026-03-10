@@ -6,14 +6,20 @@ final class AutoTyper {
     static func insert(text: String, method: InsertionMethod) {
         switch method {
         case .paste:
-            simulatePaste()
+            simulatePaste(text: text)
         case .type:
             typeDirectly(text)
         }
     }
 
-    /// Simulates Cmd+V to paste the current contents of the general pasteboard
-    static func simulatePaste() {
+    /// Simulates Cmd+V to paste the current contents of the general pasteboard.
+    /// If text is provided, it replaces the current pasteboard content.
+    static func simulatePaste(text: String? = nil) {
+        if let text = text {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+        }
         // Small delay to ensure the active application is ready after our overlay closes
         usleep(50_000) // 50ms
 

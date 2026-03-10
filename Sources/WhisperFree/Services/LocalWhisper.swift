@@ -61,6 +61,20 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             throw TranscriptionError.modelNotDownloaded
         }
 
+        // Diagnostic: check model file access
+        if !FileManager.default.fileExists(atPath: path) {
+            print("whisper_debug: ❌ Model file NOT FOUND at path: \(path)")
+            throw TranscriptionError.modelNotDownloaded
+        }
+        
+        if !FileManager.default.isReadableFile(atPath: path) {
+            print("whisper_debug: ❌ Model file is NOT READABLE at path: \(path)")
+            // Try to fix permissions or report specific error
+        }
+        
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int64) ?? 0
+        print("whisper_debug: 📄 Model file: \(path), size: \(fileSize) bytes")
+
         let whisperBinary = findWhisperBinary()
         guard let binary = whisperBinary else {
             throw TranscriptionError.transcriptionFailed("whisper-cpp not found.")
@@ -91,6 +105,20 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             process.standardOutput = outputPipe
             process.standardError = errorPipe
 
+            // Add timeout mechanism (3 minutes)
+            let timeoutSeconds: Double = 180
+            var timedOut = false
+            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
+            timer.schedule(deadline: .now() + timeoutSeconds)
+            timer.setEventHandler {
+                timedOut = true
+                if process.isRunning {
+                    print("whisper_debug: ⏰ Transcription TIMEOUT (\(timeoutSeconds)s). Terminating process.")
+                    process.terminate()
+                }
+            }
+            timer.resume()
+
             let outputAccumulator = DataAccumulator()
             let errorAccumulator = DataAccumulator()
 
@@ -98,9 +126,7 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
                 let chunk = handle.availableData
                 guard !chunk.isEmpty else { return }
                 
-                Task {
-                    await outputAccumulator.append(chunk)
-                }
+                outputAccumulator.append(chunk)
                 
                 // Parse progress from stdout (some whisper versions output here)
                 if let text = String(data: chunk, encoding: .utf8) {
@@ -124,12 +150,14 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
                 let chunk = handle.availableData
                 guard !chunk.isEmpty else { return }
                 
-                Task {
-                    await errorAccumulator.append(chunk)
-                }
+                errorAccumulator.append(chunk)
                 
-                // Parse progress from stderr (some whisper versions output here)
                 if let text = String(data: chunk, encoding: .utf8) {
+                    // Log important error messages to console immediately
+                    if text.contains("error") || text.contains("failed") || text.contains("loading model") {
+                        print("whisper_debug: ⚠️ stderr: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+                    }
+                    
                     let lines = text.components(separatedBy: .newlines)
                     for line in lines where line.contains("progress =") {
                         if let percent = self.extractProgress(from: line) {
@@ -148,24 +176,24 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
 
             process.terminationHandler = { [weak self] p in
                 self?.currentProcess = nil
-                // Drain any remaining data
+                
+                // Drain any remaining data and stop handlers
                 outputPipe.fileHandleForReading.readabilityHandler = nil
                 errorPipe.fileHandleForReading.readabilityHandler = nil
                 
-                // Small delay to let final readability callbacks flush
-                Task {
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-                    
-                    let finalOutput = await outputAccumulator.data
-                    let finalError = await errorAccumulator.data
-                    
-                    if p.terminationStatus == 0 {
-                        let output = String(data: finalOutput, encoding: .utf8) ?? ""
-                        print("whisper_debug: 📦 Accumulated \(finalOutput.count) bytes from stdout")
-                        let text = self?.parseWhisperOutput(output) ?? ""
-                        continuation.resume(returning: text)
+                // Final read just in case
+                if let remaining = try? outputPipe.fileHandleForReading.readToEnd() {
+                    outputAccumulator.append(remaining)
+                }
+                if p.terminationStatus == 0 {
+                    let text = String(data: outputAccumulator.getData(), encoding: .utf8) ?? ""
+                    let parsed = self?.parseWhisperOutput(text) ?? ""
+                    continuation.resume(returning: parsed)
+                } else {
+                    if timedOut {
+                        continuation.resume(throwing: TranscriptionError.transcriptionFailed("Transcription timed out after \(Int(timeoutSeconds)) seconds."))
                     } else {
-                        let errorOutput = String(data: finalError, encoding: .utf8) ?? "Unknown error"
+                        let errorOutput = String(data: errorAccumulator.getData(), encoding: .utf8) ?? "Unknown error"
                         print("whisper_debug: ❌ whisper-cli failed (status \(p.terminationStatus)): \(errorOutput)")
                         continuation.resume(throwing: TranscriptionError.transcriptionFailed(errorOutput))
                     }
@@ -374,7 +402,10 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
                     "To be continued",
                     "Subtitles by",
                     "Translated by",
-                    "Edited by"
+                    "Edited by",
+                    "Thank you.", // Common silence hallucination
+                    "Thank you for watching!",
+                    "Подпишитесь на канал"
                 ]
                 
                 let isBlacklisted = blacklist.contains { phrase in
@@ -421,10 +452,19 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
     }
 }
 
-actor DataAccumulator {
-    private(set) var data = Data()
+final class DataAccumulator: @unchecked Sendable {
+    private var data = Data()
+    private let queue = DispatchQueue(label: "com.whisperkiller.dataAccumulator")
     
     func append(_ other: Data) {
-        data.append(other)
+        queue.async {
+            self.data.append(other)
+        }
+    }
+    
+    func getData() -> Data {
+        queue.sync {
+            return self.data
+        }
     }
 }

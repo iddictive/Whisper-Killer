@@ -27,48 +27,44 @@ struct HistoryView: View {
         }
         .frame(minWidth: 420, minHeight: 480)
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Spacer().frame(width: 80)
+            ToolbarItem(placement: .principal) {
+                Text("Transcription History")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 8) {
+                    let total = appState.activeHistoryCount
+                    let files = appState.fileImportCount
+                    
+                    Text("\(total) entries" + (files > 0 ? " + \(files) files" : ""))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    
+                    if !appState.history.isEmpty {
+                        Button(role: .destructive) {
+                            appState.clearHistory()
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 11))
+                        }
+                        .foregroundStyle(.red.opacity(0.8))
+                        .help("Clear All History")
+                    }
+                }
             }
         }
     }
 
     private var mainContent: some View {
         VStack(spacing: 0) {
-            header
             statsHeader
             searchBar
             content
         }
+        .padding(.top, 16) // Padding since header is removed
     }
 
-    private var header: some View {
-        HStack {
-            Image(systemName: "clock")
-                .font(.system(size: 14))
-                .foregroundStyle(.cyan)
-            Text("Transcription History")
-                .font(.system(size: 14, weight: .semibold))
-            Spacer()
-            Text("\(appState.history.count) entries")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-
-            if !appState.history.isEmpty {
-                Button(role: .destructive) {
-                    appState.clearHistory()
-                } label: {
-                    Text("Clear All")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.red.opacity(0.8))
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 24)
-        .padding(.bottom, 16)
-    }
 
     private var statsHeader: some View {
         HStack(spacing: 16) {
@@ -138,7 +134,7 @@ struct HistoryView: View {
                 List {
                     ForEach(filteredHistory.indices, id: \.self) { index in
                         historyRow(filteredHistory[index])
-                            .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+                            .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                     }
@@ -207,6 +203,21 @@ struct HistoryView: View {
                 .foregroundStyle(.secondary)
                 .clipShape(Capsule())
             
+            // File badge if imported
+            if entry.isFromFileImport {
+                HStack(spacing: 4) {
+                    Image(systemName: "doc.fill")
+                        .font(.system(size: 8))
+                    Text("FILE")
+                        .font(.system(size: 9, weight: .black))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.orange.opacity(0.15))
+                .foregroundStyle(.orange)
+                .clipShape(Capsule())
+            }
+
             // Usage info
             if let usage = entry.usage {
                 Text("$\(String(format: "%.4f", usage.estimatedCost))")

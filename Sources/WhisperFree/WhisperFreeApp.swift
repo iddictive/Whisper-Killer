@@ -149,7 +149,7 @@ final class SettingsWindowController: NSObject {
         }
         
         let appState = AppState.shared
-        let view = SettingsView(recorder: appState.recorder).environmentObject(appState)
+        let view = SettingsView(modelManager: appState.modelManager, recorder: appState.recorder).environmentObject(appState)
         let hostingView = NSHostingView(rootView: view)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 550),

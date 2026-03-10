@@ -2,9 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject var modelManager: ModelManager
     @ObservedObject var recorder: AudioRecorder
-
-    private var modelManager: ModelManager { appState.modelManager }
     @ObservedObject private var updater = GitHubUpdater.shared
     @State private var selectedTab: String? = "app"
     @State private var isTestingAPI = false
@@ -81,6 +80,23 @@ struct SettingsView: View {
         .onAppear {
             modelManager.refreshDownloadedModels()
         }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(columnTitle)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+        }
+    }
+
+    private var columnTitle: String {
+        switch selectedTab {
+        case "app": return "App Preferences"
+        case "capture": return "Capture & Automation"
+        case "engine": return "Engine & API"
+        case "modes": return "AI Modes"
+        case "info": return "Usage & About"
+        default: return "Settings"
+        }
     }
 
     private var permissionBanner: some View {
@@ -115,9 +131,6 @@ struct SettingsView: View {
     @ViewBuilder
     private var appSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("General Preferences")
-                .font(.headline)
-                .foregroundStyle(.secondary)
             
             VStack(spacing: 0) {
                 HStack {
@@ -222,9 +235,6 @@ struct SettingsView: View {
     @ViewBuilder
     private var captureSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Recording Mode")
-                .font(.headline)
-                .foregroundStyle(.secondary)
             
             VStack(alignment: .leading, spacing: 12) {
                 Picker("Capture Style", selection: $appState.settings.recordingMode) {
@@ -246,7 +256,7 @@ struct SettingsView: View {
         }
         
         VStack(alignment: .leading, spacing: 16) {
-            Text("Global Shortcut")
+            Text("Global Recording Shortcut")
                 .font(.headline)
                 .foregroundStyle(.secondary)
             
@@ -274,6 +284,24 @@ struct SettingsView: View {
                 
                 Divider().padding(.horizontal)
                 
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("Insertion Method", selection: $appState.settings.insertionMethod) {
+                        ForEach(InsertionMethod.allCases, id: \.self) { method in
+                            Text(method.rawValue).tag(method)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    
+                    Text(appState.settings.insertionMethod.description)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                }
+                .padding()
+                
+                Divider().padding(.horizontal)
+                
                 Toggle("Show floating recording pill", isOn: $appState.settings.showOverlay)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
@@ -286,9 +314,6 @@ struct SettingsView: View {
     @ViewBuilder
     private var engineSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("1. Transcription Engine")
-                .font(.headline)
-                .foregroundStyle(.secondary)
             
             VStack(alignment: .leading, spacing: 16) {
                 Picker("Model Source", selection: $appState.settings.engineType) {
@@ -365,7 +390,19 @@ struct SettingsView: View {
                                             Button("Retry") { modelManager.downloadModel(size) }
                                                 .buttonStyle(.plain).font(.caption2).foregroundStyle(SW.accent)
                                         } else {
-                                            ProgressView(value: state.progress).frame(width: 80)
+                                            VStack(alignment: .trailing, spacing: 4) {
+                                                ProgressView(value: state.progress).frame(width: 80)
+                                                HStack(spacing: 4) {
+                                                    if state.speed > 0 {
+                                                        Text(formatSpeed(state.speed))
+                                                    }
+                                                    if let remaining = state.timeRemaining {
+                                                        Text("• \(formatDuration(remaining))")
+                                                    }
+                                                }
+                                                .font(.system(size: 9, design: .monospaced))
+                                                .foregroundStyle(.secondary)
+                                            }
                                         }
                                     } else {
                                         Button("Download") { modelManager.downloadModel(size) }
@@ -386,7 +423,7 @@ struct SettingsView: View {
         }
 
         VStack(alignment: .leading, spacing: 16) {
-            Text("2. AI Refinement (Post-Processing)")
+            Text("API Refinement")
                 .font(.headline)
                 .foregroundStyle(.secondary)
             
@@ -400,10 +437,6 @@ struct SettingsView: View {
     @ViewBuilder
     private var modesSection: some View {
         Group {
-            Text("Select Active Mode")
-                .font(.headline)
-                .padding(.top, 8)
-                .padding(.leading, 16)
 
             ForEach(appState.settings.allModes) { mode in
                 let isDictation = mode.name == TranscriptionMode.dictation.name
@@ -501,9 +534,6 @@ struct SettingsView: View {
     @ViewBuilder
     private var infoSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Usage Statistics (7 Days)")
-                .font(.headline)
-                .foregroundStyle(.secondary)
             
             let logs = appState.settings.usageLogs
             let totalTokens = logs.reduce(0) { $0 + $1.totalTokens }
@@ -602,6 +632,23 @@ struct SettingsView: View {
             .padding(32)
             .background(Color.primary.opacity(0.03))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    private func formatSpeed(_ bytesPerSecond: Double) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useAll]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(bytesPerSecond)) + "/s"
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        if duration < 60 {
+            return "\(Int(duration))s"
+        } else {
+            let mins = Int(duration / 60)
+            let secs = Int(duration.truncatingRemainder(dividingBy: 60))
+            return "\(mins)m \(secs)s"
         }
     }
 

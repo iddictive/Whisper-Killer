@@ -170,13 +170,20 @@ enum RecordingMode: String, Codable, CaseIterable {
 // MARK: - Insertion Method
 
 enum InsertionMethod: String, Codable, CaseIterable {
-    case paste = "Paste (Clipboard)"
-    case type = "Direct Typing (No Clipboard)"
+    case paste = "Single Block (Clipboard)"
+    case type = "Incremental (Typing)"
     
     var icon: String {
         switch self {
         case .paste: return "doc.on.clipboard"
         case .type: return "keyboard"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .paste: return "Inserts the entire text at once using the clipboard. Reliable and supports a single 'Undo' (Ctrl+Z) step."
+        case .type: return "Simulates typing character by character. Avoids touching the clipboard, but creates many 'Undo' steps."
         }
     }
 }
@@ -408,7 +415,7 @@ struct AppSettings: Codable {
     var showOverlay: Bool = true
     var setupCompleted: Bool = false
     var hotkeyConfig: HotkeyConfig = HotkeyConfig()
-    var insertionMethod: InsertionMethod = .type
+    var insertionMethod: InsertionMethod = .paste
     var automaticallyChecksForUpdates: Bool = true
     var automaticallyDownloadsUpdates: Bool = true
     var enablePostProcessing: Bool = true
@@ -446,7 +453,7 @@ struct AppSettings: Codable {
         showOverlay = try container.decodeIfPresent(Bool.self, forKey: .showOverlay) ?? true
         setupCompleted = try container.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? false
         hotkeyConfig = try container.decodeIfPresent(HotkeyConfig.self, forKey: .hotkeyConfig) ?? HotkeyConfig()
-        insertionMethod = try container.decodeIfPresent(InsertionMethod.self, forKey: .insertionMethod) ?? .type
+        insertionMethod = try container.decodeIfPresent(InsertionMethod.self, forKey: .insertionMethod) ?? .paste
         automaticallyChecksForUpdates = try container.decodeIfPresent(Bool.self, forKey: .automaticallyChecksForUpdates) ?? true
         automaticallyDownloadsUpdates = try container.decodeIfPresent(Bool.self, forKey: .automaticallyDownloadsUpdates) ?? true
         enablePostProcessing = try container.decodeIfPresent(Bool.self, forKey: .enablePostProcessing) ?? true

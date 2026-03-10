@@ -244,8 +244,6 @@ struct FileTranscriptionView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                headerView
-                Divider()
                 configBar
                 Divider()
 
@@ -266,6 +264,51 @@ struct FileTranscriptionView: View {
             errorOverlay
         }
         .frame(minWidth: 400, minHeight: 320)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("File Transcription")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 8) {
+                    if !queueItems.isEmpty {
+                        let totalCost = queueItems.compactMap { $0.estimatedCost }.reduce(0, +)
+                        let doneCount = queueItems.filter { $0.status == .done }.count
+                        
+                        if appState.settings.engineType == .cloud && totalCost > 0 {
+                            Text("Est. Cost: $\(String(format: "%.3f", totalCost))")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.orange.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                        
+                        Text("\(doneCount)/\(queueItems.count) files")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.accentColor.opacity(0.12))
+                            .foregroundStyle(Color.accentColor)
+                            .clipShape(Capsule())
+                    }
+                    
+                    if !queueItems.isEmpty && !isProcessing {
+                        Button(role: .destructive) {
+                            for item in queueItems { item.cancel() }
+                            queueItems.removeAll()
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 11))
+                        }
+                        .foregroundStyle(.red.opacity(0.8))
+                        .help("Clear All Files")
+                    }
+                }
+            }
+        }
         .onDisappear {
             for item in queueItems { item.cancel() }
             queueItems.removeAll()

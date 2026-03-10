@@ -38,6 +38,12 @@ final class AppState: ObservableObject {
         history.filter { !$0.isFromFileImport }
                .reduce(0) { $0 + $1.processedText.split { $0.isWhitespace }.count }
     }
+    var activeHistoryCount: Int {
+        history.filter { !$0.isFromFileImport }.count
+    }
+    var fileImportCount: Int {
+        history.filter { $0.isFromFileImport }.count
+    }
     var totalDuration: TimeInterval {
         history.filter { !$0.isFromFileImport }
                .reduce(0) { $0 + $1.duration }
@@ -333,11 +339,19 @@ final class AppState: ObservableObject {
 
 
     func cancelRecording() {
+        if state == .processing {
+            // Cancel transcription if it's running
+            currentEngine?.cancel()
+        }
+        
         _ = recorder.stopRecording()
         recorder.cleanup()
         state = .idle
+        processingStage = .none
         showOverlayWindow = false
     }
+
+    private var currentEngine: TranscriptionEngine?
 
     func stopAndTranscribe() {
         guard state == .recording else { return }
@@ -366,8 +380,10 @@ final class AppState: ObservableObject {
                 
                 // 1. Transcribe
                 let engine = TranscriptionEngineFactory.create(for: settings.engineType, settings: settings)
+                self.currentEngine = engine
                 let lang = settings.language == "auto" ? nil : settings.language
                 let rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil, onProgress: nil)
+                self.currentEngine = nil
                 
                 print("whisper_debug: 📝 Raw transcription result: '\(rawText)' (length: \(rawText.count))")
 
@@ -414,6 +430,7 @@ final class AppState: ObservableObject {
                     } catch {
                         print("⚠️ AI refinement failed: \(error)")
                         self.showError("AI refinement failed. Using raw text.")
+                        processingStage = .transcribing // revert stage
                     }
                 }
 
@@ -493,8 +510,12 @@ final class AppState: ObservableObject {
 
 
             } catch {
+                print("whisper_debug: ❌ Transcription task failed: \(error)")
                 showError(error.localizedDescription)
+                state = .idle
+                processingStage = .none
                 recorder.cleanup()
+                currentEngine = nil
             }
         }
     }

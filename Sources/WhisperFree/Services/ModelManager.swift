@@ -9,6 +9,10 @@ final class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate
         var progress: Double = 0
         var error: String?
         var isPreparing: Bool = false
+        var startTime: Date?
+        var bytesWritten: Int64 = 0
+        var speed: Double = 0 // bytes per second
+        var timeRemaining: TimeInterval?
     }
 
     private var tasks: [URLSessionDownloadTask: LocalModelSize] = [:]
@@ -132,12 +136,30 @@ final class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate
                     didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
                     totalBytesExpectedToWrite: Int64) {
         guard let size = tasks[downloadTask] else { return }
-        if totalBytesExpectedToWrite > 0 {
-            if activeDownloads[size.rawValue]?.isPreparing == true {
-                activeDownloads[size.rawValue]?.isPreparing = false
-            }
-            activeDownloads[size.rawValue]?.progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        
+        var state = activeDownloads[size.rawValue] ?? DownloadState()
+        
+        if state.startTime == nil {
+            state.startTime = Date()
+            state.isPreparing = false
         }
+        
+        state.bytesWritten = totalBytesWritten
+        
+        if let startTime = state.startTime {
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed > 0 {
+                state.speed = Double(totalBytesWritten) / elapsed
+                
+                if totalBytesExpectedToWrite > 0 {
+                    let remainingBytes = Double(totalBytesExpectedToWrite - totalBytesWritten)
+                    state.timeRemaining = remainingBytes / state.speed
+                    state.progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+                }
+            }
+        }
+        
+        activeDownloads[size.rawValue] = state
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,

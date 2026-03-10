@@ -568,18 +568,30 @@ struct SetupWizardView: View {
                         Text("Preparing...").font(.system(size: 9)).foregroundStyle(textSecondary)
                     }
                 } else {
-                    HStack(spacing: 4) {
-                        ProgressView(value: state.progress)
-                            .progressViewStyle(.linear)
-                            .frame(width: 80)
-                        Button {
-                            modelManager.cancelDownload(size)
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundStyle(textSecondary)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HStack(spacing: 8) {
+                            ProgressView(value: state.progress)
+                                .progressViewStyle(.linear)
+                                .frame(width: 80)
+                            Button {
+                                modelManager.cancelDownload(size)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(textSecondary)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        HStack(spacing: 4) {
+                            if state.speed > 0 {
+                                Text(formatSpeed(state.speed))
+                            }
+                            if let remaining = state.timeRemaining {
+                                Text("• \(formatDuration(remaining))")
+                            }
+                        }
+                        .font(.system(size: 8, design: .monospaced))
+                        .foregroundStyle(textSecondary)
                     }
                 }
             } else {
@@ -731,7 +743,26 @@ struct SetupWizardView: View {
                     readyRow("API Key", ok: !apiKey.isEmpty)
                 } else {
                     readyRow("whisper-cpp", ok: whisperInstalled)
-                    readyRow("Model: \(selectedModel.rawValue)", ok: modelManager.isModelDownloaded(selectedModel))
+                    if modelManager.isModelDownloaded(selectedModel) {
+                        readyRow("Model: \(selectedModel.rawValue)", ok: true)
+                    } else if let state = modelManager.activeDownloads[selectedModel.rawValue] {
+                        VStack(alignment: .leading, spacing: 6) {
+                            readyRow("Model: \(selectedModel.rawValue)", ok: false)
+                            HStack(spacing: 8) {
+                                ProgressView(value: state.progress)
+                                    .progressViewStyle(.linear)
+                                    .controlSize(.small)
+                                if state.speed > 0 {
+                                    Text("\(formatSpeed(state.speed)) • \(formatDuration(state.timeRemaining ?? 0))")
+                                        .font(.system(size: 9, design: .monospaced))
+                                        .foregroundStyle(textSecondary)
+                                }
+                            }
+                            .padding(.leading, 24)
+                        }
+                    } else {
+                        readyRow("Model: \(selectedModel.rawValue)", ok: false)
+                    }
                 }
             }
             .padding(16)
@@ -794,6 +825,23 @@ struct SetupWizardView: View {
     // ═══════════════════════════════════════════════
     // MARK: – Bottom bar
     // ═══════════════════════════════════════════════
+
+    private func formatSpeed(_ bytesPerSecond: Double) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useAll]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(bytesPerSecond)) + "/s"
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        if duration < 60 {
+            return "\(Int(duration))s"
+        } else {
+            let mins = Int(duration / 60)
+            let secs = Int(duration.truncatingRemainder(dividingBy: 60))
+            return "\(mins)m \(secs)s"
+        }
+    }
 
     private var bottomBar: some View {
         HStack {
@@ -922,9 +970,17 @@ struct SetupWizardView: View {
         appState.settings.apiKey = apiKey
         appState.settings.engineType = selectedEngine
         appState.settings.localModelSize = selectedModel
+        
+        // If no API key is provided, default to Raw mode to avoid AI processing errors
+        if apiKey.trimmingCharacters(in: .whitespaces).isEmpty {
+            print("whisper_debug: 🗝️ No API key provided, defaulting to Raw mode")
+            appState.settings.selectedModeName = "Raw"
+        }
+        
         appState.settings.setupCompleted = true
         appState.saveSettings()
         appState.reloadHotkeyManager()
+        print("whisper_debug: ✨ Setup wizard finished successfully")
         onComplete()
     }
 }
