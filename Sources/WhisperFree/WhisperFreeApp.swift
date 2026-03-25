@@ -53,6 +53,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 }
             }
             .store(in: &appState.overlayCancellables)
+            
+        // Bridge AppState.showLiveTranslatorOverlay → SubtitleOverlayController
+        appState.$showLiveTranslatorOverlay
+            .sink { show in
+                if show {
+                    SubtitleOverlayController.shared.show()
+                } else {
+                    SubtitleOverlayController.shared.hide()
+                }
+            }
+            .store(in: &appState.overlayCancellables)
         
         // Show setup wizard if needed
         if !appState.settings.setupCompleted {
@@ -60,6 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             showSetupWizard()
         }
         print("✨ Launch sequence complete")
+    }
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        print("🛑 applicationWillTerminate: Cleaning up resources...")
+        AppState.shared.stopAll()
     }
     
     func showSetupWizard() {

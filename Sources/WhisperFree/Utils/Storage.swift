@@ -35,6 +35,12 @@ final class Storage {
         }
     }
 
+    func updateSettings(_ block: (inout AppSettings) -> Void) {
+        var settings = loadSettings()
+        block(&settings)
+        saveSettings(settings)
+    }
+
     // MARK: - History
 
     func loadHistory() -> [TranscriptionHistoryEntry] {
@@ -57,6 +63,12 @@ final class Storage {
         history.insert(entry, at: 0)
         // Keep last 500 entries
         if history.count > 500 {
+            let toDelete = history.suffix(from: 500)
+            for entry in toDelete {
+                if let path = entry.audioFilePath {
+                    try? FileManager.default.removeItem(atPath: path)
+                }
+            }
             history = Array(history.prefix(500))
         }
         saveHistory(history)
@@ -64,12 +76,57 @@ final class Storage {
 
     func deleteTranscriptionHistoryEntry(id: UUID) {
         var history = loadHistory()
+        if let entry = history.first(where: { $0.entryId == id }) {
+            if let path = entry.audioFilePath {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+        }
         history.removeAll { entry in entry.entryId == id }
         saveHistory(history)
     }
 
+    func updateTranscriptionHistoryEntry(_ entry: TranscriptionHistoryEntry) {
+        var history = loadHistory()
+        if let index = history.firstIndex(where: { $0.entryId == entry.entryId }) {
+            history[index] = entry
+            saveHistory(history)
+        }
+    }
+
     func clearHistory() {
+        let history = loadHistory()
+        for entry in history {
+            if let path = entry.audioFilePath {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+        }
         saveHistory([])
+    }
+
+    func applyRetentionPolicy(_ policy: AudioRetentionPolicy) {
+        guard let days = policy.days else { return } // Forever
+        
+        let now = Date()
+        let history = loadHistory()
+        var newHistory: [TranscriptionHistoryEntry] = []
+        
+        for entry in history {
+            let diff = Calendar.current.dateComponents([.day], from: entry.date, to: now).day ?? 0
+            if diff >= days {
+                // Delete audio file
+                if let path = entry.audioFilePath {
+                    try? FileManager.default.removeItem(atPath: path)
+                }
+                // Do not add to newHistory
+            } else {
+                newHistory.append(entry)
+            }
+        }
+        
+        if newHistory.count != history.count {
+            saveHistory(newHistory)
+            print("whisper_debug: 🧹 Applied retention policy (\(policy.rawValue)): removed \(history.count - newHistory.count) entries.")
+        }
     }
 
     // MARK: - Models directory
@@ -77,6 +134,13 @@ final class Storage {
     static var modelsDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let dir = appSupport.appendingPathComponent("WhisperKiller/Models", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    static var recordingsDirectory: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let dir = appSupport.appendingPathComponent("WhisperKiller/Recordings", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

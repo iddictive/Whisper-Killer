@@ -352,6 +352,13 @@ struct MenuBarView: View {
                 menuButton(icon: "wand.and.stars", title: "Setup Wizard") {
                     AppDelegate.shared?.showSetupWizard()
                 }
+                
+                if appState.settings.liveTranslatorEnabled {
+                    Divider()
+                    menuButton(icon: "captions.bubble", title: appState.showLiveTranslatorOverlay ? "Stop Live Translator" : "Start Live Translator") {
+                        appState.toggleLiveTranslator()
+                    }
+                }
             }
 
             Divider()

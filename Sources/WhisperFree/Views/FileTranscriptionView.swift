@@ -145,10 +145,15 @@ final class QueueItem: ObservableObject, Identifiable {
                 var totalPromptTokens = 0
                 var totalCompletionTokens = 0
                 var usage: UsageLog? = nil
+                let shouldRunDiarization = settings.enableSpeakerDiarization && settings.canUseSpeakerDiarization
+                let shouldRunStandardPostProcessing = !shouldRunDiarization
+                    && settings.enablePostProcessing
+                    && settings.selectedMode.name != "Raw"
+                    && !settings.selectedMode.systemPrompt.isEmpty
 
-                if settings.enableSpeakerDiarization {
+                if shouldRunDiarization {
                     print("ℹ️ Skipping standard AI refinement because Diarization is active.")
-                } else if settings.enablePostProcessing && settings.selectedMode.name != "Raw" && !settings.selectedMode.systemPrompt.isEmpty {
+                } else if shouldRunStandardPostProcessing {
                     await MainActor.run { self.status = .postProcessing }
                     do {
                         let processor = PostProcessor(settings: settings)
@@ -162,7 +167,7 @@ final class QueueItem: ObservableObject, Identifiable {
                 }
 
                 // Diarization post-processing
-                if settings.enableSpeakerDiarization && settings.postProcessingEngine == .openai {
+                if shouldRunDiarization {
                     await MainActor.run { self.status = .postProcessing }
                     do {
                         let processor = PostProcessor(settings: settings)
@@ -177,14 +182,15 @@ final class QueueItem: ObservableObject, Identifiable {
                 
                 // Create final usage log if tokens were consumed
                 if totalPromptTokens + totalCompletionTokens > 0 {
+                    let usageEngine: PostProcessingEngine = shouldRunDiarization ? .openai : settings.postProcessingEngine
                     usage = UsageLog(
                         date: Date(),
-                        modeName: settings.enableSpeakerDiarization ? "Diarization" : settings.selectedMode.name,
-                        engine: settings.postProcessingEngine.rawValue,
+                        modeName: shouldRunDiarization ? "Diarization" : settings.selectedMode.name,
+                        engine: usageEngine.rawValue,
                         promptTokens: totalPromptTokens,
                         completionTokens: totalCompletionTokens,
                         totalTokens: totalPromptTokens + totalCompletionTokens,
-                        estimatedCost: UsageLog.estimateCost(prompt: totalPromptTokens, completion: totalCompletionTokens, engine: settings.postProcessingEngine)
+                        estimatedCost: UsageLog.estimateCost(prompt: totalPromptTokens, completion: totalCompletionTokens, engine: usageEngine)
                     )
                 }
 
@@ -418,7 +424,7 @@ struct FileTranscriptionView: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
 
-            if appState.settings.engineType == .cloud {
+            if appState.settings.engineType == .cloud || appState.settings.canUseSpeakerDiarization || appState.settings.enableSpeakerDiarization {
                 Toggle(isOn: $appState.settings.enableSpeakerDiarization) {
                     Text("Diarization")
                         .font(.system(size: 10, weight: .medium))
@@ -1159,4 +1165,3 @@ struct QueueCardView: View {
         return String(format: "%d:%02d", m, s)
     }
 }
-

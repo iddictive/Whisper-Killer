@@ -29,7 +29,7 @@ It is a **fully-featured SuperWhisper alternative** that puts privacy and speed 
 - **Workflow**: Results are automatically inserted into the active application via paste or direct typing.
 - **Improved Settings**: Redesigned 5-tab interface (App, Capture, Engine, AI Modes, Info) for better organization.
 - **Smart Modes**: 4 built-in modes (Dictation, Email, Code, Notes) + create your own custom AI prompts.
-- **Intelligent Keys**: API keys for OpenAI/Perplexity only appear when needed for your current engine.
+- **Intelligent Keys**: OpenAI API keys only appear when needed for your current engine.
 - **Bilingual Suppressor**: Built-in filters to handle common model hallucinations ("DimaTorzok", etc.) and repetitions.
 - **Global**: Supports 18 languages with auto-detection.
 
@@ -73,7 +73,7 @@ make install
 - **Интеграция**: Результат автоматически вставляется в активное приложение (вставка из буфера или прямая печать).
 - **Новый интерфейс**: Полностью переработанные настройки (5 вкладок: App, Capture, Engine, AI Modes, Info).
 - **Умные режимы**: 4 встроенных пресета (Диктовка, Email, Код, Заметки) + создание собственных AI-промптов.
-- **Умные ключи**: API-ключи OpenAI/Perplexity отображаются только когда они необходимы.
+- **Умные ключи**: API-ключи OpenAI отображаются только когда они необходимы.
 - **Подавление галлюцинаций**: Умные фильтры для удаления артефактов ("DimaTorzok", повторы) и рекламных вставок из локального вывода.
 - **Языки**: Поддержка 18 языков с автоопределением.
 

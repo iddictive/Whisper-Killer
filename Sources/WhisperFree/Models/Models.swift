@@ -2,7 +2,30 @@ import Foundation
 
 enum PostProcessingEngine: String, Codable, CaseIterable {
     case openai = "OpenAI"
-    case perplexity = "Perplexity"
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = rawValue == Self.openai.rawValue ? .openai : .openai
+    }
+}
+
+enum AudioRetentionPolicy: String, Codable, CaseIterable {
+    case oneDay = "1 Day"
+    case sevenDays = "7 Days"
+    case thirtyDays = "30 Days"
+    case ninetyDays = "90 Days"
+    case forever = "Forever"
+    
+    var days: Int? {
+        switch self {
+        case .oneDay: return 1
+        case .sevenDays: return 7
+        case .thirtyDays: return 30
+        case .ninetyDays: return 90
+        case .forever: return nil
+        }
+    }
 }
 
 // MARK: - Transcription Mode
@@ -99,7 +122,7 @@ struct UsageLog: Codable, Identifiable {
     var id: UUID = UUID()
     let date: Date
     let modeName: String
-    let engine: String // "openai", "perplexity", "local"
+    let engine: String // "openai", "local"
     let promptTokens: Int
     let completionTokens: Int
     let totalTokens: Int
@@ -123,14 +146,15 @@ struct TranscriptionHistoryEntry: Codable {
     let entryId: UUID
     let date: Date
     let rawText: String
-    let processedText: String
+    var processedText: String
     let modeName: String
     let duration: TimeInterval
     let engineUsed: String
     var usage: UsageLog?
     var isFromFileImport: Bool = false
+    var audioFilePath: String? = nil
 
-    init(rawText: String, processedText: String, modeName: String, duration: TimeInterval, engineUsed: String, usage: UsageLog? = nil, isFromFileImport: Bool = false) {
+    init(rawText: String, processedText: String, modeName: String, duration: TimeInterval, engineUsed: String, usage: UsageLog? = nil, isFromFileImport: Bool = false, audioFilePath: String? = nil) {
         self.entryId = UUID()
         self.date = Date()
         self.rawText = rawText
@@ -140,6 +164,7 @@ struct TranscriptionHistoryEntry: Codable {
         self.engineUsed = engineUsed
         self.usage = usage
         self.isFromFileImport = isFromFileImport
+        self.audioFilePath = audioFilePath
     }
 }
 
@@ -185,6 +210,26 @@ enum InsertionMethod: String, Codable, CaseIterable {
         case .paste: return "Inserts the entire text at once using the clipboard. Reliable and supports a single 'Undo' (Ctrl+Z) step."
         case .type: return "Simulates typing character by character. Avoids touching the clipboard, but creates many 'Undo' steps."
         }
+    }
+}
+
+// MARK: - Live Translator
+
+enum LiveTranslationEngine: String, Codable, CaseIterable {
+    case cloud = "Cloud (OpenAI)"
+    case local = "Local (Ollama)"
+
+    var icon: String {
+        switch self {
+        case .cloud: return "cloud"
+        case .local: return "desktopcomputer"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = rawValue == Self.local.rawValue ? .local : .cloud
     }
 }
 
@@ -403,7 +448,6 @@ struct HotkeyConfig: Codable, Equatable, Hashable {
 
 struct AppSettings: Codable {
     var apiKey: String = ""
-    var perplexityApiKey: String = ""
     var postProcessingEngine: PostProcessingEngine = .openai
     var autoTypeResult: Bool = true
     var language: String = "auto"
@@ -426,14 +470,28 @@ struct AppSettings: Codable {
     var selectedInputDeviceID: String? = nil
     var lifetimeWords: Int = 0
     var lifetimeDuration: Double = 0
+    var audioRetentionPolicy: AudioRetentionPolicy = .thirtyDays
+    
+    // Live Translator
+    var liveTranslatorEnabled: Bool = false
+    var liveTranslatorTargetLanguage: String = "ru"
+    var liveTranslatorEngine: LiveTranslationEngine = .cloud
+    var liveTranslatorLocalModel: String = "qwen2.5:3b"
+    var liveTranslatorInputDeviceID: String? = nil
+    var liveTranslatorHotkeyConfig: HotkeyConfig = HotkeyConfig(keyCode: 17, useOption: true, useCommand: true) // Cmd+Option+T default
+    var useScreenCaptureKit: Bool = false
+    var liveTranslatorCompactMode: Bool = false
 
     enum CodingKeys: String, CodingKey {
-        case apiKey, perplexityApiKey, postProcessingEngine, autoTypeResult, language,
+        case apiKey, postProcessingEngine, autoTypeResult, language,
              selectedModeName, customModes, recordingMode, engineType, localModelSize,
              showOverlay, setupCompleted, hotkeyConfig, insertionMethod,
              automaticallyChecksForUpdates, automaticallyDownloadsUpdates,
-             enablePostProcessing, useMonochromeMenuIcon, usageLogs, experimentalAutoEnter,
-             enableSpeakerDiarization, selectedInputDeviceID, lifetimeWords, lifetimeDuration
+             enablePostProcessing, useMonochromeMenuIcon, usageLogs,
+             experimentalAutoEnter, enableSpeakerDiarization, selectedInputDeviceID,
+             lifetimeWords, lifetimeDuration, audioRetentionPolicy,
+             liveTranslatorEnabled, liveTranslatorTargetLanguage, liveTranslatorEngine, liveTranslatorLocalModel,
+             liveTranslatorInputDeviceID, liveTranslatorHotkeyConfig, useScreenCaptureKit, liveTranslatorCompactMode
     }
 
     init() {}
@@ -441,7 +499,6 @@ struct AppSettings: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
-        perplexityApiKey = try container.decodeIfPresent(String.self, forKey: .perplexityApiKey) ?? ""
         postProcessingEngine = try container.decodeIfPresent(PostProcessingEngine.self, forKey: .postProcessingEngine) ?? .openai
         autoTypeResult = try container.decodeIfPresent(Bool.self, forKey: .autoTypeResult) ?? true
         language = try container.decodeIfPresent(String.self, forKey: .language) ?? "auto"
@@ -464,6 +521,15 @@ struct AppSettings: Codable {
         selectedInputDeviceID = try container.decodeIfPresent(String.self, forKey: .selectedInputDeviceID)
         lifetimeWords = try container.decodeIfPresent(Int.self, forKey: .lifetimeWords) ?? 0
         lifetimeDuration = try container.decodeIfPresent(Double.self, forKey: .lifetimeDuration) ?? 0
+        audioRetentionPolicy = try container.decodeIfPresent(AudioRetentionPolicy.self, forKey: .audioRetentionPolicy) ?? .thirtyDays
+        liveTranslatorEnabled = try container.decodeIfPresent(Bool.self, forKey: .liveTranslatorEnabled) ?? false
+        liveTranslatorTargetLanguage = try container.decodeIfPresent(String.self, forKey: .liveTranslatorTargetLanguage) ?? "ru"
+        liveTranslatorEngine = try container.decodeIfPresent(LiveTranslationEngine.self, forKey: .liveTranslatorEngine) ?? .cloud
+        liveTranslatorLocalModel = try container.decodeIfPresent(String.self, forKey: .liveTranslatorLocalModel) ?? "qwen2.5:3b"
+        liveTranslatorInputDeviceID = try container.decodeIfPresent(String.self, forKey: .liveTranslatorInputDeviceID)
+        liveTranslatorHotkeyConfig = try container.decodeIfPresent(HotkeyConfig.self, forKey: .liveTranslatorHotkeyConfig) ?? HotkeyConfig(keyCode: 17, useOption: true, useCommand: true)
+        useScreenCaptureKit = try container.decodeIfPresent(Bool.self, forKey: .useScreenCaptureKit) ?? false
+        liveTranslatorCompactMode = try container.decodeIfPresent(Bool.self, forKey: .liveTranslatorCompactMode) ?? false
     }
 
     var allModes: [TranscriptionMode] {
@@ -474,19 +540,22 @@ struct AppSettings: Codable {
         allModes.first { $0.name == selectedModeName } ?? .dictation
     }
 
+    var hasOpenAIAPIKey: Bool {
+        !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var canUseSpeakerDiarization: Bool {
+        hasOpenAIAPIKey
+    }
+
     func isModeEnabled(_ mode: TranscriptionMode) -> Bool {
         // Raw is always available (it's the only non-AI mode).
         if mode.name == TranscriptionMode.raw.name { return true }
         
         // All other modes (Dictation, Email, etc.) require global AI enablement AND keys
         guard enablePostProcessing else { return false }
-        
-        switch postProcessingEngine {
-        case .openai:
-            return !apiKey.trimmingCharacters(in: .whitespaces).isEmpty
-        case .perplexity:
-            return !perplexityApiKey.trimmingCharacters(in: .whitespaces).isEmpty
-        }
+
+        return hasOpenAIAPIKey
     }
 
     func validatedModeName(currentName: String) -> String {

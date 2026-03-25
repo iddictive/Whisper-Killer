@@ -397,14 +397,19 @@ final class AudioRecorder: ObservableObject {
                 mElement: kAudioObjectPropertyElementMain
             )
             
-            var uid: CFString?
-            var uidSize = UInt32(MemoryLayout<CFString?>.size)
+            var uid: Unmanaged<CFString>?
+            var uidSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
             AudioObjectGetPropertyData(id, &namePropertyAddress, 0, nil, &uidSize, &uid)
             
-            if let uidString = uid as String?, uidString == uniqueID {
+            if let uidString = uid?.takeRetainedValue() as String?, uidString == uniqueID {
                 return id
             }
         }
         return nil
+    }
+    
+    deinit {
+        _ = stopRecording()
+        stopMonitoring()
     }
 }

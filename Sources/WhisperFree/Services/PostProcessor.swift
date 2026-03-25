@@ -14,23 +14,14 @@ final class PostProcessor {
     }
 
     func process(text: String, mode: TranscriptionMode) async throws -> ProcessedResult {
-        let engine = settings.postProcessingEngine
-        let apiKey = (engine == .openai) ? settings.apiKey : settings.perplexityApiKey
+        let engine = PostProcessingEngine.openai
+        let apiKey = settings.apiKey
         
         guard !apiKey.isEmpty else { return ProcessedResult(text: text, promptTokens: 0, completionTokens: 0) }
         guard !text.isEmpty else { return ProcessedResult(text: text, promptTokens: 0, completionTokens: 0) }
 
-        let url: URL
-        let model: String
-        
-        switch engine {
-        case .openai:
-            url = URL(string: "https://api.openai.com/v1/chat/completions")!
-            model = "gpt-4o-mini"
-        case .perplexity:
-            url = URL(string: "https://api.perplexity.ai/chat/completions")!
-            model = "sonar-pro"
-        }
+        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
+        let model = "gpt-4o-mini"
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -78,10 +69,6 @@ final class PostProcessor {
     }
 
     func diarize(text: String) async throws -> ProcessedResult {
-        guard settings.postProcessingEngine == .openai else {
-            return ProcessedResult(text: text, promptTokens: 0, completionTokens: 0)
-        }
-        
         let apiKey = settings.apiKey
         guard !apiKey.isEmpty else { return ProcessedResult(text: text, promptTokens: 0, completionTokens: 0) }
         guard !text.isEmpty else { return ProcessedResult(text: text, promptTokens: 0, completionTokens: 0) }

@@ -67,6 +67,7 @@ final class AppState: ObservableObject {
             }
         }
     }
+    @Published var showLiveTranslatorOverlay = false
     @Published var isHotkeyTrusted = false
     @Published var isMicrophoneGranted = false
     @Published var isMicrophoneDenied = false
@@ -85,6 +86,7 @@ final class AppState: ObservableObject {
     let recorder = AudioRecorder()
     let modelManager = ModelManager()
     private let hotkeyManager = HotkeyManager()
+    private let liveTranslatorHotkeyManager = HotkeyManager()
     private var cancellables = Set<AnyCancellable>()
     var overlayCancellables = Set<AnyCancellable>()
     private var errorTimer: AnyCancellable?
@@ -175,16 +177,30 @@ final class AppState: ObservableObject {
 
     func reloadHotkeyManager() {
         hotkeyManager.stop()
+        liveTranslatorHotkeyManager.stop()
         setupHotkey()
     }
 
     private func setupHotkey() {
+        // Main Dictation Hotkey
         hotkeyManager.config = settings.hotkeyConfig
         hotkeyManager.start(
             promptUser: false, // Don't prompt automatically on launch, user triggers via Settings
             onKeyDown: { [weak self] in self?.handleKeyDown() },
             onKeyUp: { [weak self] in self?.handleKeyUp() }
         )
+        
+        // Live Translator Hotkey
+        if settings.liveTranslatorEnabled {
+            liveTranslatorHotkeyManager.config = settings.liveTranslatorHotkeyConfig
+            liveTranslatorHotkeyManager.start(
+                promptUser: false,
+                onKeyDown: { [weak self] in self?.handleLiveTranslatorKeyDown() },
+                onKeyUp: { } // Live translator is a toggle, we only care about onKeyDown
+            )
+        } else {
+            liveTranslatorHotkeyManager.stop()
+        }
     }
 
     func requestAccessibilityPermission() {
@@ -245,7 +261,29 @@ final class AppState: ObservableObject {
     }
 
     // MARK: - Recording Mode Logic
+    
+    // MARK: Live Translator Toggle
+    private func handleLiveTranslatorKeyDown() {
+        guard settings.liveTranslatorEnabled else { return }
+        
+        // Ensure microphone access is granted before attempting to use it
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+            DispatchQueue.main.async {
+                self.lastError = "Microphone access denied. Please grant permission in System Settings."
+                self.showOverlayWindow = true
+            }
+            return
+        }
+        
+        let manager = LiveTranslatorManager.shared
+        if manager.isRunning {
+            manager.stop()
+        } else {
+            manager.start()
+        }
+    }
 
+    // MARK: Main App Hotkey
     private func handleKeyDown() {
         switch settings.recordingMode {
         case .hold:
@@ -406,7 +444,15 @@ final class AppState: ObservableObject {
                 var processedText = rawText
                 var usage: UsageLog? = nil
                 
-                if settings.enablePostProcessing && settings.selectedMode.name != "Raw" && !settings.selectedMode.systemPrompt.isEmpty {
+                let shouldRunDiarization = settings.enableSpeakerDiarization && settings.canUseSpeakerDiarization
+                let shouldRunStandardPostProcessing = !shouldRunDiarization
+                    && settings.enablePostProcessing
+                    && settings.selectedMode.name != "Raw"
+                    && !settings.selectedMode.systemPrompt.isEmpty
+
+                if shouldRunDiarization {
+                    print("ℹ️ Skipping standard AI refinement because Diarization is active.")
+                } else if shouldRunStandardPostProcessing {
                     processingStage = .postProcessing
                     do {
                         let processor = PostProcessor(settings: settings)
@@ -434,8 +480,8 @@ final class AppState: ObservableObject {
                     }
                 }
 
-                // 3. Diarization (if enabled and NOT in Raw mode)
-                if settings.enableSpeakerDiarization && settings.selectedMode.name != "Raw" && settings.postProcessingEngine == .openai {
+                // 3. Diarization (if enabled and configured)
+                if shouldRunDiarization {
                     processingStage = .postProcessing // reuse stage
                     do {
                         let processor = PostProcessor(settings: settings)
@@ -449,7 +495,7 @@ final class AppState: ObservableObject {
                         
                         usage = UsageLog(
                             date: Date(),
-                            modeName: settings.selectedMode.name,
+                            modeName: "Diarization",
                             engine: PostProcessingEngine.openai.rawValue,
                             promptTokens: currentPromptTokens,
                             completionTokens: currentCompletionTokens,
@@ -485,13 +531,27 @@ final class AppState: ObservableObject {
                 settings.lifetimeDuration += recordingDuration
                 saveSettings()
 
+                // 7. Persist audio file
+                var persistentAudioPath: String? = nil
+                let fileName = "recording_\(UUID().uuidString).wav"
+                let targetURL = Storage.recordingsDirectory.appendingPathComponent(fileName)
+                
+                do {
+                    try FileManager.default.moveItem(at: audioURL, to: targetURL)
+                    persistentAudioPath = targetURL.path
+                    print("whisper_debug: 📁 Moved recording to: \(persistentAudioPath!)")
+                } catch {
+                    print("whisper_debug: ❌ Failed to move recording: \(error)")
+                }
+
                 let entry = TranscriptionHistoryEntry(
                     rawText: rawText,
                     processedText: processedText,
                     modeName: settings.selectedMode.name,
                     duration: recordingDuration,
-                    engineUsed: settings.engineType.rawValue + (settings.enablePostProcessing ? " + AI" : "") + (settings.enableSpeakerDiarization ? " + Diarization" : ""),
-                    usage: usage
+                    engineUsed: settings.engineType.rawValue + (shouldRunStandardPostProcessing ? " + AI" : "") + (shouldRunDiarization ? " + Diarization" : ""),
+                    usage: usage,
+                    audioFilePath: persistentAudioPath
                 )
                 Storage.shared.addTranscriptionHistoryEntry(entry)
                 history.insert(entry, at: 0)
@@ -543,6 +603,16 @@ final class AppState: ObservableObject {
         }
     }
 
+    func toggleLiveTranslator() {
+        if LiveTranslatorManager.shared.isRunning {
+            LiveTranslatorManager.shared.stop()
+            showLiveTranslatorOverlay = false
+        } else {
+            LiveTranslatorManager.shared.start()
+            showLiveTranslatorOverlay = true
+        }
+    }
+
     // MARK: - History
 
     func deleteTranscriptionHistoryEntry(_ entry: TranscriptionHistoryEntry) {
@@ -555,9 +625,30 @@ final class AppState: ObservableObject {
         history.removeAll()
     }
 
+    func updateTranscriptionText(entry: TranscriptionHistoryEntry, newText: String) {
+        var updatedEntry = entry
+        updatedEntry.processedText = newText
+        
+        // If it has an associated audio file, we could rename it too, 
+        // but that might break references if not careful. 
+        // For now, let's just update the text in storage and local state.
+        
+        if let index = history.firstIndex(where: { $0.entryId == entry.entryId }) {
+            history[index] = updatedEntry
+            Storage.shared.updateTranscriptionHistoryEntry(updatedEntry)
+        }
+    }
+
     private func cleanupOldLogs() {
         let sevenDaysAgo = Date().addingTimeInterval(-7 * 24 * 60 * 60)
         settings.usageLogs.removeAll { $0.date < sevenDaysAgo }
+    }
+
+    func stopAll() {
+        print("🛑 AppState: Stopping all audio services...")
+        _ = recorder.stopRecording()
+        recorder.stopMonitoring()
+        LiveTranslatorManager.shared.stop()
     }
 
 }

@@ -1,9 +1,15 @@
 import SwiftUI
+import AVFoundation
 
 struct HistoryView: View {
     @EnvironmentObject var appState: AppState
     @State private var searchText = ""
     @State private var expandedEntryId: UUID?
+    @State private var playingEntryId: UUID?
+    @State private var audioPlayer: AVAudioPlayer?
+    
+    @State private var renamingEntry: TranscriptionHistoryEntry?
+    @State private var newTranscriptionText = ""
 
     var filteredHistory: [TranscriptionHistoryEntry] {
         if searchText.isEmpty {
@@ -176,6 +182,18 @@ struct HistoryView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
         )
+        .alert("Rename Transcription", isPresented: .init(get: { renamingEntry?.entryId == entry.entryId }, set: { if !$0 { renamingEntry = nil } })) {
+            TextField("Transcription text", text: $newTranscriptionText)
+            Button("Cancel", role: .cancel) { renamingEntry = nil }
+            Button("Save") {
+                if let entry = renamingEntry {
+                    appState.updateTranscriptionText(entry: entry, newText: newTranscriptionText)
+                }
+                renamingEntry = nil
+            }
+        } message: {
+            Text("Edit the transcription text for this entry.")
+        }
     }
 
     private func rowHeader(_ entry: TranscriptionHistoryEntry) -> some View {
@@ -276,6 +294,38 @@ struct HistoryView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.cyan)
+            
+            Button {
+                newTranscriptionText = entry.processedText
+                renamingEntry = entry
+            } label: {
+                Label("Rename", systemImage: "pencil")
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.purple)
+
+            if let path = entry.audioFilePath, FileManager.default.fileExists(atPath: path) {
+                Button {
+                    togglePlay(entry: entry)
+                } label: {
+                    Label(playingEntryId == entry.entryId ? "Pause" : "Play", 
+                          systemImage: playingEntryId == entry.entryId ? "pause.fill" : "play.fill")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.orange)
+
+                Button {
+                    let url = URL(fileURLWithPath: path)
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                } label: {
+                    Label("Finder", systemImage: "folder.fill")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
 
             if entry.rawText != entry.processedText {
                 Button {
@@ -318,5 +368,24 @@ struct HistoryView: View {
             return "\(seconds)s"
         }
         return "\(seconds / 60)m \(seconds % 60)s"
+    }
+
+    private func togglePlay(entry: TranscriptionHistoryEntry) {
+        guard let path = entry.audioFilePath else { return }
+        let url = URL(fileURLWithPath: path)
+
+        if playingEntryId == entry.entryId {
+            audioPlayer?.pause()
+            playingEntryId = nil
+        } else {
+            do {
+                audioPlayer?.stop()
+                audioPlayer = try AVAudioPlayer(contentsOf: url)
+                audioPlayer?.play()
+                playingEntryId = entry.entryId
+            } catch {
+                print("❌ Audio play error: \(error)")
+            }
+        }
     }
 }

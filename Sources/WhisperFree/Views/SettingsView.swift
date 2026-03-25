@@ -6,15 +6,18 @@ struct SettingsView: View {
     @ObservedObject var recorder: AudioRecorder
     @ObservedObject private var updater = GitHubUpdater.shared
     @State private var selectedTab: String? = "app"
-    @State private var isTestingAPI = false
-    @State private var apiTestResult: String?
-    @State private var transcriptionTab = 0
+    
+    // Custom Mode State
     @State private var newModeName = ""
     @State private var newModeDescription = ""
     @State private var newModeExampleInput = ""
     @State private var newModeExampleOutput = ""
     @State private var newModePrompt = ""
     @State private var newModeIcon = "sparkles"
+    
+    // API Testing State
+    @State private var isTestingAPI = false
+    @State private var apiTestResult: String?
 
     var body: some View {
         ZStack {
@@ -35,6 +38,8 @@ struct SettingsView: View {
                                 .tag("engine")
                             Label("AI Modes", systemImage: "sparkles")
                                 .tag("modes")
+                            Label("Live Translator", systemImage: "text.bubble.fill")
+                                .tag("liveTranslator")
                             Label("Usage & About", systemImage: "info.circle.fill")
                                 .tag("info")
                         }
@@ -66,6 +71,7 @@ struct SettingsView: View {
                                     .onDisappear { appState.recorder.stopMonitoring() }
                             case "engine": engineSection
                             case "modes": modesSection
+                            case "liveTranslator": LiveTranslatorSettingsView(appState: appState)
                             case "info": infoSection
                             default: EmptyView()
                             }
@@ -94,6 +100,7 @@ struct SettingsView: View {
         case "capture": return "Capture & Automation"
         case "engine": return "Engine & API"
         case "modes": return "AI Modes"
+        case "liveTranslator": return "Live Translator"
         case "info": return "Usage & About"
         default: return "Settings"
         }
@@ -437,8 +444,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var modesSection: some View {
         Group {
-
-            ForEach(appState.settings.allModes) { mode in
+            ForEach(appState.settings.allModes, id: \.id) { mode in
                 let isDictation = mode.name == TranscriptionMode.dictation.name
                 let isDisabledByEngine = isDictation && appState.settings.engineType == .local
                 let isLocked = !appState.settings.isModeEnabled(mode)
@@ -652,35 +658,22 @@ struct SettingsView: View {
         }
     }
 
-    private func testAPIKey() {
-        isTestingAPI = true
-        apiTestResult = nil
-
-        Task {
-            let url = URL(string: "https://api.openai.com/v1/models")!
-            var request = URLRequest(url: url)
-            request.setValue("Bearer \(appState.settings.apiKey)", forHTTPHeaderField: "Authorization")
-
-            do {
-                let (_, response) = try await URLSession.shared.data(for: request)
-                if let http = response as? HTTPURLResponse, http.statusCode == 200 {
-                    apiTestResult = "✓ API key is valid"
-                } else {
-                    apiTestResult = "✗ Invalid API key"
-                }
-            } catch {
-                apiTestResult = "✗ Connection error: \(error.localizedDescription)"
-            }
-            isTestingAPI = false
-        }
-    }
-}
+} // End of SettingsView
 
 // MARK: - Helper Views
+
 
 struct AIConfigView: View {
     @Binding var settings: AppSettings
     var onSave: () -> Void
+
+    private var shouldShowDiarizationControls: Bool {
+        settings.engineType == .cloud || settings.enableSpeakerDiarization || settings.hasOpenAIAPIKey
+    }
+
+    private var shouldShowDedicatedDiarizationAPIKey: Bool {
+        settings.engineType != .cloud
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -700,55 +693,27 @@ struct AIConfigView: View {
                 Divider()
                 
                 VStack(alignment: .leading, spacing: 12) {
-                    Picker("AI Engine", selection: $settings.postProcessingEngine) {
-                        ForEach(PostProcessingEngine.allCases, id: \.self) { engine in
-                            Text(engine.rawValue).tag(engine)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: settings.postProcessingEngine) { _, _ in
-                        settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
-                        onSave()
-                    }
-                    
-                    if settings.postProcessingEngine == .openai {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text("OpenAI API Key").font(.caption).foregroundStyle(.secondary)
-                                if settings.engineType == .cloud {
-                                    Text("(Using key from Transcription Engine)").font(.system(size: 9)).foregroundStyle(Color.accentColor)
-                                }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("OpenAI API Key").font(.caption).foregroundStyle(.secondary)
+                            if settings.engineType == .cloud {
+                                Text("(Using key from Transcription Engine)").font(.system(size: 9)).foregroundStyle(Color.accentColor)
                             }
-                            SecureField("sk-...", text: $settings.apiKey)
-                                .textFieldStyle(.roundedBorder)
-                                .onChange(of: settings.apiKey) { _, _ in
-                                    settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
-                                    onSave()
-                                }
-                            Text("OpenAI GPT: Reliable formatting and structuring.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
-                    } else if settings.postProcessingEngine == .perplexity {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Perplexity API Key").font(.caption).foregroundStyle(.secondary)
-                            SecureField("pplx-...", text: $settings.perplexityApiKey)
-                                .textFieldStyle(.roundedBorder)
-                                .onChange(of: settings.perplexityApiKey) { _, _ in
-                                    settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
-                                    onSave()
-                                }
-                            Text("Perplexity Sonar: Best for intelligent grammar/flow.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        SecureField("sk-...", text: $settings.apiKey)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: settings.apiKey) { _, _ in
+                                settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
+                                onSave()
+                            }
+                        Text("OpenAI GPT: reliable formatting and structuring.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
             
-            let requiresOpenAI = settings.engineType == .cloud || (settings.enablePostProcessing && settings.postProcessingEngine == .openai)
-            
-            if requiresOpenAI {
+            if shouldShowDiarizationControls {
                 Divider()
                 
                 VStack(alignment: .leading, spacing: 12) {
@@ -756,10 +721,37 @@ struct AIConfigView: View {
                         .onChange(of: settings.enableSpeakerDiarization) { _, _ in 
                             onSave() 
                         }
+
+                    if shouldShowDedicatedDiarizationAPIKey {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("OpenAI API Key").font(.caption).foregroundStyle(.secondary)
+                            SecureField("sk-...", text: $settings.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .onChange(of: settings.apiKey) { _, _ in
+                                    settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
+                                    onSave()
+                                }
+                            Text("Required for diarization when transcription runs locally.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     
                     Text("Uses AI to identify and split different speakers in the transcription. Best for interviews and meetings.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    if settings.enableSpeakerDiarization && !settings.canUseSpeakerDiarization {
+                        Text("Add an OpenAI API key to enable diarization.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+
+                    if settings.enableSpeakerDiarization {
+                        Text("When diarization is enabled, standard AI refinement is skipped to preserve speaker turns.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -846,63 +838,5 @@ struct ModeCard: View {
         .onTapGesture {
             if isEnabled { onSelect() }
         }
-    }
-}
-
-struct ExampleBox: View {
-    let title: String
-    let text: String
-    let icon: String
-    var isOutput: Bool = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .bold))
-                Text(title.uppercased())
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-            }
-            .foregroundStyle(isOutput ? SW.accentBlue : SW.text3)
-            
-            Text(text)
-                .font(.system(size: 12, weight: .regular))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .foregroundStyle(.primary)
-        }
-    }
-}
-
-struct TextEditorCustom: View {
-    @Binding var text: String
-    let placeholder: String
-    var isMonospaced: Bool = false
-    
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            if text.isEmpty {
-                Text(placeholder)
-                    .font(isMonospaced ? .system(size: 12, design: .monospaced) : .system(size: 11))
-                    .foregroundStyle(.secondary.opacity(0.5))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 8)
-            }
-            
-            TextEditor(text: $text)
-                .font(isMonospaced ? .system(size: 12, design: .monospaced) : .system(size: 11))
-                .scrollContentBackground(.hidden)
-                .background(.clear)
-                .padding(4)
-        }
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-        .cornerRadius(6)
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-        )
     }
 }

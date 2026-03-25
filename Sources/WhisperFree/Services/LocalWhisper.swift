@@ -105,13 +105,13 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             process.standardOutput = outputPipe
             process.standardError = errorPipe
 
-            // Add timeout mechanism (3 minutes)
-            let timeoutSeconds: Double = 180
-            var timedOut = false
+            // Add timeout mechanism (1 hour for long recordings)
+            let timeoutSeconds: Double = 3600
+            let timedOut = ThreadSafeFlag(false)
             let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
             timer.schedule(deadline: .now() + timeoutSeconds)
             timer.setEventHandler {
-                timedOut = true
+                timedOut.set(true)
                 if process.isRunning {
                     print("whisper_debug: ⏰ Transcription TIMEOUT (\(timeoutSeconds)s). Terminating process.")
                     process.terminate()
@@ -190,7 +190,7 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
                     let parsed = self?.parseWhisperOutput(text) ?? ""
                     continuation.resume(returning: parsed)
                 } else {
-                    if timedOut {
+                    if timedOut.get() {
                         continuation.resume(throwing: TranscriptionError.transcriptionFailed("Transcription timed out after \(Int(timeoutSeconds)) seconds."))
                     } else {
                         let errorOutput = String(data: errorAccumulator.getData(), encoding: .utf8) ?? "Unknown error"
@@ -466,5 +466,26 @@ final class DataAccumulator: @unchecked Sendable {
         queue.sync {
             return self.data
         }
+    }
+}
+
+final class ThreadSafeFlag: @unchecked Sendable {
+    private var value: Bool
+    private let lock = NSLock()
+    
+    init(_ value: Bool) {
+        self.value = value
+    }
+    
+    func set(_ newValue: Bool) {
+        lock.lock()
+        value = newValue
+        lock.unlock()
+    }
+    
+    func get() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
     }
 }
