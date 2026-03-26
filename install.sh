@@ -33,4 +33,4 @@ echo "🪄 Running deployment and permission fixes..."
 chmod +x scripts/fix_accessibility.sh
 ./scripts/fix_accessibility.sh
 
-echo "✨ Installation complete! Please re-grant Accessibility permissions when prompted."
+echo "✨ Installation complete! Existing permissions were preserved for the current app bundle ID."

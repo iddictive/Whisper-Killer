@@ -95,6 +95,8 @@ final class AppState: ObservableObject {
     // Hold-mode tracking
     private var keyDownTime: Date?
     private var isHoldActive = false
+    private var pendingStopTask: Task<Void, Never>?
+    private let postReleaseTail: TimeInterval = 0.45
 
     private init() {
         print("🚀 AppState initializing...")
@@ -348,7 +350,7 @@ final class AppState: ObservableObject {
                 // If held more than 0.8s, it's a real recording. 
                 // If less, it might be a misclick or the user wants to cancel.
                 if duration > 0.8 {
-                    stopAndTranscribe()
+                    scheduleStopAndTranscribe(after: postReleaseTail)
                 } else {
                     cancelRecording()
                 }
@@ -361,7 +363,7 @@ final class AppState: ObservableObject {
             if state == .recording {
                 if duration >= 0.8 {
                     // It was a long press (PTT), stop on release
-                    stopAndTranscribe()
+                    scheduleStopAndTranscribe(after: postReleaseTail)
                 } else {
                     // It was a short tap (< 800ms), let it keep recording (Toggle behavior)
                 }
@@ -395,6 +397,7 @@ final class AppState: ObservableObject {
     func startRecording() {
         guard state == .idle else { return }
         guard validateTranscriptionPrerequisites(requiresMicrophone: true) else { return }
+        cancelPendingStopTask()
 
         lastError = nil
         state = .recording
@@ -407,6 +410,7 @@ final class AppState: ObservableObject {
 
 
     func cancelRecording() {
+        cancelPendingStopTask()
         if state == .processing {
             // Cancel transcription if it's running
             currentEngine?.cancel()
@@ -554,6 +558,7 @@ final class AppState: ObservableObject {
     }
 
     func stopAndTranscribe() {
+        cancelPendingStopTask()
         guard state == .recording else { return }
 
         let (audioURLOptional, recordingDuration) = recorder.stopRecording()
@@ -740,6 +745,22 @@ final class AppState: ObservableObject {
                 currentEngine = nil
             }
         }
+    }
+
+    private func scheduleStopAndTranscribe(after delay: TimeInterval) {
+        cancelPendingStopTask()
+        pendingStopTask = Task { @MainActor [weak self] in
+            let delayNanoseconds = UInt64(delay * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled, let self else { return }
+            guard self.state == .recording else { return }
+            self.stopAndTranscribe()
+        }
+    }
+
+    private func cancelPendingStopTask() {
+        pendingStopTask?.cancel()
+        pendingStopTask = nil
     }
 
     func showError(_ message: String) {

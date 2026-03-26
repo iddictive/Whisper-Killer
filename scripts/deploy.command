@@ -11,6 +11,17 @@ INFO_PLIST="Sources/WhisperFree/Resources/Info.plist"
 ICON_FILE="Sources/WhisperFree/Resources/AppIcon.icns"
 BUILD_PATH=".build/apple/Products/Release/$APP_NAME"
 
+function resolve_signing_identity() {
+    if [ -n "$WHISPERKILLER_CODESIGN_IDENTITY" ]; then
+        echo "$WHISPERKILLER_CODESIGN_IDENTITY"
+        return
+    fi
+
+    security find-identity -v -p codesigning 2>/dev/null \
+        | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' \
+        | head -n 1
+}
+
 # 1. Versioning
 COMMIT_COUNT=$(git rev-list --count HEAD)
 VERSION="2.0.$COMMIT_COUNT"
@@ -80,8 +91,13 @@ if [ $? -eq 0 ]; then
     
     ENTITLEMENTS="Sources/WhisperFree/Resources/WhisperKiller.entitlements"
     echo "🔑 Signing $BUNDLE_NAME with entitlements..."
-    if ! codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "Mikhail Drozdov" "$BUNDLE_NAME" 2>/dev/null; then
-        echo "⚠️  Identity 'Mikhail Drozdov' not found. Falling back to ad-hoc signing..."
+    SIGNING_IDENTITY=$(resolve_signing_identity)
+    if [ -n "$SIGNING_IDENTITY" ]; then
+        echo "✅ Using signing identity: $SIGNING_IDENTITY"
+        codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$BUNDLE_NAME"
+    else
+        echo "⚠️  Developer ID Application identity not found. Falling back to ad-hoc signing."
+        echo "⚠️  Ad-hoc signed builds may cause macOS to treat each install as a new app and ask for permissions again."
         codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "-" "$BUNDLE_NAME"
     fi
     

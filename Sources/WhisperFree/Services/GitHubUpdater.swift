@@ -143,39 +143,36 @@ class GitHubUpdater: ObservableObject {
     }
 
     private func runInstallScript(dmgPath: String) {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let appPath = "/Applications/WhisperKiller.app"
+        let mountPath = "/tmp/whisperfree_update"
+        let stagedAppPath = "/tmp/WhisperKiller.updated.app"
         let script = """
-        mkdir -p /tmp/whisperfree_update
-        hdiutil attach "\(dmgPath)" -mountpoint /tmp/whisperfree_update -nobrowse -quiet
-        # Force copy even if folder exists
-        rm -rf /Applications/WhisperKiller.app
-        cp -R /tmp/whisperfree_update/WhisperKiller.app /Applications/
-        hdiutil detach /tmp/whisperfree_update -quiet
+        set -e
+        while kill -0 \(pid) 2>/dev/null; do sleep 0.1; done
+        rm -rf "\(mountPath)" "\(stagedAppPath)"
+        mkdir -p "\(mountPath)"
+        hdiutil attach "\(dmgPath)" -mountpoint "\(mountPath)" -nobrowse -quiet
+        ditto "\(mountPath)/WhisperKiller.app" "\(stagedAppPath)"
+        hdiutil detach "\(mountPath)" -quiet || true
+        xattr -rc "\(stagedAppPath)" || true
+        rm -rf "\(appPath)"
+        mv "\(stagedAppPath)" "\(appPath)"
+        open "\(appPath)"
         """
-        
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", script]
-        
+
         do {
-            try process.run()
-            process.waitUntilExit()
-            if process.terminationStatus == 0 {
-                relaunch()
-            }
+            try launchDetachedShellScript(script)
+            NSApp.terminate(nil)
         } catch {
             print("❌ Installation error: \(error)")
         }
     }
 
-    private func relaunch() {
-        let appPath = "/Applications/WhisperKiller.app"
-        let pid = ProcessInfo.processInfo.processIdentifier
-        // Launch a detached script that waits for us to die, then opens the new app
-        let script = "while kill -0 \(pid) 2>/dev/null; do sleep 0.1; done; open \"\(appPath)\""
+    private func launchDetachedShellScript(_ script: String) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", script]
-        try? process.run()
-        NSApp.terminate(nil)
+        try process.run()
     }
 }

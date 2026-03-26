@@ -8,7 +8,7 @@ echo "🔍 Starting Permissions & Deployment Fix..."
 
 APP_NAME="WhisperKiller"
 BUNDLE_ID="com.whisperkiller.app"
-OLD_BUNDLE_IDS=("com.whisperkiller.app" "com.whisperfree.app" "com.whisperflow.app" "WhisperFree" "WhisperFlow")
+OLD_BUNDLE_IDS=("com.whisperfree.app" "com.whisperflow.app" "WhisperFree" "WhisperFlow")
 DEST_DIR="/Applications"
 
 # Helper for non-sudo operations with sudo fallbacks
@@ -28,11 +28,11 @@ safe_xattr() {
     find "$1" -exec xattr -c {} + 2>/dev/null || sudo find "$1" -exec xattr -c {} + 2>/dev/null
 }
 
-# 1. Reset Accessibility & Microphone permissions
-echo "🛡️ Resetting TCC permissions for all IDs (including active)..."
-IDS=("com.whisperkiller.app" "com.whisperfree.app" "com.whisperflow.app" "WhisperFree" "WhisperFlow")
-for id in "${IDS[@]}"; do
-    echo "  - Resetting $id..."
+# 1. Reset only legacy TCC entries.
+# Never reset the active bundle ID during install/update or macOS will ask again.
+echo "🛡️ Cleaning up legacy TCC permissions without touching current app access..."
+for id in "${OLD_BUNDLE_IDS[@]}"; do
+    echo "  - Resetting legacy ID $id..."
     tccutil reset Accessibility "$id" 2>/dev/null
     tccutil reset Microphone "$id" 2>/dev/null
 done
@@ -95,4 +95,4 @@ else
     echo "⚠️  No built app found in current directory. Just resetting permissions."
 fi
 
-echo "✅ Done! Please re-grant Accessibility permissions when prompted."
+echo "✅ Done! Existing permissions for $BUNDLE_ID were preserved."
