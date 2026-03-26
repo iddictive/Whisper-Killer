@@ -112,6 +112,7 @@ final class AppState: ObservableObject {
         checkTranslocation()
         checkAccessibility()
         refreshAvailableDevices()
+        observeLiveTranslatorState()
         
         // Listen for device changes
         NotificationCenter.default.addObserver(forName: .AVCaptureDeviceWasConnected, object: nil, queue: .main) { [weak self] _ in
@@ -136,6 +137,20 @@ final class AppState: ObservableObject {
 
     private func checkAccessibility() {
         self.isHotkeyTrusted = hotkeyManager.isTrusted
+    }
+
+    private func observeLiveTranslatorState() {
+        NotificationCenter.default.publisher(for: .liveTranslatorDidStart)
+            .sink { [weak self] _ in
+                self?.showLiveTranslatorOverlay = true
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .liveTranslatorDidStop)
+            .sink { [weak self] _ in
+                self?.showLiveTranslatorOverlay = false
+            }
+            .store(in: &cancellables)
     }
 
     func refreshAvailableDevices() {
@@ -266,21 +281,16 @@ final class AppState: ObservableObject {
     private func handleLiveTranslatorKeyDown() {
         guard settings.liveTranslatorEnabled else { return }
         
-        // Ensure microphone access is granted before attempting to use it
-        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+        // Microphone permission is required only for microphone capture.
+        guard settings.useScreenCaptureKit || AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
             DispatchQueue.main.async {
                 self.lastError = "Microphone access denied. Please grant permission in System Settings."
                 self.showOverlayWindow = true
             }
             return
         }
-        
-        let manager = LiveTranslatorManager.shared
-        if manager.isRunning {
-            manager.stop()
-        } else {
-            manager.start()
-        }
+
+        toggleLiveTranslator()
     }
 
     // MARK: Main App Hotkey
@@ -606,10 +616,8 @@ final class AppState: ObservableObject {
     func toggleLiveTranslator() {
         if LiveTranslatorManager.shared.isRunning {
             LiveTranslatorManager.shared.stop()
-            showLiveTranslatorOverlay = false
         } else {
             LiveTranslatorManager.shared.start()
-            showLiveTranslatorOverlay = true
         }
     }
 

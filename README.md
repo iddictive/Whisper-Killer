@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="banner.png" alt="Whisper Free" width="800">
+  <img src="Banner.png" alt="WhisperFree" width="800">
 </p>
 
 <p align="center">
@@ -10,89 +10,291 @@
 
 <a id="english"></a>
 
-## English 🇺🇸
+## English
 
-### Free Professional macOS GUI for local Voice-to-Text — No Subscriptions, 100% Privacy
+### WhisperFree
 
-**WhisperKiller** is a hyper-fast, high-performance macOS application designed to transcribe your voice to text instantly using OpenAI's Whisper models.
+Open-source macOS menu bar app for voice dictation, file transcription, AI cleanup, and live subtitle translation.
 
-> Love the convenience of AI dictation but hate paying monthly subscriptions for professional features? WhisperKiller gives you the "SuperWhisper experience" for free, running locally on your Mac's GPU/NPU or via API.
+No subscription is required. If you use cloud transcription or cloud AI cleanup, usage is billed to your own OpenAI account.
 
-It is a **fully-featured SuperWhisper alternative** that puts privacy and speed first. No "marketing fluff," just raw performance.
+The repository is named **WhisperFree**. In the current builds, the macOS app bundle and UI are still labeled **WhisperKiller**, so you may see both names in the app, scripts, and releases.
 
-### Features
-- **Control**: Lives in the menu bar, triggered by a global hotkey (default `⌥ Space`).
-- **Transcription**: Local via [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (GPU/NPU optimized) or cloud via OpenAI API.
-- **File Transcription**: Dedicated view for transcribing audio/video files with a batch processing queue and inline results.
-- **Time Range Selection**: Select specific segments of files to transcribe, with dynamic cost estimation for cloud engines.
-- **Diarization**: Support for AI-powered speaker identification (splitting text by speaker).
-- **Workflow**: Results are automatically inserted into the active application via paste or direct typing.
-- **Improved Settings**: Redesigned 5-tab interface (App, Capture, Engine, AI Modes, Info) for better organization.
-- **Smart Modes**: 4 built-in modes (Dictation, Email, Code, Notes) + create your own custom AI prompts.
-- **Intelligent Keys**: OpenAI API keys only appear when needed for your current engine.
-- **Bilingual Suppressor**: Built-in filters to handle common model hallucinations ("DimaTorzok", etc.) and repetitions.
-- **Global**: Supports 18 languages with auto-detection.
+### What the app can do right now
 
-### System Requirements
-- **macOS**: 14.0 (Sonoma) or newer.
-- **Architecture**: **Apple Silicon (arm64)** required. Intel is not supported.
-- **RAM**: 8GB Minimum, 16GB+ recommended for large models.
+- **Menu bar dictation** with a global shortcut. Default shortcut: `⌥ Space`.
+- **Three recording styles**: Hold to Record, Toggle, and Push to Talk.
+- **Two transcription engines**:
+  - Local via `whisper.cpp`
+  - Cloud via OpenAI Whisper API
+- **AI cleanup modes** after transcription:
+  - Raw
+  - Dictation
+  - Email
+  - Code
+  - Notes
+  - Custom modes with your own prompt
+- **Automatic insertion into the active app**:
+  - paste as one block
+  - type character-by-character
+  - optional auto-Enter
+- **Floating recording overlay** during capture and processing.
+- **Speaker diarization** for interviews and meetings.
+- **File transcription window** with:
+  - drag-and-drop queue
+  - audio and video file support
+  - per-file start/end range
+  - progress states
+  - cloud cost estimate
+  - cancel/remove/clear flow
+- **Auto summary for imported files** with sections for topics, speaker threads, decisions, action items, and open questions.
+- **History window** with:
+  - search
+  - copy processed text, raw text, or summary
+  - quick rename/edit
+  - playback of saved recordings when available
+  - Finder reveal for stored audio
+  - usage stats such as total words, average WPM, and estimated time saved
+- **Live Translator** with on-screen subtitle overlay:
+  - microphone input or system audio capture
+  - OpenAI-based translation
+  - local translation through Ollama
+  - separate hotkey and audio routing from the main dictation flow
+- **Model management inside the app** for local Whisper models:
+  - Tiny
+  - Base
+  - Small
+  - Medium
+  - Large v3 Turbo
+  - Large v3
+- **Setup wizard** for first launch, permissions, engine choice, and dependency guidance.
+- **GitHub release updater** built into the app.
 
-### Setup
-1. **Download**: Get `WhisperFree.dmg` from [Releases](https://github.com/iddictive/Whisper-Free/releases).
-2. **Install**: Drag to `Applications`.
-3. **Permissions**: Grant **Accessibility** and **Microphone** access on first launch.
+### Engines and dependencies
 
-### Manual Build
+- **Local transcription**:
+  - requires `whisper.cpp` (`brew install whisper-cpp`)
+  - uses downloadable Whisper model files inside the app
+  - works offline once installed
+- **Cloud transcription**:
+  - requires an OpenAI API key
+  - uses OpenAI Whisper API
+- **AI cleanup modes and diarization**:
+  - require an OpenAI API key
+- **Live Translator in local mode**:
+  - requires Ollama
+  - requires a downloaded Ollama model
+- **Auto summaries**:
+  - can use OpenAI when a key is available
+  - can fall back to Ollama when local follow-up is configured
+
+### Language support
+
+- The current UI exposes **17 selectable languages plus Auto-detect**:
+  - English
+  - Russian
+  - Spanish
+  - French
+  - German
+  - Italian
+  - Portuguese
+  - Japanese
+  - Korean
+  - Chinese
+  - Arabic
+  - Hindi
+  - Turkish
+  - Polish
+  - Dutch
+  - Swedish
+  - Ukrainian
+
+### System requirements
+
+- **macOS**: 14.0 or newer
+- **Official install/build scripts** target **Apple Silicon (`arm64`)**
+- **RAM**:
+  - 8 GB minimum for basic usage
+  - 16 GB+ recommended for larger local models
+
+### Permissions
+
+- **Accessibility** is required for global hotkeys and text insertion into other apps.
+- **Microphone** is required for voice dictation.
+
+### Installation
+
+1. Download the latest `.dmg` from [Releases](https://github.com/iddictive/Whisper-Free/releases).
+2. Move the app to `Applications`.
+3. Launch it and complete the setup wizard.
+4. Grant `Accessibility` and `Microphone` access when prompted.
+5. Choose your engine:
+   - OpenAI API key for cloud transcription
+   - `whisper.cpp` + local model download for offline transcription
+   - Ollama if you want local Live Translator / local follow-up AI
+
+### Build from source
+
 ```bash
 git clone https://github.com/iddictive/Whisper-Free.git
 cd Whisper-Free
 make install
+```
+
+Useful commands:
+
+```bash
+make verify   # compile debug + release
+make run      # run from source
+make app      # create local .app bundle
 ```
 
 ---
 
 <a id="russian"></a>
 
-## Русский 🇷🇺
+## Русский
 
-### Профессиональный GUI для локального распознавания речи на macOS — Без подписок, 100% приватно
+### WhisperFree
 
-**WhisperKiller** — сверхбыстрое и производительное приложение для macOS, которое мгновенно превращает ваш голос в текст, используя модели Whisper от OpenAI.
+Open-source приложение для macOS в menu bar: диктовка голосом, транскрибация файлов, AI-обработка текста и live-перевод в виде субтитров.
 
-> Нравится удобство AI-диктовки, но не хочется платить ежемесячную подписку за "PRO"-функции? WhisperKiller — это бесплатная альтернатива SuperWhisper, работающая локально на GPU/NPU вашего Mac или через API.
+Подписка не нужна. Если использовать облачную транскрибацию или облачную AI-обработку, расходы идут только по вашему OpenAI-аккаунту.
 
-Это **полнофункциональная замена SuperWhisper**, где в приоритете приватность и скорость. Минимум «маркетинговой воды», максимум производительности.
+Репозиторий называется **WhisperFree**, но в текущих сборках само приложение, `.app` bundle и часть интерфейса всё ещё называются **WhisperKiller**. Поэтому в коде, релизах и UI встречаются оба имени.
 
-### Возможности
-- **Управление**: Работает из Menu Bar по глобальной горячей клавише (по умолчанию `⌥ Space`).
-- **Транскрипция**: Локально через [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (оптимизировано под Apple Silicon) или облако (OpenAI API).
-- **Транскрибация файлов**: Отдельный интерфейс для пакетной обработки аудио/видео файлов с просмотром результата прямо в карточке.
-- **Выбор фрагмента**: Возможность выбрать конкретный временной интервал (Start/End) для транскрибации файла с динамическим расчетом стоимости.
-- **Диаризация**: Поддержка разделения по ролям (AI-идентификация спикеров).
-- **Интеграция**: Результат автоматически вставляется в активное приложение (вставка из буфера или прямая печать).
-- **Новый интерфейс**: Полностью переработанные настройки (5 вкладок: App, Capture, Engine, AI Modes, Info).
-- **Умные режимы**: 4 встроенных пресета (Диктовка, Email, Код, Заметки) + создание собственных AI-промптов.
-- **Умные ключи**: API-ключи OpenAI отображаются только когда они необходимы.
-- **Подавление галлюцинаций**: Умные фильтры для удаления артефактов ("DimaTorzok", повторы) и рекламных вставок из локального вывода.
-- **Языки**: Поддержка 18 языков с автоопределением.
+### Что приложение умеет сейчас
+
+- **Диктовка из menu bar** по глобальной горячей клавише. По умолчанию: `⌥ Space`.
+- **Три режима записи**:
+  - удержание клавиши
+  - toggle-режим
+  - push-to-talk
+- **Два движка транскрибации**:
+  - локально через `whisper.cpp`
+  - через OpenAI Whisper API
+- **AI-обработка текста после распознавания**:
+  - Raw
+  - Dictation
+  - Email
+  - Code
+  - Notes
+  - пользовательские режимы со своим промптом
+- **Автовставка результата в активное приложение**:
+  - вставкой одним блоком
+  - посимвольной печатью
+  - с опциональным авто-`Enter`
+- **Плавающий overlay** во время записи и обработки.
+- **Диаризация спикеров** для встреч, интервью и разговоров.
+- **Отдельное окно транскрибации файлов**, где есть:
+  - drag-and-drop очередь
+  - поддержка аудио и видео файлов
+  - выбор нужного временного диапазона внутри файла
+  - статусы прогресса
+  - оценка стоимости для облачного режима
+  - отмена, удаление и очистка очереди
+- **Автосводка для импортированных файлов** с блоками: темы, линии спикеров, решения, действия и открытые вопросы.
+- **Окно истории** с возможностями:
+  - поиск
+  - копирование обработанного текста, сырой расшифровки или сводки
+  - быстрое переименование/редактирование
+  - проигрывание сохранённых записей, если аудио доступно
+  - открытие исходного аудио в Finder
+  - статистика: слова, средний WPM, оценка сэкономленного времени
+- **Live Translator** с субтитрами поверх экрана:
+  - захват с микрофона или системного аудио
+  - перевод через OpenAI
+  - локальный перевод через Ollama
+  - отдельная горячая клавиша и отдельный источник аудио
+- **Управление локальными Whisper-моделями прямо в приложении**:
+  - Tiny
+  - Base
+  - Small
+  - Medium
+  - Large v3 Turbo
+  - Large v3
+- **Мастер первого запуска** для разрешений, выбора движка и зависимостей.
+- **Встроенная проверка обновлений** через GitHub Releases.
+
+### Движки и зависимости
+
+- **Локальная транскрибация**:
+  - требует `whisper.cpp` (`brew install whisper-cpp`)
+  - использует скачиваемые Whisper-модели внутри приложения
+  - после установки работает офлайн
+- **Облачная транскрибация**:
+  - требует OpenAI API key
+  - использует OpenAI Whisper API
+- **AI-режимы и диаризация**:
+  - требуют OpenAI API key
+- **Live Translator в локальном режиме**:
+  - требует Ollama
+  - требует скачанную Ollama-модель
+- **Автосводки**:
+  - могут работать через OpenAI при наличии ключа
+  - могут использовать Ollama как локальный follow-up движок
+
+### Поддержка языков
+
+- В текущем UI доступны **17 языков плюс Auto-detect**:
+  - English
+  - Russian
+  - Spanish
+  - French
+  - German
+  - Italian
+  - Portuguese
+  - Japanese
+  - Korean
+  - Chinese
+  - Arabic
+  - Hindi
+  - Turkish
+  - Polish
+  - Dutch
+  - Swedish
+  - Ukrainian
 
 ### Системные требования
-- **macOS**: 14.0 (Sonoma) или новее.
-- **Архитектура**: Только **Apple Silicon (arm64)**. Intel не поддерживается.
-- **RAM**: Минимум 8 ГБ, рекомендуется 16 ГБ+ для тяжелых моделей.
+
+- **macOS**: 14.0 или новее
+- **Официальные install/build scripts** ориентированы на **Apple Silicon (`arm64`)**
+- **RAM**:
+  - минимум 8 ГБ для базового использования
+  - 16 ГБ+ желательно для крупных локальных моделей
+
+### Разрешения
+
+- **Accessibility** нужно для глобальных хоткеев и вставки текста в другие приложения.
+- **Microphone** нужен для голосовой диктовки.
 
 ### Установка
-1. **Скачать**: `WhisperFree.dmg` со страницы [Релизов](https://github.com/iddictive/Whisper-Free/releases).
-2. **Установить**: Перетянуть в `Applications`.
-3. **Права**: На первом запуске разрешите доступ к **Accessibility** (Универсальный доступ) и **Микрофону**.
+
+1. Скачайте актуальный `.dmg` со страницы [Releases](https://github.com/iddictive/Whisper-Free/releases).
+2. Переместите приложение в `Applications`.
+3. Запустите приложение и пройдите мастер первого запуска.
+4. Выдайте доступ к `Accessibility` и `Microphone`.
+5. Выберите нужный режим:
+   - OpenAI API key для облачной транскрибации
+   - `whisper.cpp` + локальная модель для офлайн-работы
+   - Ollama для локального Live Translator и локального follow-up AI
 
 ### Сборка из исходников
+
 ```bash
 git clone https://github.com/iddictive/Whisper-Free.git
 cd Whisper-Free
 make install
 ```
 
+Полезные команды:
+
+```bash
+make verify   # собрать debug + release
+make run      # запуск из исходников
+make app      # локальная сборка .app bundle
+```
+
 ---
+
 MIT License.

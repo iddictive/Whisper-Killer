@@ -304,6 +304,11 @@ struct LiveTranslatorSettingsView: View {
         }
         .onAppear {
             isOllamaInstalled = FileManager.default.fileExists(atPath: "/Applications/Ollama.app")
+            let normalizedLanguage = AppSettings.normalizedLiveTranslatorTargetLanguage(appState.settings.liveTranslatorTargetLanguage)
+            if normalizedLanguage != appState.settings.liveTranslatorTargetLanguage {
+                appState.settings.liveTranslatorTargetLanguage = normalizedLanguage
+                appState.saveSettings()
+            }
             if isOllamaInstalled {
                 refreshModels()
             }

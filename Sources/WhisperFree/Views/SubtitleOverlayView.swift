@@ -9,6 +9,10 @@ struct SubtitleOverlayContent: View {
     private var compactMode: Bool {
         Storage.shared.loadSettings().liveTranslatorCompactMode
     }
+
+    private var targetLanguageLabel: String {
+        AppSettings.normalizedLiveTranslatorTargetLanguage(Storage.shared.loadSettings().liveTranslatorTargetLanguage)
+    }
     
     var body: some View {
         ZStack {
@@ -25,7 +29,7 @@ struct SubtitleOverlayContent: View {
                                     }
                                 }
                             } label: {
-                                Text(Storage.shared.loadSettings().liveTranslatorTargetLanguage)
+                                Text(targetLanguageLabel)
                                     .font(.system(size: compactMode ? 10 : 12, weight: .bold))
                                     .foregroundColor(.accentColor)
                             }
@@ -182,7 +186,7 @@ final class SubtitleOverlayController: NSObject, ObservableObject {
             // but for simple movement, we'll keep the whole panel sized to content if possible
             
             // Add observer for LiveTranslatorManager stopping to auto-hide
-            NotificationCenter.default.addObserver(self, selector: #selector(hideIfStopped), name: NSNotification.Name("LiveTranslatorStopped"), object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(hideIfStopped), name: .liveTranslatorDidStop, object: nil)
         }
         
         panel?.orderFrontRegardless() // Ensure it goes to front

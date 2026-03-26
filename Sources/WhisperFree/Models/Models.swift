@@ -107,7 +107,49 @@ struct TranscriptionMode: Codable, Identifiable, Hashable {
         isBuiltIn: true
     )
 
-    static let builtInModes: [TranscriptionMode] = [.raw, .dictation, .email, .code, .notes]
+    static let userStory = TranscriptionMode(
+        name: "User Story",
+        icon: "square.and.pencil",
+        description: "Turns spoken product thoughts into structured user stories with acceptance criteria.",
+        exampleInput: "Add a mode that takes my spoken notes and turns them into a product requirement with acceptance criteria and edge cases.",
+        exampleOutput: """
+        ## User Story
+        As a product manager, I want spoken notes converted into a structured requirement, so that I can quickly move ideas into delivery.
+
+        ## Acceptance Criteria
+        - Spoken input is converted into a clear user story.
+        - Acceptance criteria are specific and testable.
+        - At least one negative criterion describes what must not happen.
+        """,
+        systemPrompt: """
+        Convert this transcribed speech into concise product requirements in markdown.
+
+        Output in this exact structure:
+        ## User Story
+        As a [role], I want [action], so that [benefit].
+
+        ## Acceptance Criteria
+        - ...
+        - ...
+        - ...
+
+        Rules:
+        - Clean up filler words and speech artifacts.
+        - Infer the most likely role, action, and benefit from the transcript.
+        - Write 3 to 5 acceptance criteria.
+        - Include at least 1 negative criterion stating what must not happen.
+        - If the transcript clearly contains multiple distinct requests, output multiple sections using:
+          ## User Story 1
+          ## Acceptance Criteria 1
+          ## User Story 2
+          ## Acceptance Criteria 2
+        - Keep the result practical, implementation-ready, and concise.
+        - Output ONLY the markdown result.
+        """,
+        isBuiltIn: true
+    )
+
+    static let builtInModes: [TranscriptionMode] = [.raw, .dictation, .email, .code, .notes, .userStory]
     
     // Placeholder values for UI creation
     static let placeholderName = "Summary"

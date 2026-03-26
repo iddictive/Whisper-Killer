@@ -20,6 +20,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     private var lastSentText: String = ""
     
     private var translationDebounceTimer: AnyCancellable?
+    private var isStoppingProcess = false
     
     // Silence detection
     @Published var isSilence: Bool = false
@@ -52,9 +53,10 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     
     func start() {
         guard !isRunning else { return }
+        isStoppingProcess = false
         
         let currentSettings = Storage.shared.loadSettings()
-        let targetLanguage = currentSettings.liveTranslatorTargetLanguage
+        let targetLanguage = AppSettings.normalizedLiveTranslatorTargetLanguage(currentSettings.liveTranslatorTargetLanguage)
         let engineChoice = currentSettings.liveTranslatorEngine
         let localModel = currentSettings.liveTranslatorLocalModel
         
@@ -81,6 +83,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
                     isRunning = true
                     statusMessage = "Capturing System Audio..."
                     print("✅ SCK Capture started in LiveTranslatorManager")
+                    NotificationCenter.default.post(name: .liveTranslatorDidStart, object: nil)
                     
                     // Start transcription loop for SCK
                     startSCKTranscriptionLoop()
@@ -102,6 +105,11 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         // 3. Setup Process
         process = Process()
         process?.executableURL = URL(fileURLWithPath: binaryPath)
+        process?.terminationHandler = { [weak self] terminatedProcess in
+            Task { @MainActor in
+                self?.handleProcessTermination(terminatedProcess)
+            }
+        }
         
         let deviceID = getCaptureDeviceIndex(for: currentSettings.liveTranslatorInputDeviceID)
         print("whisper_debug: Starting whisper-stream with device index \(deviceID) and model \(modelPath)")
@@ -140,6 +148,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             rawStreamBuffer = ""
             statusMessage = "Listening..."
             resetSilenceTimer()
+            NotificationCenter.default.post(name: .liveTranslatorDidStart, object: nil)
         } catch {
             statusMessage = "Failed to start stream: \(error.localizedDescription)"
             isRunning = false
@@ -155,6 +164,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             }
         }
         
+        isStoppingProcess = true
         if let process = process, process.isRunning {
             process.terminate()
             process.waitUntilExit() // Ensure it's really gone
@@ -178,8 +188,9 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         silenceTimer?.invalidate()
         isUsingSCK = false
         isTranscribingSCK = false
+        isStoppingProcess = false
         
-        NotificationCenter.default.post(name: NSNotification.Name("LiveTranslatorStopped"), object: nil)
+        NotificationCenter.default.post(name: .liveTranslatorDidStop, object: nil)
     }
     
     deinit {
@@ -225,6 +236,45 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         originalText = fullText
         
         triggerTranslation(targetLanguage: targetLanguage, engine: engine, localModel: localModel)
+    }
+
+    private func handleProcessTermination(_ terminatedProcess: Process) {
+        guard process === terminatedProcess else {
+            isStoppingProcess = false
+            return
+        }
+
+        outputPipe?.fileHandleForReading.readabilityHandler = nil
+        outputPipe = nil
+        process = nil
+
+        if isStoppingProcess || !isRunning {
+            isStoppingProcess = false
+            return
+        }
+
+        isRunning = false
+        originalText = ""
+        translatedText = ""
+        rawStreamBuffer = ""
+        lastSentText = ""
+        translationTask?.cancel()
+        translationDebounceTimer?.cancel()
+        silenceTimer?.invalidate()
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
+        isUsingSCK = false
+        isTranscribingSCK = false
+        isStoppingProcess = false
+
+        let terminationStatus = terminatedProcess.terminationStatus
+        if terminationStatus == 0 {
+            statusMessage = nil
+        } else {
+            statusMessage = "whisper-stream exited with code \(terminationStatus)."
+        }
+
+        NotificationCenter.default.post(name: .liveTranslatorDidStop, object: nil)
     }
     
     /// Helper to convert a CoreMedia uniqueID string into an integer index for `whisper-stream`
@@ -387,6 +437,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         isTranscribingSCK = true
         
         let audioToProcess = sckAudioBuffer
+        sckAudioBuffer.removeAll(keepingCapacity: true)
         // We write to a temp file
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("sck_chunk_\(UUID().uuidString).wav")
         
