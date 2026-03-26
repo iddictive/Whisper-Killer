@@ -60,6 +60,18 @@ struct TextEditorCustom: View {
     }
 }
 
+struct WindowHeaderUnderlay: View {
+    var body: some View {
+        VisualEffectView(material: .sidebar, blendingMode: .withinWindow)
+            .overlay(alignment: .bottom) {
+                Divider()
+                    .opacity(0.08)
+            }
+            .frame(height: 32)
+            .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Hotkey Input Handling
 
 struct KeyEventHandlingView: NSViewRepresentable {

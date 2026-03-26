@@ -193,12 +193,12 @@ struct UsageLog: Codable, Identifiable {
 struct TranscriptionHistoryEntry: Codable {
     let entryId: UUID
     let date: Date
-    let rawText: String
+    var rawText: String
     var processedText: String
     var summaryText: String? = nil
-    let modeName: String
+    var modeName: String
     let duration: TimeInterval
-    let engineUsed: String
+    var engineUsed: String
     var usage: UsageLog?
     var isFromFileImport: Bool = false
     var audioFilePath: String? = nil

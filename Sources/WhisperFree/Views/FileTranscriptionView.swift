@@ -16,14 +16,14 @@ enum QueueItemStatus: Equatable {
 
     var label: String {
         switch self {
-        case .queued: return "In Queue"
-        case .extracting: return "Converting..."
-        case .uploading: return "Uploading..."
-        case .transcribing: return "Transcribing..."
-        case .postProcessing: return "AI Processing..."
-        case .done: return "Done"
-        case .error: return "Error"
-        case .cancelled: return "Cancelled"
+        case .queued: return L.tr("In Queue", "В очереди")
+        case .extracting: return L.tr("Converting...", "Конвертация...")
+        case .uploading: return L.tr("Uploading...", "Загрузка...")
+        case .transcribing: return L.tr("Transcribing...", "Транскрибация...")
+        case .postProcessing: return L.tr("AI Processing...", "AI-обработка...")
+        case .done: return L.tr("Done", "Готово")
+        case .error: return L.tr("Error", "Ошибка")
+        case .cancelled: return L.tr("Cancelled", "Отменено")
         }
     }
 
@@ -247,7 +247,7 @@ final class QueueItem: ObservableObject, Identifiable {
 
         let sourceText = (rawResult ?? result ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sourceText.isEmpty else {
-            summaryError = "Nothing to summarize yet."
+            summaryError = L.tr("Nothing to summarize yet.", "Пока нечего суммировать.")
             return
         }
 
@@ -330,9 +330,12 @@ struct FileTranscriptionView: View {
             errorOverlay
         }
         .frame(minWidth: 400, minHeight: 320)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            WindowHeaderUnderlay()
+        }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text("File Transcription")
+                Text(L.tr("File Transcription", "Транскрибация файла"))
                     .font(.system(size: 13, weight: .semibold))
             }
             
@@ -343,7 +346,7 @@ struct FileTranscriptionView: View {
                         let doneCount = queueItems.filter { $0.status == .done }.count
                         
                         if appState.settings.engineType == .cloud && totalCost > 0 {
-                            Text("Est. Cost: $\(String(format: "%.3f", totalCost))")
+                            Text(L.tr("Est. Cost: $\(String(format: "%.3f", totalCost))", "Оценка: $\(String(format: "%.3f", totalCost))"))
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(.orange)
                                 .padding(.horizontal, 8)
@@ -352,7 +355,7 @@ struct FileTranscriptionView: View {
                                 .clipShape(Capsule())
                         }
                         
-                        Text("\(doneCount)/\(queueItems.count) files")
+                        Text(L.tr("\(doneCount)/\(queueItems.count) files", "\(doneCount)/\(queueItems.count) файлов"))
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -370,7 +373,7 @@ struct FileTranscriptionView: View {
                                 .font(.system(size: 11))
                         }
                         .foregroundStyle(.red.opacity(0.8))
-                        .help("Clear All Files")
+                        .help(L.tr("Clear All Files", "Очистить все файлы"))
                     }
                 }
             }
@@ -400,7 +403,7 @@ struct FileTranscriptionView: View {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
-            Text("File Transcription")
+            Text(L.tr("File Transcription", "Транскрибация файла"))
                 .font(.system(size: 14, weight: .semibold))
             Spacer()
 
@@ -432,7 +435,7 @@ struct FileTranscriptionView: View {
                         appState.settings.selectedModeName = mode.name
                     } label: {
                         HStack {
-                            Text(mode.name)
+                            Text(mode.localizedName)
                             if !isEnabled {
                                 Spacer()
                                 Image(systemName: "lock.fill")
@@ -446,7 +449,7 @@ struct FileTranscriptionView: View {
                 HStack(spacing: 4) {
                     let mode = appState.settings.selectedMode
                     Image(systemName: mode.icon)
-                    Text(mode.name)
+                    Text(mode.localizedName)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 8))
                 }
@@ -465,12 +468,13 @@ struct FileTranscriptionView: View {
                     Button {
                         appState.settings.language = lang.code
                     } label: {
-                        Text(lang.name)
+                        Text(L.languageName(code: lang.code, fallback: lang.name))
                     }
                 }
             } label: {
                 HStack(spacing: 4) {
-                    let currentLang = AppSettings.supportedLanguages.first { $0.code == appState.settings.language }?.name ?? "Auto"
+                    let currentLanguage = AppSettings.supportedLanguages.first { $0.code == appState.settings.language }
+                    let currentLang = L.languageName(code: currentLanguage?.code ?? "auto", fallback: currentLanguage?.name ?? "Auto")
                     Text(currentLang)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 8))
@@ -486,7 +490,7 @@ struct FileTranscriptionView: View {
 
             if appState.settings.engineType == .cloud || appState.settings.canUseSpeakerDiarization || appState.settings.enableSpeakerDiarization {
                 Toggle(isOn: $appState.settings.enableSpeakerDiarization) {
-                    Text("Diarization")
+                    Text(L.tr("Diarization", "Диаризация"))
                         .font(.system(size: 10, weight: .medium))
                 }
                 .toggleStyle(.checkbox)
@@ -500,19 +504,19 @@ struct FileTranscriptionView: View {
                 Button {
                     appState.settings.engineType = .local
                 } label: {
-                    Label("Local (whisper.cpp)", systemImage: "cpu")
+                    Label(L.tr("Local (whisper.cpp)", "Локально (whisper.cpp)"), systemImage: "cpu")
                 }
 
                 Button {
                     appState.settings.engineType = .cloud
                 } label: {
-                    Label("Cloud (OpenAI)", systemImage: "cloud.fill")
+                    Label(L.tr("Cloud (OpenAI)", "Облако (OpenAI)"), systemImage: "cloud.fill")
                 }
                 .disabled(appState.settings.apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: appState.settings.engineType == .cloud ? "cloud.fill" : "cpu")
-                    Text(appState.settings.engineType == .cloud ? "Cloud" : "Local")
+                    Text(appState.settings.engineType.localizedShortTitle)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 8))
                 }
@@ -567,7 +571,7 @@ struct FileTranscriptionView: View {
                 Image(systemName: "plus.circle")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                Text("Drop more files or click to add")
+                Text(L.tr("Drop more files or click to add", "Перетащите ещё файлы или нажмите, чтобы добавить"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -591,7 +595,7 @@ struct FileTranscriptionView: View {
                 if appState.settings.engineType == .cloud {
                     let totalCost = queueItems.compactMap(\.estimatedCost).reduce(0, +)
                     if totalCost > 0 {
-                        Text("Total Estimated Cost: ~$\(String(format: "%.2f", totalCost))")
+                        Text(L.tr("Total Estimated Cost: ~$\(String(format: "%.2f", totalCost))", "Общая оценка: ~$\(String(format: "%.2f", totalCost))"))
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(.orange)
                     }
@@ -605,7 +609,7 @@ struct FileTranscriptionView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "play.fill")
-                                Text("Start All (\(queuedCount))")
+                                Text(L.tr("Start All (\(queuedCount))", "Запустить все (\(queuedCount))"))
                             }
                             .font(.system(size: 11, weight: .bold))
                         }
@@ -620,7 +624,7 @@ struct FileTranscriptionView: View {
                 Button {
                     clearCompleted()
                 } label: {
-                    Text("Clear Done")
+                    Text(L.tr("Clear Done", "Убрать готовые"))
                         .font(.system(size: 11))
                 }
                 .buttonStyle(.plain)
@@ -632,7 +636,7 @@ struct FileTranscriptionView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "plus.circle.fill")
-                        Text("Add Files")
+                        Text(L.tr("Add Files", "Добавить файлы"))
                     }
                     .font(.system(size: 11, weight: .medium))
                 }
@@ -665,11 +669,11 @@ struct FileTranscriptionView: View {
                         .foregroundStyle(isDragging ? Color.accentColor : .secondary.opacity(0.6))
                         .padding(.bottom, 2)
 
-                    Text("Drop audio or video here")
+                    Text(L.tr("Drop audio or video here", "Перетащите сюда аудио или видео"))
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.primary.opacity(0.7))
 
-                    Text("MP3, WAV, M4A, MP4, MOV")
+                    Text(L.tr("MP3, WAV, M4A, MP4, MOV", "MP3, WAV, M4A, MP4, MOV"))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary.opacity(0.5))
                 }
@@ -684,7 +688,7 @@ struct FileTranscriptionView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "plus.circle.fill")
-                    Text("Add to Queue...")
+                    Text(L.tr("Add to Queue...", "Добавить в очередь..."))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
@@ -1018,7 +1022,7 @@ struct QueueCardView: View {
                     .padding(4)
             }
             .buttonStyle(.plain)
-            .help("Remove from queue")
+            .help(L.tr("Remove from queue", "Удалить из очереди"))
         } else if item.status == .queued {
             HStack(spacing: 8) {
                 Button {
@@ -1027,7 +1031,7 @@ struct QueueCardView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "play.fill")
                             .font(.system(size: 10))
-                        Text("Start")
+                        Text(L.tr("Start", "Старт"))
                             .font(.system(size: 11, weight: .bold))
                     }
                     .padding(.horizontal, 10)
@@ -1045,7 +1049,7 @@ struct QueueCardView: View {
                         .padding(4)
                 }
                 .buttonStyle(.plain)
-                .help("Cancel")
+                .help(L.tr("Cancel", "Отменить"))
             }
         } else {
             Button(action: onCancel) {
@@ -1059,7 +1063,7 @@ struct QueueCardView: View {
                 }
             }
             .buttonStyle(.plain)
-            .help("Stop Processing")
+            .help(L.tr("Stop Processing", "Остановить обработку"))
         }
     }
 
@@ -1115,7 +1119,7 @@ struct QueueCardView: View {
             HStack(spacing: 2) {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: 8))
-                Text("\(String(format: "%.0f", speed))x realtime")
+                Text(L.tr("\(String(format: "%.0f", speed))x realtime", "\(String(format: "%.0f", speed))x от реального времени"))
                     .font(.system(size: 9, weight: .medium))
             }
             .foregroundStyle(Color.accentColor)
@@ -1148,14 +1152,14 @@ struct QueueCardView: View {
     private func trimSection(totalDuration: Double) -> some View {
         VStack(spacing: 8) {
             HStack {
-                Label("Trim Segment", systemImage: "scissors")
+                Label(L.tr("Trim Segment", "Обрезать сегмент"), systemImage: "scissors")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text("\(formatDuration(item.rangeStart)) / \(formatDuration(item.rangeEnd))")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(Color.accentColor)
-                Text("(\(formatDuration(item.selectedDuration)) selected)")
+                Text(L.tr("(\(formatDuration(item.selectedDuration)) selected)", "(\(formatDuration(item.selectedDuration)) выбрано)"))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
@@ -1184,7 +1188,7 @@ struct QueueCardView: View {
             DisclosureGroup(isExpanded: $item.isExpanded) {
                 resultContent(result)
             } label: {
-                Text("Show Result")
+                Text(L.tr("Show Result", "Показать результат"))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(Color.accentColor)
             }
@@ -1195,10 +1199,10 @@ struct QueueCardView: View {
         VStack(alignment: .leading, spacing: 6) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    transcriptBlock(title: "Transcript", text: result)
+                    transcriptBlock(title: L.tr("Transcript", "Транскрипт"), text: result)
 
                     if let summary = item.summary, !summary.isEmpty {
-                        transcriptBlock(title: "Auto Summary", text: summary)
+                        transcriptBlock(title: L.tr("Auto Summary", "Автосводка"), text: summary)
                     }
 
                     if let summaryError = item.summaryError, !summaryError.isEmpty {
@@ -1218,7 +1222,7 @@ struct QueueCardView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "doc.on.doc")
-                        Text("Copy")
+                        Text(L.tr("Copy", "Копировать"))
                     }
                     .font(.system(size: 10, weight: .medium))
                 }
@@ -1235,7 +1239,7 @@ struct QueueCardView: View {
                         } else {
                             Image(systemName: "sparkles")
                         }
-                        Text(item.summary == nil ? "Summarize" : "Re-Summarize")
+                        Text(item.summary == nil ? L.tr("Summarize", "Суммировать") : L.tr("Re-Summarize", "Пересуммировать"))
                     }
                     .font(.system(size: 10, weight: .medium))
                 }
@@ -1250,7 +1254,7 @@ struct QueueCardView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "doc.text")
-                            Text("Copy Summary")
+                            Text(L.tr("Copy Summary", "Копировать сводку"))
                         }
                         .font(.system(size: 10, weight: .medium))
                     }

@@ -175,7 +175,7 @@ final class SettingsWindowController: NSObject {
         )
         window.center()
         window.contentView = hostingView
-        window.title = "WhisperKiller Settings"
+        window.title = L.tr("WhisperKiller Settings", "Настройки WhisperKiller")
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
@@ -210,7 +210,7 @@ final class HistoryWindowController: NSObject {
         )
         window.center()
         window.contentView = hostingView
-        window.title = "Transcription History"
+        window.title = L.tr("Transcription History", "История транскрибации")
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
@@ -245,7 +245,7 @@ final class FileTranscriptionWindowController: NSObject {
         )
         window.center()
         window.contentView = hostingView
-        window.title = "Transcribe File"
+        window.title = L.tr("Transcribe File", "Транскрибировать файл")
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true

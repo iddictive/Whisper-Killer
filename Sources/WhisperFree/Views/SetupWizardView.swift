@@ -153,15 +153,27 @@ struct SetupWizardView: View {
 
     private var stepTitle: String {
         ["Whisper Free", "Permissions", "Engine", "API Key", "Ready"][currentStep]
+            .replacingOccurrences(of: "Permissions", with: L.tr("Permissions", "Разрешения"))
+            .replacingOccurrences(of: "Engine", with: L.tr("Engine", "Движок"))
+            .replacingOccurrences(of: "API Key", with: L.tr("API Key", "API Key"))
+            .replacingOccurrences(of: "Ready", with: L.tr("Ready", "Готово"))
     }
 
     private var stepSubtitle: String {
-        [
+        let subtitles = [
             "AI voice-to-text, built for macOS",
             "Two quick permissions to enable",
             "Cloud or local — your choice",
             "For cloud transcription & AI modes",
             "Everything's set up"
+        ]
+
+        return [
+            L.tr(subtitles[0], "Голос в текст с AI для macOS"),
+            L.tr(subtitles[1], "Нужно выдать два разрешения"),
+            L.tr(subtitles[2], "Облако или локально — на ваш выбор"),
+            L.tr(subtitles[3], "Для облачной транскрибации и AI-режимов"),
+            L.tr(subtitles[4], "Всё готово к работе")
         ][currentStep]
     }
 
@@ -216,17 +228,17 @@ struct SetupWizardView: View {
     private var welcomeStep: some View {
         VStack(spacing: 12) {
             featureCard(icon: "mic.fill", color: .red,
-                        title: "⌥+Space to record",
-                        desc: "Hold, Toggle, or Push-to-Talk — pick your style")
+                        title: L.tr("⌥+Space to record", "⌥+Space для записи"),
+                        desc: L.tr("Hold, Toggle, or Push-to-Talk — pick your style", "Удержание, toggle или push-to-talk — выберите свой режим"))
             featureCard(icon: "waveform", color: accentPink,
-                        title: "AI transcription",
-                        desc: "Cloud (OpenAI) or Local (whisper.cpp with GPU/NPU)")
+                        title: L.tr("AI transcription", "AI-транскрибация"),
+                        desc: L.tr("Cloud (OpenAI) or Local (whisper.cpp with GPU/NPU)", "Облако (OpenAI) или локально (whisper.cpp с GPU/NPU)"))
             featureCard(icon: "sparkles", color: .purple,
-                        title: "Smart post-processing",
-                        desc: "Dictation · Email · Code · Notes — or create your own")
+                        title: L.tr("Smart post-processing", "Умная постобработка"),
+                        desc: L.tr("Dictation · Email · Code · Notes — or create your own", "Dictation · Email · Code · Notes — или создайте свой режим"))
             featureCard(icon: "keyboard", color: .orange,
-                        title: "Auto-paste anywhere",
-                        desc: "Result instantly typed into whichever app is focused")
+                        title: L.tr("Auto-paste anywhere", "Автовставка куда угодно"),
+                        desc: L.tr("Result instantly typed into whichever app is focused", "Результат сразу печатается в активное приложение"))
         }
     }
 
@@ -267,8 +279,8 @@ struct SetupWizardView: View {
         VStack(spacing: 14) {
             permissionCard(
                 icon: "hand.raised.fill",
-                title: "Accessibility",
-                desc: "For the global ⌥+Space hotkey to work anywhere",
+                title: L.tr("Accessibility", "Accessibility"),
+                desc: L.tr("For the global ⌥+Space hotkey to work anywhere", "Чтобы глобальный ⌥+Space работал везде"),
                 granted: appState.isHotkeyTrusted
             ) {
                 appState.requestAccessibilityPermission()
@@ -277,8 +289,8 @@ struct SetupWizardView: View {
 
             permissionCard(
                 icon: "mic.fill",
-                title: "Microphone",
-                desc: "To capture your voice for transcription",
+                title: L.tr("Microphone", "Микрофон"),
+                desc: L.tr("To capture your voice for transcription", "Чтобы захватывать ваш голос для транскрибации"),
                 granted: micGranted
             ) {
                 AVCaptureDevice.requestAccess(for: .audio) { granted in
@@ -298,7 +310,7 @@ struct SetupWizardView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.clockwise")
-                    Text("Refresh")
+                    Text(L.tr("Refresh", "Обновить"))
                 }
                 .font(.system(size: 12))
                 .foregroundStyle(accentGold)
@@ -311,11 +323,11 @@ struct SetupWizardView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.octagon.fill")
                             .foregroundStyle(.red)
-                        Text("App Translocation Detected")
+                        Text(L.tr("App Translocation Detected", "Обнаружен App Translocation"))
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(.red)
                     }
-                    Text("To ensure permissions like Accessibility and Microphone work correctly, please move WhisperFree to your Applications folder.")
+                    Text(L.tr("To ensure permissions like Accessibility and Microphone work correctly, please move WhisperFree to your Applications folder.", "Чтобы разрешения вроде Accessibility и Microphone работали корректно, переместите WhisperFree в папку Applications."))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -324,7 +336,7 @@ struct SetupWizardView: View {
                         let url = URL(fileURLWithPath: "/Applications")
                         NSWorkspace.shared.open(url)
                     } label: {
-                        Text("Open Applications Folder")
+                        Text(L.tr("Open Applications Folder", "Открыть папку Applications"))
                             .font(.system(size: 11, weight: .semibold))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -365,7 +377,7 @@ struct SetupWizardView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 10, weight: .bold))
-                    Text("Granted")
+                    Text(L.tr("Granted", "Выдано"))
                         .font(.system(size: 11, weight: .medium))
                 }
                 .foregroundStyle(Color.accentColor)
@@ -375,7 +387,7 @@ struct SetupWizardView: View {
                 .clipShape(Capsule())
             } else {
                 Button(action: action) {
-                    Text("Grant")
+                    Text(L.tr("Grant", "Выдать"))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 14)
@@ -442,7 +454,7 @@ struct SetupWizardView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: "bolt.fill").foregroundStyle(.yellow).font(.system(size: 11))
-                Text("Fast · Accurate · 100+ languages")
+                Text(L.tr("Fast · Accurate · 100+ languages", "Быстро · Точно · 100+ языков"))
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(textSecondary)
             }
 
@@ -452,7 +464,7 @@ struct SetupWizardView: View {
                 ("key", "Requires API key", .orange),
             ])
 
-            Text("Audio is sent to OpenAI for processing. Great for maximum accuracy.")
+            Text(L.tr("Audio is sent to OpenAI for processing. Great for maximum accuracy.", "Аудио отправляется в OpenAI для обработки. Хороший вариант для максимальной точности."))
                 .font(.system(size: 11))
                 .foregroundStyle(textSecondary)
         }
@@ -466,7 +478,7 @@ struct SetupWizardView: View {
         VStack(alignment: .leading, spacing: 14) {
             localEngineStatusRow
             
-            Text("MODEL")
+            Text(L.tr("MODEL", "МОДЕЛЬ"))
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(textSecondary)
 
@@ -484,7 +496,7 @@ struct SetupWizardView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) {
                 Image(systemName: "lock.shield.fill").foregroundStyle(Color.accentColor).font(.system(size: 11))
-                Text("Private · Offline · Free")
+                Text(L.tr("Private · Offline · Free", "Приватно · Офлайн · Бесплатно"))
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(textSecondary)
             }
 
@@ -499,7 +511,7 @@ struct SetupWizardView: View {
                     Button {
                         installWhisperCpp()
                     } label: {
-                        Text("Install (brew)")
+                        Text(L.tr("Install (brew)", "Установить (brew)"))
                             .font(.system(size: 11, weight: .semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -535,7 +547,7 @@ struct SetupWizardView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(textPrimary)
                     if isRecommended {
-                        Text("REC")
+                    Text(L.tr("REC", "РЕК"))
                             .font(.system(size: 8, weight: .heavy, design: .monospaced))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
@@ -561,11 +573,11 @@ struct SetupWizardView: View {
                     .font(.system(size: 14))
             } else if let state = modelManager.activeDownloads[size.rawValue] {
                 if state.error != nil {
-                    Text("Error").font(.system(size: 10)).foregroundStyle(.red)
+                    Text(L.tr("Error", "Ошибка")).font(.system(size: 10)).foregroundStyle(.red)
                 } else if state.isPreparing {
                     HStack(spacing: 4) {
                         ProgressView().controlSize(.mini)
-                        Text("Preparing...").font(.system(size: 9)).foregroundStyle(textSecondary)
+                        Text(L.tr("Preparing...", "Подготовка...")).font(.system(size: 9)).foregroundStyle(textSecondary)
                     }
                 } else {
                     VStack(alignment: .trailing, spacing: 4) {
@@ -602,7 +614,7 @@ struct SetupWizardView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.down.circle.fill")
                                 .font(.system(size: 14))
-                            Text("Get")
+                            Text(L.tr("Get", "Скачать"))
                                 .font(.system(size: 11, weight: .semibold))
                         }
                         .foregroundStyle(accentGold)
@@ -645,7 +657,7 @@ struct SetupWizardView: View {
             if selectedEngine == .local {
                 HStack(spacing: 10) {
                     Image(systemName: "info.circle.fill").foregroundStyle(accentGold)
-                    Text("Optional for local engine. Only needed for AI post-processing modes.")
+                    Text(L.tr("Optional for local engine. Only needed for AI post-processing modes.", "Необязательно для локального движка. Нужно только для AI-режимов постобработки."))
                         .font(.system(size: 12)).foregroundStyle(textSecondary)
                 }
                 .padding(14)
@@ -655,7 +667,7 @@ struct SetupWizardView: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("OpenAI API Key")
+                Text(L.tr("OpenAI API Key", "OpenAI API Key"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(textPrimary)
 
@@ -677,7 +689,7 @@ struct SetupWizardView: View {
                             if isTestingAPI {
                                 ProgressView().controlSize(.mini).tint(accentGold)
                             } else {
-                                Text("Test")
+                                Text(L.tr("Test", "Проверить"))
                                     .font(.system(size: 12, weight: .semibold))
                             }
                         }
@@ -703,7 +715,7 @@ struct SetupWizardView: View {
                 Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.up.right.square")
-                        Text("Get API key at platform.openai.com")
+                        Text(L.tr("Get API key at platform.openai.com", "Получить API key на platform.openai.com"))
                     }
                     .font(.system(size: 11))
                     .foregroundStyle(accentGold)
@@ -717,7 +729,7 @@ struct SetupWizardView: View {
             if selectedEngine == .cloud && apiKey.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    Text("Cloud engine requires an API key")
+                    Text(L.tr("Cloud engine requires an API key", "Для облачного движка нужен API key"))
                         .font(.system(size: 12)).foregroundStyle(.orange)
                 }
                 .padding(12)
@@ -736,18 +748,18 @@ struct SetupWizardView: View {
         VStack(spacing: 18) {
             // Checklist
             VStack(spacing: 8) {
-                readyRow("Accessibility", ok: appState.isHotkeyTrusted)
-                readyRow("Microphone", ok: micGranted)
-                readyRow("Engine: \(selectedEngine.rawValue)", ok: true)
+                readyRow(L.tr("Accessibility", "Accessibility"), ok: appState.isHotkeyTrusted)
+                readyRow(L.tr("Microphone", "Микрофон"), ok: micGranted)
+                readyRow("\(L.tr("Engine", "Движок")): \(selectedEngine.localizedTitle)", ok: true)
                 if selectedEngine == .cloud {
-                    readyRow("API Key", ok: !apiKey.isEmpty)
+                    readyRow(L.tr("API Key", "API Key"), ok: !apiKey.isEmpty)
                 } else {
                     readyRow("whisper-cpp", ok: whisperInstalled)
                     if modelManager.isModelDownloaded(selectedModel) {
-                        readyRow("Model: \(selectedModel.rawValue)", ok: true)
+                        readyRow("\(L.tr("Model", "Модель")): \(selectedModel.rawValue)", ok: true)
                     } else if let state = modelManager.activeDownloads[selectedModel.rawValue] {
                         VStack(alignment: .leading, spacing: 6) {
-                            readyRow("Model: \(selectedModel.rawValue)", ok: false)
+                            readyRow("\(L.tr("Model", "Модель")): \(selectedModel.rawValue)", ok: false)
                             HStack(spacing: 8) {
                                 ProgressView(value: state.progress)
                                     .progressViewStyle(.linear)
@@ -761,7 +773,7 @@ struct SetupWizardView: View {
                             .padding(.leading, 24)
                         }
                     } else {
-                        readyRow("Model: \(selectedModel.rawValue)", ok: false)
+                        readyRow("\(L.tr("Model", "Модель")): \(selectedModel.rawValue)", ok: false)
                     }
                 }
             }
@@ -772,7 +784,7 @@ struct SetupWizardView: View {
 
             // Shortcuts
             VStack(spacing: 10) {
-                Text("SHORTCUTS")
+                Text(L.tr("SHORTCUTS", "ГОРЯЧИЕ КЛАВИШИ"))
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(textSecondary)
                 HStack(spacing: 24) {
@@ -784,7 +796,7 @@ struct SetupWizardView: View {
             .background(bgCard)
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
-            Text("You can change everything later in Settings")
+            Text(L.tr("You can change everything later in Settings", "Позже это всё можно изменить в настройках"))
                 .font(.system(size: 11))
                 .foregroundStyle(textSecondary)
         }
@@ -797,7 +809,7 @@ struct SetupWizardView: View {
                 .foregroundStyle(ok ? Color.accentColor : .orange)
             Text(label).font(.system(size: 13)).foregroundStyle(textPrimary)
             Spacer()
-            Text(ok ? "Ready" : "Skipped")
+            Text(ok ? L.tr("Ready", "Готово") : L.tr("Skipped", "Пропущено"))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(ok ? Color.accentColor : .orange)
         }
@@ -852,7 +864,7 @@ struct SetupWizardView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left").font(.system(size: 10, weight: .bold))
-                        Text("Back").font(.system(size: 13))
+                        Text(L.tr("Back", "Назад")).font(.system(size: 13))
                     }
                     .foregroundStyle(textSecondary)
                 }
@@ -875,7 +887,7 @@ struct SetupWizardView: View {
                     withAnimation(.spring(response: 0.35)) { currentStep += 1 }
                 } label: {
                     HStack(spacing: 6) {
-                        Text(currentStep == 0 ? "Get Started" : "Next")
+                        Text(currentStep == 0 ? L.tr("Get Started", "Начать") : L.tr("Next", "Далее"))
                         Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
                     }
                     .font(.system(size: 13, weight: .semibold))
@@ -898,7 +910,7 @@ struct SetupWizardView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
-                        Text("Launch")
+                        Text(L.tr("Launch", "Запустить"))
                     }
                     .font(.system(size: 13, weight: .semibold))
                     .padding(.horizontal, 22)

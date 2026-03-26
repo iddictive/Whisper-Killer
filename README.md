@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Banner.png" alt="WhisperFree" width="800">
+  <img src="Sources/WhisperFree/Resources/Banner.png" alt="WhisperFree" width="800">
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 
 ### WhisperFree
 
-Open-source macOS menu bar app for voice dictation, file transcription, AI cleanup, and live subtitle translation.
+Open-source macOS menu bar app for voice dictation, file transcription, and AI cleanup.
 
 No subscription is required. If you use cloud transcription or cloud AI cleanup, usage is billed to your own OpenAI account.
 
@@ -55,11 +55,7 @@ The repository is named **WhisperFree**. In the current builds, the macOS app bu
   - playback of saved recordings when available
   - Finder reveal for stored audio
   - usage stats such as total words, average WPM, and estimated time saved
-- **Live Translator** with on-screen subtitle overlay:
-  - microphone input or system audio capture
-  - OpenAI-based translation
-  - local translation through Ollama
-  - separate hotkey and audio routing from the main dictation flow
+- **Live Translator** is planned for a future release and is currently hidden in the app UI.
 - **Model management inside the app** for local Whisper models:
   - Tiny
   - Base
@@ -81,9 +77,6 @@ The repository is named **WhisperFree**. In the current builds, the macOS app bu
   - uses OpenAI Whisper API
 - **AI cleanup modes and diarization**:
   - require an OpenAI API key
-- **Live Translator in local mode**:
-  - requires Ollama
-  - requires a downloaded Ollama model
 - **Auto summaries**:
   - can use OpenAI when a key is available
   - can fall back to Ollama when local follow-up is configured
@@ -157,7 +150,7 @@ make app      # create local .app bundle
 
 ### WhisperFree
 
-Open-source приложение для macOS в menu bar: диктовка голосом, транскрибация файлов, AI-обработка текста и live-перевод в виде субтитров.
+Open-source приложение для macOS в menu bar: диктовка голосом, транскрибация файлов и AI-обработка текста.
 
 Подписка не нужна. Если использовать облачную транскрибацию или облачную AI-обработку, расходы идут только по вашему OpenAI-аккаунту.
 
@@ -201,11 +194,7 @@ Open-source приложение для macOS в menu bar: диктовка го
   - проигрывание сохранённых записей, если аудио доступно
   - открытие исходного аудио в Finder
   - статистика: слова, средний WPM, оценка сэкономленного времени
-- **Live Translator** с субтитрами поверх экрана:
-  - захват с микрофона или системного аудио
-  - перевод через OpenAI
-  - локальный перевод через Ollama
-  - отдельная горячая клавиша и отдельный источник аудио
+- **Live Translator** запланирован на одну из следующих версий и сейчас скрыт в интерфейсе приложения.
 - **Управление локальными Whisper-моделями прямо в приложении**:
   - Tiny
   - Base
@@ -227,9 +216,6 @@ Open-source приложение для macOS в menu bar: диктовка го
   - использует OpenAI Whisper API
 - **AI-режимы и диаризация**:
   - требуют OpenAI API key
-- **Live Translator в локальном режиме**:
-  - требует Ollama
-  - требует скачанную Ollama-модель
 - **Автосводки**:
   - могут работать через OpenAI при наличии ключа
   - могут использовать Ollama как локальный follow-up движок
@@ -277,7 +263,7 @@ Open-source приложение для macOS в menu bar: диктовка го
 5. Выберите нужный режим:
    - OpenAI API key для облачной транскрибации
    - `whisper.cpp` + локальная модель для офлайн-работы
-   - Ollama для локального Live Translator и локального follow-up AI
+   - Ollama для локального follow-up AI
 
 ### Сборка из исходников
 

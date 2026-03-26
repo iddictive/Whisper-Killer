@@ -45,6 +45,13 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     }
     
     private func applyCurrentSettings() {
+        guard AppState.liveTranslatorFeatureAvailable else {
+            if isRunning {
+                stop()
+            }
+            return
+        }
+
         guard isRunning else { return }
         // For now, we simple restart to pick up new language/model
         stop()
@@ -52,6 +59,12 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     }
     
     func start() {
+        guard AppState.liveTranslatorFeatureAvailable else {
+            statusMessage = nil
+            NotificationCenter.default.post(name: .liveTranslatorDidStop, object: nil)
+            return
+        }
+
         guard !isRunning else { return }
         isStoppingProcess = false
         
@@ -70,29 +83,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         
         // 2. SCK vs Device Index
         if currentSettings.useScreenCaptureKit {
-            isUsingSCK = true
-            statusMessage = "Starting System Audio Capture..."
-            Task {
-                do {
-                    // Reset buffer
-                    self.sckAudioBuffer = Data()
-                    
-                    try await SystemAudioCapturer.shared.startCapture { [weak self] buffer in
-                        self?.handleSCKBuffer(buffer)
-                    }
-                    isRunning = true
-                    statusMessage = "Capturing System Audio..."
-                    print("✅ SCK Capture started in LiveTranslatorManager")
-                    NotificationCenter.default.post(name: .liveTranslatorDidStart, object: nil)
-                    
-                    // Start transcription loop for SCK
-                    startSCKTranscriptionLoop()
-                } catch {
-                    statusMessage = "SCK Error: \(error.localizedDescription)"
-                    print("❌ SCK Error: \(error)")
-                    isUsingSCK = false
-                }
-            }
+            statusMessage = "System Audio Capture is temporarily disabled."
             return
         }
 

@@ -10,6 +10,7 @@ struct HistoryView: View {
     
     @State private var renamingEntry: TranscriptionHistoryEntry?
     @State private var newTranscriptionText = ""
+    @State private var retranscribingEntryIds = Set<UUID>()
 
     var filteredHistory: [TranscriptionHistoryEntry] {
         if searchText.isEmpty {
@@ -33,9 +34,12 @@ struct HistoryView: View {
             }
         }
         .frame(minWidth: 420, minHeight: 480)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            WindowHeaderUnderlay()
+        }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text("Transcription History")
+                Text(L.tr("Transcription History", "История транскрибации"))
                     .font(.system(size: 13, weight: .semibold))
             }
             
@@ -44,7 +48,7 @@ struct HistoryView: View {
                     let total = appState.activeHistoryCount
                     let files = appState.fileImportCount
                     
-                    Text("\(total) entries" + (files > 0 ? " + \(files) files" : ""))
+                    Text(L.historyCount(entries: total, files: files))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                     
@@ -56,7 +60,7 @@ struct HistoryView: View {
                                 .font(.system(size: 11))
                         }
                         .foregroundStyle(.red.opacity(0.8))
-                        .help("Clear All History")
+                        .help(L.tr("Clear All History", "Очистить всю историю"))
                     }
                 }
             }
@@ -75,9 +79,9 @@ struct HistoryView: View {
 
     private var statsHeader: some View {
         HStack(spacing: 16) {
-            statItem(title: "AVG. WPM", value: "\(appState.averageWPM)", icon: "speedometer", color: .cyan)
-            statItem(title: "TOTAL WORDS", value: "\(appState.totalWords)", icon: "text.wordspacing", color: .purple)
-            statItem(title: "TIME SAVED", value: formatSavedTime(appState.estimatedTimeSaved), icon: "hourglass", color: .orange)
+            statItem(title: L.tr("AVG. WPM", "СРЕД. WPM"), value: "\(appState.averageWPM)", icon: "speedometer", color: .cyan)
+            statItem(title: L.tr("TOTAL WORDS", "ВСЕГО СЛОВ"), value: "\(appState.totalWords)", icon: "text.wordspacing", color: .purple)
+            statItem(title: L.tr("TIME SAVED", "СЭКОНОМЛЕНО"), value: formatSavedTime(appState.estimatedTimeSaved), icon: "hourglass", color: .orange)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 24)
@@ -112,7 +116,7 @@ struct HistoryView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
-            TextField("Search transcriptions...", text: $searchText)
+            TextField(L.tr("Search transcriptions...", "Поиск по транскрипциям..."), text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
             if !searchText.isEmpty {
@@ -159,9 +163,9 @@ struct HistoryView: View {
             Image(systemName: searchText.isEmpty ? "waveform.slash" : "magnifyingglass")
                 .font(.system(size: 40))
                 .foregroundStyle(.secondary.opacity(0.5))
-            Text(searchText.isEmpty ? "No transcriptions yet" : "No results found")
+            Text(searchText.isEmpty ? L.tr("No transcriptions yet", "Транскрипций пока нет") : L.tr("No results found", "Ничего не найдено"))
                 .foregroundStyle(.secondary)
-            Text(searchText.isEmpty ? "Press \(appState.settings.hotkeyConfig.displayString) to start recording" : "Try a different search term")
+            Text(searchText.isEmpty ? L.tr("Press \(appState.settings.hotkeyConfig.displayString) to start recording", "Нажмите \(appState.settings.hotkeyConfig.displayString), чтобы начать запись") : L.tr("Try a different search term", "Попробуйте другой поисковый запрос"))
                 .font(.caption)
                 .foregroundStyle(.secondary.opacity(0.7))
             Spacer()
@@ -183,17 +187,17 @@ struct HistoryView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
         )
-        .alert("Rename Transcription", isPresented: .init(get: { renamingEntry?.entryId == entry.entryId }, set: { if !$0 { renamingEntry = nil } })) {
-            TextField("Transcription text", text: $newTranscriptionText)
-            Button("Cancel", role: .cancel) { renamingEntry = nil }
-            Button("Save") {
+        .alert(L.tr("Rename Transcription", "Переименовать транскрипцию"), isPresented: .init(get: { renamingEntry?.entryId == entry.entryId }, set: { if !$0 { renamingEntry = nil } })) {
+            TextField(L.tr("Transcription text", "Текст транскрипции"), text: $newTranscriptionText)
+            Button(L.tr("Cancel", "Отмена"), role: .cancel) { renamingEntry = nil }
+            Button(L.tr("Save", "Сохранить")) {
                 if let entry = renamingEntry {
                     appState.updateTranscriptionText(entry: entry, newText: newTranscriptionText)
                 }
                 renamingEntry = nil
             }
         } message: {
-            Text("Edit the transcription text for this entry.")
+            Text(L.tr("Edit the transcription text for this entry.", "Измените текст транскрипции для этой записи."))
         }
     }
 
@@ -227,7 +231,7 @@ struct HistoryView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "doc.fill")
                         .font(.system(size: 8))
-                    Text("FILE")
+                    Text(L.tr("FILE", "ФАЙЛ"))
                         .font(.system(size: 9, weight: .black))
                 }
                 .padding(.horizontal, 8)
@@ -249,7 +253,7 @@ struct HistoryView: View {
             }
 
             if entry.summaryText?.isEmpty == false {
-                Text("SUMMARY")
+                Text(L.tr("SUMMARY", "СВОДКА"))
                     .font(.system(size: 9, weight: .bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -280,7 +284,7 @@ struct HistoryView: View {
             if expandedEntryId == entry.entryId {
                 if let summary = entry.summaryText, !summary.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("TRANSCRIPT")
+                        Text(L.tr("TRANSCRIPT", "ТРАНСКРИПТ"))
                             .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(.secondary)
                         Text(entry.processedText)
@@ -295,7 +299,7 @@ struct HistoryView: View {
 
                 if entry.rawText != entry.processedText {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("RAW TRANSCRIPTION")
+                        Text(L.tr("RAW TRANSCRIPTION", "СЫРАЯ ТРАНСКРИПЦИЯ"))
                             .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(.secondary)
                         Text(entry.rawText)
@@ -317,7 +321,7 @@ struct HistoryView: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(entry.summaryText ?? entry.processedText, forType: .string)
             } label: {
-                Label("Copy", systemImage: "doc.on.doc.fill")
+                Label(L.tr("Copy", "Копировать"), systemImage: "doc.on.doc.fill")
                     .font(.system(size: 11, weight: .bold))
             }
             .buttonStyle(.plain)
@@ -327,7 +331,7 @@ struct HistoryView: View {
                 newTranscriptionText = entry.summaryText ?? entry.processedText
                 renamingEntry = entry
             } label: {
-                Label("Rename", systemImage: "pencil")
+                Label(L.tr("Rename", "Переименовать"), systemImage: "pencil")
                     .font(.system(size: 11, weight: .bold))
             }
             .buttonStyle(.plain)
@@ -338,7 +342,7 @@ struct HistoryView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(entry.processedText, forType: .string)
                 } label: {
-                    Label("Transcript", systemImage: "text.alignleft")
+                    Label(L.tr("Transcript", "Транскрипт"), systemImage: "text.alignleft")
                         .font(.system(size: 11, weight: .bold))
                 }
                 .buttonStyle(.plain)
@@ -347,9 +351,25 @@ struct HistoryView: View {
 
             if let path = entry.audioFilePath, FileManager.default.fileExists(atPath: path) {
                 Button {
+                    let entryId = entry.entryId
+                    retranscribingEntryIds.insert(entryId)
+                    Task { @MainActor in
+                        await appState.retranscribeHistoryEntry(entry)
+                        retranscribingEntryIds.remove(entryId)
+                    }
+                } label: {
+                    Label(retranscribingEntryIds.contains(entry.entryId) ? L.tr("Retranscribing...", "Ретранскрипт...") : L.tr("Retranscribe", "Ретранскрипт"),
+                          systemImage: retranscribingEntryIds.contains(entry.entryId) ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.clockwise")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .disabled(retranscribingEntryIds.contains(entry.entryId) || appState.state != .idle)
+
+                Button {
                     togglePlay(entry: entry)
                 } label: {
-                    Label(playingEntryId == entry.entryId ? "Pause" : "Play", 
+                    Label(playingEntryId == entry.entryId ? L.tr("Pause", "Пауза") : L.tr("Play", "Воспроизвести"), 
                           systemImage: playingEntryId == entry.entryId ? "pause.fill" : "play.fill")
                         .font(.system(size: 11, weight: .bold))
                 }
@@ -372,7 +392,7 @@ struct HistoryView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(entry.rawText, forType: .string)
                 } label: {
-                    Label("Raw", systemImage: "doc.on.clipboard")
+                    Label(L.tr("Raw", "Сырой"), systemImage: "doc.on.clipboard")
                         .font(.system(size: 11, weight: .bold))
                 }
                 .buttonStyle(.plain)
@@ -394,11 +414,11 @@ struct HistoryView: View {
 
     private func formatSavedTime(_ time: TimeInterval) -> String {
         if time < 60 {
-            return "\(Int(time))s"
+            return L.tr("\(Int(time))s", "\(Int(time))с")
         } else if time < 3600 {
-            return "\(Int(time / 60))m"
+            return L.tr("\(Int(time / 60))m", "\(Int(time / 60))м")
         } else {
-            return String(format: "%.1fh", time / 3600.0)
+            return L.tr(String(format: "%.1fh", time / 3600.0), String(format: "%.1fч", time / 3600.0))
         }
     }
 

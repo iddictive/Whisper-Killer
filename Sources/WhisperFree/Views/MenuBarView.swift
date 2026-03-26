@@ -23,10 +23,10 @@ struct MenuBarView: View {
                             .font(.system(size: 13))
                             .foregroundStyle(.white)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("Accessibility Not Granted")
+                            Text(L.tr("Accessibility Not Granted", "Нет доступа к Accessibility"))
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(.white)
-                            Text("Click to open Settings")
+                            Text(L.tr("Click to open Settings", "Нажмите, чтобы открыть настройки"))
                                 .font(.system(size: 10))
                                 .foregroundStyle(.white.opacity(0.8))
                         }
@@ -60,7 +60,7 @@ struct MenuBarView: View {
                         appState.saveSettings()
                     } label: {
                         HStack {
-                            Text("System Default")
+                            Text(L.tr("System Default", "Системный"))
                             if appState.settings.selectedInputDeviceID == nil {
                                 Image(systemName: "checkmark")
                             }
@@ -86,7 +86,7 @@ struct MenuBarView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "mic.fill")
                             .font(.system(size: 8))
-                        Text(appState.availableInputDevices.first(where: { $0.uniqueID == appState.settings.selectedInputDeviceID })?.localizedName ?? "Default")
+                        Text(appState.availableInputDevices.first(where: { $0.uniqueID == appState.settings.selectedInputDeviceID })?.localizedName ?? L.tr("Default", "По умолчанию"))
                             .font(.system(size: 10, weight: .medium))
                             .lineLimit(1)
                         Image(systemName: "chevron.down")
@@ -109,7 +109,7 @@ struct MenuBarView: View {
                     HStack(spacing: 5) {
                         Image(systemName: appState.state == .recording ? "stop.fill" : "mic.fill")
                             .font(.system(size: 10))
-                        Text(appState.state == .recording ? "Stop" : "Rec")
+                        Text(appState.state == .recording ? L.tr("Stop", "Стоп") : L.tr("Rec", "Запись"))
                             .font(.system(size: 10, weight: .semibold))
                     }
                     .foregroundStyle(appState.state == .recording ? .white : .primary)
@@ -147,7 +147,7 @@ struct MenuBarView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: mode.icon)
                                     .font(.system(size: 10))
-                                Text(mode.name)
+                                Text(mode.localizedName)
                                     .font(.system(size: 11, weight: .medium))
                                 
                                 if !isEnabled {
@@ -194,7 +194,7 @@ struct MenuBarView: View {
                             HStack(spacing: 3) {
                                 Image(systemName: type.icon)
                                     .font(.system(size: 9))
-                                Text(type == .cloud ? "Cloud" : "Local")
+                                Text(type.localizedShortTitle)
                                     .font(.system(size: 10, weight: .medium))
                                     .lineLimit(1)
                             }
@@ -222,7 +222,7 @@ struct MenuBarView: View {
                             appState.saveSettings()
                         } label: {
                             HStack {
-                                Text(lang.name)
+                                Text(L.languageName(code: lang.code, fallback: lang.name))
                                 if appState.settings.language == lang.code {
                                     Image(systemName: "checkmark")
                                 }
@@ -233,7 +233,10 @@ struct MenuBarView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "globe")
                             .font(.system(size: 9))
-                        Text(AppSettings.supportedLanguages.first(where: { $0.code == appState.settings.language })?.name ?? "Auto")
+                        Text({
+                            let current = AppSettings.supportedLanguages.first(where: { $0.code == appState.settings.language })
+                            return L.languageName(code: current?.code ?? "auto", fallback: current?.name ?? "Auto")
+                        }())
                             .font(.system(size: 10, weight: .medium))
                         Image(systemName: "chevron.down")
                             .font(.system(size: 7))
@@ -269,7 +272,7 @@ struct MenuBarView: View {
             if let lastText = appState.lastTranscription {
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("LAST TRANSCRIPTION")
+                    Text(L.tr("LAST TRANSCRIPTION", "ПОСЛЕДНЯЯ ТРАНСКРИПЦИЯ"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 
@@ -289,7 +292,7 @@ struct MenuBarView: View {
                         HStack(spacing: 6) {
                             Image(systemName: appState.copiedFeedback ? "checkmark" : "doc.on.doc.fill")
                                 .font(.system(size: 12, weight: .semibold))
-                            Text(appState.copiedFeedback ? "Copied!" : "Copy to Clipboard")
+                            Text(appState.copiedFeedback ? L.tr("Copied!", "Скопировано!") : L.tr("Copy to Clipboard", "Скопировать"))
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .frame(maxWidth: .infinity)
@@ -339,23 +342,23 @@ struct MenuBarView: View {
 
             // ─── Navigation ─────────────────────
             VStack(spacing: 0) {
-                menuButton(icon: "gear", title: "Settings") {
+                menuButton(icon: "gear", title: L.tr("Settings", "Настройки")) {
                     AppDelegate.shared?.showSettings()
                 }
-                menuButton(icon: "clock", title: "History") {
+                menuButton(icon: "clock", title: L.tr("History", "История")) {
                     AppDelegate.shared?.showHistory()
                 }
-                menuButton(icon: "doc.badge.plus", title: "Transcribe File...") {
+                menuButton(icon: "doc.badge.plus", title: L.tr("Transcribe File...", "Транскрибировать файл...")) {
                     AppDelegate.shared?.showFileTranscription()
                 }
 
-                menuButton(icon: "wand.and.stars", title: "Setup Wizard") {
+                menuButton(icon: "wand.and.stars", title: L.tr("Setup Wizard", "Мастер настройки")) {
                     AppDelegate.shared?.showSetupWizard()
                 }
                 
-                if appState.settings.liveTranslatorEnabled {
+                if AppState.liveTranslatorFeatureAvailable && appState.settings.liveTranslatorEnabled {
                     Divider()
-                    menuButton(icon: "captions.bubble", title: appState.showLiveTranslatorOverlay ? "Stop Live Translator" : "Start Live Translator") {
+                    menuButton(icon: "captions.bubble", title: appState.showLiveTranslatorOverlay ? L.tr("Stop Live Translator", "Остановить Live Translator") : L.tr("Start Live Translator", "Запустить Live Translator")) {
                         appState.toggleLiveTranslator()
                     }
                 }
@@ -363,13 +366,13 @@ struct MenuBarView: View {
 
             Divider()
 
-            menuButton(icon: "power", title: "Quit") {
+            menuButton(icon: "power", title: L.tr("Quit", "Выйти")) {
                 NSApplication.shared.terminate(nil)
             }
 
             Divider()
 
-            menuButton(icon: "arrow.clockwise", title: "Check for Updates...") {
+            menuButton(icon: "arrow.clockwise", title: L.tr("Check for Updates...", "Проверить обновления...")) {
                 GitHubUpdater.shared.checkForUpdates(manual: true)
             }
         }

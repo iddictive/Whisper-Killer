@@ -22,6 +22,7 @@ enum ProcessingStage: String {
 @MainActor
 final class AppState: ObservableObject {
     static let shared = AppState()
+    static let liveTranslatorFeatureAvailable = false
     // MARK: - Published State
     @Published var state: AppRecordingState = .idle
     @Published var processingStage: ProcessingStage = .none
@@ -99,6 +100,7 @@ final class AppState: ObservableObject {
         print("🚀 AppState initializing...")
         self.settings = Storage.shared.loadSettings()
         self.history = Storage.shared.loadHistory()
+        sanitizeDisabledFeatureState()
         print("📦 Settings and History loaded")
         
         // Initial setup
@@ -137,6 +139,22 @@ final class AppState: ObservableObject {
 
     private func checkAccessibility() {
         self.isHotkeyTrusted = hotkeyManager.isTrusted
+    }
+
+    private func sanitizeDisabledFeatureState() {
+        guard !Self.liveTranslatorFeatureAvailable else { return }
+
+        let hadDisabledFeatureState =
+            settings.liveTranslatorEnabled ||
+            settings.useScreenCaptureKit ||
+            showLiveTranslatorOverlay
+
+        guard hadDisabledFeatureState else { return }
+
+        settings.liveTranslatorEnabled = false
+        settings.useScreenCaptureKit = false
+        showLiveTranslatorOverlay = false
+        Storage.shared.saveSettings(settings)
     }
 
     private func observeLiveTranslatorState() {
@@ -206,7 +224,7 @@ final class AppState: ObservableObject {
         )
         
         // Live Translator Hotkey
-        if settings.liveTranslatorEnabled {
+        if Self.liveTranslatorFeatureAvailable && settings.liveTranslatorEnabled {
             liveTranslatorHotkeyManager.config = settings.liveTranslatorHotkeyConfig
             liveTranslatorHotkeyManager.start(
                 promptUser: false,
@@ -279,6 +297,7 @@ final class AppState: ObservableObject {
     
     // MARK: Live Translator Toggle
     private func handleLiveTranslatorKeyDown() {
+        guard Self.liveTranslatorFeatureAvailable else { return }
         guard settings.liveTranslatorEnabled else { return }
         
         // Microphone permission is required only for microphone capture.
@@ -354,27 +373,28 @@ final class AppState: ObservableObject {
 
     // MARK: - Recording Actions
 
-    func startRecording() {
-        guard state == .idle else { return }
-
-        // Validate API key for cloud engine
+    private func validateTranscriptionPrerequisites(requiresMicrophone: Bool) -> Bool {
         if settings.engineType == .cloud && settings.apiKey.trimmingCharacters(in: .whitespaces).isEmpty {
             showError("No API key configured. Go to Settings → General to add your OpenAI API key.")
-            return
+            return false
         }
 
-        // Validate model for local engine
         if settings.engineType == .local && !modelManager.isModelDownloaded(settings.localModelSize) {
             showError("Model '\(settings.localModelSize.rawValue)' not downloaded. Go to Settings → Engine to download.")
-            return
+            return false
         }
 
-        // Validate Microphone permission - only block if DENIED. 
-        // If not determined, recorder.startRecording() will handle the prompt.
-        if isMicrophoneDenied { // Using the existing `isMicrophoneDenied` property
+        if requiresMicrophone && isMicrophoneDenied {
             showError("Microphone access denied. Please enable it in System Settings → Privacy & Security.")
-            return
+            return false
         }
+
+        return true
+    }
+
+    func startRecording() {
+        guard state == .idle else { return }
+        guard validateTranscriptionPrerequisites(requiresMicrophone: true) else { return }
 
         lastError = nil
         state = .recording
@@ -400,6 +420,138 @@ final class AppState: ObservableObject {
     }
 
     private var currentEngine: TranscriptionEngine?
+
+    func retranscribeHistoryEntry(_ entry: TranscriptionHistoryEntry) async {
+        guard state == .idle else {
+            showError("Wait for the current transcription to finish first.")
+            return
+        }
+
+        guard let path = entry.audioFilePath else {
+            showError("No saved audio found for this history entry.")
+            return
+        }
+
+        guard FileManager.default.fileExists(atPath: path) else {
+            showError("Saved audio file is no longer available.")
+            return
+        }
+
+        guard validateTranscriptionPrerequisites(requiresMicrophone: false) else { return }
+
+        lastError = nil
+        state = .processing
+        processingStage = .transcribing
+
+        defer {
+            currentEngine = nil
+            state = .idle
+            processingStage = .none
+        }
+
+        do {
+            let audioURL = URL(fileURLWithPath: path)
+            let fileAttrs = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
+            let fileSize = fileAttrs?[.size] as? Int64 ?? 0
+            print("whisper_debug: 🔁 Retranscribing audio file: \(audioURL.lastPathComponent), size: \(fileSize) bytes")
+
+            let engine = TranscriptionEngineFactory.create(for: settings.engineType, settings: settings)
+            currentEngine = engine
+
+            let lang = settings.language == "auto" ? nil : settings.language
+            let rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil, onProgress: nil)
+
+            guard !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                showError("No speech detected. Try a different recording.")
+                return
+            }
+
+            var processedText = rawText
+            var usage: UsageLog? = nil
+
+            let shouldRunDiarization = settings.enableSpeakerDiarization && settings.canUseSpeakerDiarization
+            let shouldRunStandardPostProcessing = !shouldRunDiarization
+                && settings.enablePostProcessing
+                && settings.selectedMode.name != "Raw"
+                && !settings.selectedMode.systemPrompt.isEmpty
+
+            if shouldRunDiarization {
+                print("ℹ️ Skipping standard AI refinement because Diarization is active.")
+            } else if shouldRunStandardPostProcessing {
+                processingStage = .postProcessing
+                do {
+                    let processor = PostProcessor(settings: settings)
+                    let result = try await processor.process(text: rawText, mode: settings.selectedMode)
+                    processedText = result.text
+
+                    let totalTokens = result.promptTokens + result.completionTokens
+                    if totalTokens > 0 {
+                        let engine = settings.postProcessingEngine
+                        usage = UsageLog(
+                            date: Date(),
+                            modeName: settings.selectedMode.name,
+                            engine: engine.rawValue,
+                            promptTokens: result.promptTokens,
+                            completionTokens: result.completionTokens,
+                            totalTokens: totalTokens,
+                            estimatedCost: UsageLog.estimateCost(prompt: result.promptTokens, completion: result.completionTokens, engine: engine)
+                        )
+                    }
+                } catch {
+                    print("⚠️ AI refinement failed during retranscription: \(error)")
+                    processingStage = .transcribing
+                }
+            }
+
+            if shouldRunDiarization {
+                processingStage = .postProcessing
+                do {
+                    let processor = PostProcessor(settings: settings)
+                    let diarizationResult = try await processor.diarize(text: processedText)
+                    processedText = diarizationResult.text
+
+                    let currentTokens = (usage?.totalTokens ?? 0) + diarizationResult.promptTokens + diarizationResult.completionTokens
+                    let currentPromptTokens = (usage?.promptTokens ?? 0) + diarizationResult.promptTokens
+                    let currentCompletionTokens = (usage?.completionTokens ?? 0) + diarizationResult.completionTokens
+
+                    usage = UsageLog(
+                        date: Date(),
+                        modeName: "Diarization",
+                        engine: PostProcessingEngine.openai.rawValue,
+                        promptTokens: currentPromptTokens,
+                        completionTokens: currentCompletionTokens,
+                        totalTokens: currentTokens,
+                        estimatedCost: UsageLog.estimateCost(prompt: currentPromptTokens, completion: currentCompletionTokens, engine: .openai)
+                    )
+                } catch {
+                    print("⚠️ Diarization failed during retranscription: \(error)")
+                }
+            }
+
+            guard let index = history.firstIndex(where: { $0.entryId == entry.entryId }) else { return }
+
+            history[index].rawText = rawText
+            history[index].processedText = processedText
+            history[index].summaryText = nil
+            history[index].modeName = settings.selectedMode.name
+            history[index].engineUsed = settings.engineType.rawValue
+                + (shouldRunStandardPostProcessing ? " + AI" : "")
+                + (shouldRunDiarization ? " + Diarization" : "")
+            history[index].usage = usage
+
+            Storage.shared.updateTranscriptionHistoryEntry(history[index])
+
+            if let usage {
+                settings.usageLogs.append(usage)
+                cleanupOldLogs()
+                saveSettings()
+            }
+
+            lastTranscription = processedText
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
 
     func stopAndTranscribe() {
         guard state == .recording else { return }
@@ -614,6 +766,11 @@ final class AppState: ObservableObject {
     }
 
     func toggleLiveTranslator() {
+        guard Self.liveTranslatorFeatureAvailable else {
+            showError("Live Translator is planned for a future release.")
+            return
+        }
+
         if LiveTranslatorManager.shared.isRunning {
             LiveTranslatorManager.shared.stop()
         } else {

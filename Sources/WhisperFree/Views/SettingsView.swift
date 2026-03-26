@@ -19,6 +19,22 @@ struct SettingsView: View {
     @State private var isTestingAPI = false
     @State private var apiTestResult: String?
 
+    private var appVersionText: String {
+        let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let buildVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+
+        switch (shortVersion, buildVersion) {
+        case let (short?, build?) where !short.isEmpty && !build.isEmpty && short != build:
+            return L.tr("Version \(short) (\(build))", "Версия \(short) (\(build))")
+        case let (short?, _) where !short.isEmpty:
+            return L.tr("Version \(short)", "Версия \(short)")
+        case let (_, build?) where !build.isEmpty:
+            return L.tr("Version \(build)", "Версия \(build)")
+        default:
+            return L.tr("Version Unknown", "Версия неизвестна")
+        }
+    }
+
     var body: some View {
         ZStack {
             // Unified glass background for the whole window
@@ -30,17 +46,19 @@ struct SettingsView: View {
                 VStack(spacing: 0) {
                     List(selection: $selectedTab) {
                         Section {
-                            Label("App", systemImage: "apps.iphone")
+                            Label(L.tr("App", "Приложение"), systemImage: "apps.iphone")
                                 .tag("app")
-                            Label("Capture & Automation", systemImage: "mic.fill")
+                            Label(L.tr("Capture & Automation", "Запись и автоматизация"), systemImage: "mic.fill")
                                 .tag("capture")
-                            Label("Engine & API", systemImage: "cpu.fill")
+                            Label(L.tr("Engine & API", "Движок и API"), systemImage: "cpu.fill")
                                 .tag("engine")
-                            Label("AI Modes", systemImage: "sparkles")
+                            Label(L.tr("AI Modes", "AI-режимы"), systemImage: "sparkles")
                                 .tag("modes")
-                            Label("Live Translator", systemImage: "text.bubble.fill")
-                                .tag("liveTranslator")
-                            Label("Usage & About", systemImage: "info.circle.fill")
+                            if AppState.liveTranslatorFeatureAvailable {
+                                Label(L.tr("Live Translator", "Live Translator"), systemImage: "text.bubble.fill")
+                                    .tag("liveTranslator")
+                            }
+                            Label(L.tr("Usage & About", "Использование и О программе"), systemImage: "info.circle.fill")
                                 .tag("info")
                         }
                     }
@@ -50,7 +68,7 @@ struct SettingsView: View {
                     
                     Spacer()
                 }
-                .padding(.top, 40) // Space for traffic lights
+                .padding(.top, 8)
                 
                 Divider()
                     .opacity(0.1) // Subtler divider
@@ -71,7 +89,12 @@ struct SettingsView: View {
                                     .onDisappear { appState.recorder.stopMonitoring() }
                             case "engine": engineSection
                             case "modes": modesSection
-                            case "liveTranslator": LiveTranslatorSettingsView(appState: appState)
+                            case "liveTranslator":
+                                if AppState.liveTranslatorFeatureAvailable {
+                                    LiveTranslatorSettingsView(appState: appState)
+                                } else {
+                                    EmptyView()
+                                }
                             case "info": infoSection
                             default: EmptyView()
                             }
@@ -82,6 +105,9 @@ struct SettingsView: View {
                 .scrollContentBackground(.hidden)
                 .background(Color.black.opacity(0.01)) // Helps with hit testing while remaining transparent
             }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            WindowHeaderUnderlay()
         }
         .onAppear {
             modelManager.refreshDownloadedModels()
@@ -96,13 +122,13 @@ struct SettingsView: View {
 
     private var columnTitle: String {
         switch selectedTab {
-        case "app": return "App Preferences"
-        case "capture": return "Capture & Automation"
-        case "engine": return "Engine & API"
-        case "modes": return "AI Modes"
-        case "liveTranslator": return "Live Translator"
-        case "info": return "Usage & About"
-        default: return "Settings"
+        case "app": return L.tr("App Preferences", "Настройки приложения")
+        case "capture": return L.tr("Capture & Automation", "Запись и автоматизация")
+        case "engine": return L.tr("Engine & API", "Движок и API")
+        case "modes": return L.tr("AI Modes", "AI-режимы")
+        case "liveTranslator": return L.tr("Live Translator", "Live Translator")
+        case "info": return L.tr("Usage & About", "Использование и О программе")
+        default: return L.tr("Settings", "Настройки")
         }
     }
 
@@ -113,16 +139,16 @@ struct SettingsView: View {
                 .foregroundStyle(.orange)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text("Accessibility Permission Required")
+                Text(L.tr("Accessibility Permission Required", "Нужен доступ к Accessibility"))
                     .font(.headline)
-                Text("Global hotkeys won't work without this permission.")
+                Text(L.tr("Global hotkeys won't work without this permission.", "Без этого разрешения глобальные хоткеи работать не будут."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             
             Spacer()
             
-            Button("Grant Access…") {
+            Button(L.tr("Grant Access…", "Выдать доступ…")) {
                 appState.requestAccessibilityPermission()
             }
             .buttonStyle(.borderedProminent)
@@ -141,11 +167,11 @@ struct SettingsView: View {
             
             VStack(spacing: 0) {
                 HStack {
-                    Text("Preferred Language")
+                    Text(L.tr("Preferred Language", "Предпочитаемый язык"))
                     Spacer()
                     Picker("", selection: $appState.settings.language) {
                         ForEach(AppSettings.supportedLanguages, id: \.code) { lang in
-                            Text(lang.name).tag(lang.code)
+                            Text(L.languageName(code: lang.code, fallback: lang.name)).tag(lang.code)
                         }
                     }
                     .labelsHidden()
@@ -158,7 +184,7 @@ struct SettingsView: View {
                 
                 Divider().padding(.horizontal)
                 
-                Toggle("Monochrome menu bar icon", isOn: $appState.settings.useMonochromeMenuIcon)
+                Toggle(L.tr("Monochrome menu bar icon", "Монохромная иконка в menu bar"), isOn: $appState.settings.useMonochromeMenuIcon)
                     .padding()
                     .onChange(of: appState.settings.useMonochromeMenuIcon) { _, _ in
                         appState.saveSettings()
@@ -169,17 +195,17 @@ struct SettingsView: View {
         }
         
         VStack(alignment: .leading, spacing: 16) {
-            Text("Software Updates")
+            Text(L.tr("Software Updates", "Обновления"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
             
             VStack(spacing: 0) {
-                Toggle("Automatically check for updates", isOn: $appState.settings.automaticallyChecksForUpdates)
+                Toggle(L.tr("Automatically check for updates", "Автоматически проверять обновления"), isOn: $appState.settings.automaticallyChecksForUpdates)
                     .padding()
                 
                 Divider().padding(.horizontal)
                 
-                Toggle("Automatically download updates", isOn: $appState.settings.automaticallyDownloadsUpdates)
+                Toggle(L.tr("Automatically download updates", "Автоматически загружать обновления"), isOn: $appState.settings.automaticallyDownloadsUpdates)
                     .disabled(!appState.settings.automaticallyChecksForUpdates)
                     .padding()
                 
@@ -202,16 +228,16 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 ProgressView(value: updater.downloadProgress)
                                     .progressViewStyle(.linear)
-                                Text("Downloading update... \(Int(updater.downloadProgress * 100))%")
+                                Text(L.tr("Downloading update... \(Int(updater.downloadProgress * 100))%", "Загрузка обновления... \(Int(updater.downloadProgress * 100))%"))
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
                         } else if updater.updateAvailable {
                             HStack {
-                                Text("Version v\(updater.latestVersion ?? "") is available.")
+                                Text(L.tr("Version v\(updater.latestVersion ?? "") is available.", "Доступна версия v\(updater.latestVersion ?? "")."))
                                     .font(.subheadline)
                                 Spacer()
-                                Button("Download & Install") {
+                                Button(L.tr("Download & Install", "Скачать и установить")) {
                                     updater.startDownload()
                                 }
                                 .buttonStyle(.borderedProminent)
@@ -224,7 +250,7 @@ struct SettingsView: View {
                     Divider().padding(.horizontal)
                     HStack {
                         Spacer()
-                        Button(updater.isChecking ? "Checking..." : "Check for Updates Now...") {
+                        Button(updater.isChecking ? L.tr("Checking...", "Проверка...") : L.tr("Check for Updates Now...", "Проверить обновления сейчас...")) {
                             updater.checkForUpdates(manual: true)
                         }
                         .disabled(updater.isChecking)
@@ -244,15 +270,15 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             
             VStack(alignment: .leading, spacing: 12) {
-                Picker("Capture Style", selection: $appState.settings.recordingMode) {
+                Picker(L.tr("Capture Style", "Режим записи"), selection: $appState.settings.recordingMode) {
                     ForEach(RecordingMode.allCases, id: \.self) { mode in
-                        Label(mode.rawValue, systemImage: mode.icon).tag(mode)
+                        Label(mode.localizedTitle, systemImage: mode.icon).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 
-                Text(appState.settings.recordingMode.description)
+                Text(appState.settings.recordingMode.localizedDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
@@ -263,7 +289,7 @@ struct SettingsView: View {
         }
         
         VStack(alignment: .leading, spacing: 16) {
-            Text("Global Recording Shortcut")
+            Text(L.tr("Global Recording Shortcut", "Глобальная горячая клавиша"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
             
@@ -274,33 +300,33 @@ struct SettingsView: View {
         }
         
         VStack(alignment: .leading, spacing: 16) {
-            Text("Automation & Interface")
+            Text(L.tr("Automation & Interface", "Автоматизация и интерфейс"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
             
             VStack(spacing: 0) {
-                Toggle("Auto-type into active app", isOn: $appState.settings.autoTypeResult)
+                Toggle(L.tr("Auto-type into active app", "Автопечать в активное приложение"), isOn: $appState.settings.autoTypeResult)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                 
                 Divider().padding(.horizontal)
                 
-                Toggle("Auto-Enter automatically", isOn: $appState.settings.experimentalAutoEnter)
+                Toggle(L.tr("Auto-Enter automatically", "Автоматически нажимать Enter"), isOn: $appState.settings.experimentalAutoEnter)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                 
                 Divider().padding(.horizontal)
                 
                 VStack(alignment: .leading, spacing: 8) {
-                    Picker("Insertion Method", selection: $appState.settings.insertionMethod) {
+                    Picker(L.tr("Insertion Method", "Метод вставки"), selection: $appState.settings.insertionMethod) {
                         ForEach(InsertionMethod.allCases, id: \.self) { method in
-                            Text(method.rawValue).tag(method)
+                            Text(method.localizedTitle).tag(method)
                         }
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
                     
-                    Text(appState.settings.insertionMethod.description)
+                    Text(appState.settings.insertionMethod.localizedDescription)
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)
@@ -309,7 +335,7 @@ struct SettingsView: View {
                 
                 Divider().padding(.horizontal)
                 
-                Toggle("Show floating recording pill", isOn: $appState.settings.showOverlay)
+                Toggle(L.tr("Show floating recording pill", "Показывать плавающий индикатор записи"), isOn: $appState.settings.showOverlay)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
             }
@@ -323,9 +349,9 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             
             VStack(alignment: .leading, spacing: 16) {
-                Picker("Model Source", selection: $appState.settings.engineType) {
+                Picker(L.tr("Model Source", "Источник модели"), selection: $appState.settings.engineType) {
                     ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
-                        Label(type.rawValue, systemImage: type.icon).tag(type)
+                        Label(type.localizedTitle, systemImage: type.icon).tag(type)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -335,12 +361,12 @@ struct SettingsView: View {
                 
                 if appState.settings.engineType == .cloud {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Cloud transcription uses OpenAI's Whisper API. It is fast and highly accurate, but requires an internet connection.")
+                        Text(L.tr("Cloud transcription uses OpenAI's Whisper API. It is fast and highly accurate, but requires an internet connection.", "Облачная транскрибация использует OpenAI Whisper API. Это быстро и точно, но требует интернет-соединения."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("OpenAI API Key").font(.caption).foregroundStyle(.secondary)
+                            Text(L.tr("OpenAI API Key", "OpenAI API Key")).font(.caption).foregroundStyle(.secondary)
                             SecureField("sk-...", text: $appState.settings.apiKey)
                                 .textFieldStyle(.roundedBorder)
                                 .onChange(of: appState.settings.apiKey) { _, _ in
@@ -353,7 +379,7 @@ struct SettingsView: View {
                     .padding(.bottom)
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Local models run entirely on your Mac. They are private and work offline. Larger models are more accurate but use more memory.")
+                        Text(L.tr("Local models run entirely on your Mac. They are private and work offline. Larger models are more accurate but use more memory.", "Локальные модели работают полностью на вашем Mac. Они приватные и доступны офлайн. Более крупные модели точнее, но требуют больше памяти."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal)
@@ -377,7 +403,7 @@ struct SettingsView: View {
                                                 .foregroundStyle(Color.accentColor)
                                                 .font(.title3)
                                         } else {
-                                            Button("Use") {
+                                            Button(L.tr("Use", "Использовать")) {
                                                 appState.settings.localModelSize = size
                                                 appState.saveSettings()
                                             }
@@ -394,7 +420,7 @@ struct SettingsView: View {
                                         .padding(.leading, 8)
                                     } else if let state = modelManager.activeDownloads[size.rawValue] {
                                         if state.error != nil {
-                                            Button("Retry") { modelManager.downloadModel(size) }
+                                            Button(L.tr("Retry", "Повторить")) { modelManager.downloadModel(size) }
                                                 .buttonStyle(.plain).font(.caption2).foregroundStyle(SW.accent)
                                         } else {
                                             VStack(alignment: .trailing, spacing: 4) {
@@ -412,7 +438,7 @@ struct SettingsView: View {
                                             }
                                         }
                                     } else {
-                                        Button("Download") { modelManager.downloadModel(size) }
+                                        Button(L.tr("Download", "Скачать")) { modelManager.downloadModel(size) }
                                             .buttonStyle(.borderedProminent)
                                     }
                                 }
@@ -430,7 +456,7 @@ struct SettingsView: View {
         }
 
         VStack(alignment: .leading, spacing: 16) {
-            Text("API Refinement")
+            Text(L.tr("API Refinement", "AI-обработка"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
             
@@ -476,33 +502,33 @@ struct SettingsView: View {
             Section("Create Custom Mode") {
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Mode Name").font(.caption).foregroundStyle(.secondary)
+                        Text(L.tr("Mode Name", "Название режима")).font(.caption).foregroundStyle(.secondary)
                         TextField(TranscriptionMode.placeholderName, text: $newModeName)
                             .textFieldStyle(.roundedBorder)
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Description").font(.caption).foregroundStyle(.secondary)
+                        Text(L.tr("Description", "Описание")).font(.caption).foregroundStyle(.secondary)
                         TextField(TranscriptionMode.placeholderDescription, text: $newModeDescription)
                             .textFieldStyle(.roundedBorder)
                     }
                     
                     HStack(spacing: 16) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Example Input").font(.caption).foregroundStyle(.secondary)
+                            Text(L.tr("Example Input", "Пример входа")).font(.caption).foregroundStyle(.secondary)
                             TextEditorCustom(text: $newModeExampleInput, placeholder: TranscriptionMode.placeholderExampleInput)
                                 .frame(height: 60)
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Example Output").font(.caption).foregroundStyle(.secondary)
+                            Text(L.tr("Example Output", "Пример выхода")).font(.caption).foregroundStyle(.secondary)
                             TextEditorCustom(text: $newModeExampleOutput, placeholder: TranscriptionMode.placeholderExampleOutput)
                                 .frame(height: 60)
                         }
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("System Prompt (Instructions for AI)").font(.caption).foregroundStyle(.secondary)
+                        Text(L.tr("System Prompt (Instructions for AI)", "Системный промпт (инструкции для AI)")).font(.caption).foregroundStyle(.secondary)
                         TextEditorCustom(text: $newModePrompt, placeholder: TranscriptionMode.placeholderPrompt, isMonospaced: true)
                             .frame(minHeight: 100)
                     }
@@ -525,7 +551,7 @@ struct SettingsView: View {
                         newModeExampleOutput = ""
                         newModePrompt = ""
                     } label: {
-                        Label("Add Mode", systemImage: "plus.circle.fill")
+                        Label(L.tr("Add Mode", "Добавить режим"), systemImage: "plus.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
@@ -548,18 +574,18 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 40) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Total Tokens").font(.caption).foregroundStyle(.secondary)
+                        Text(L.tr("Total Tokens", "Всего токенов")).font(.caption).foregroundStyle(.secondary)
                         Text("\(totalTokens)").font(.title2).bold().foregroundStyle(SW.accent)
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Est. Cost").font(.caption).foregroundStyle(.secondary)
+                        Text(L.tr("Est. Cost", "Оценка стоимости")).font(.caption).foregroundStyle(.secondary)
                         Text("$\(String(format: "%.4f", totalCost))").font(.title2).bold().foregroundStyle(Color.accentColor)
                     }
                     
                     Spacer()
                     
-                    Button("Reset Logs") {
+                    Button(L.tr("Reset Logs", "Сбросить логи")) {
                         appState.settings.usageLogs.removeAll()
                         appState.saveSettings()
                     }
@@ -593,7 +619,7 @@ struct SettingsView: View {
                         }
                         .padding(.top, 8)
                     } label: {
-                        Text("Recent Activity Details")
+                        Text(L.tr("Recent Activity Details", "Детали недавней активности"))
                             .font(.caption)
                             .foregroundStyle(SW.accent)
                     }
@@ -605,7 +631,7 @@ struct SettingsView: View {
         }
         
         VStack(alignment: .leading, spacing: 16) {
-            Text("About Whisper Killer")
+            Text(L.tr("About Whisper Killer", "О Whisper Killer"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
             
@@ -621,10 +647,10 @@ struct SettingsView: View {
                 
                 VStack(spacing: 8) {
                     Text("Whisper Killer").font(.system(size: 28, weight: .bold))
-                    Text("Version 2.0.51").font(.subheadline).foregroundStyle(.secondary)
+                    Text(appVersionText).font(.subheadline).foregroundStyle(.secondary)
                 }
                 
-                Text("Hyper-fast voice to text for macOS.")
+                Text(L.tr("Hyper-fast voice to text for macOS.", "Очень быстрая голосовая транскрибация для macOS."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 
@@ -678,12 +704,12 @@ struct AIConfigView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Toggle("Enable AI Refinement", isOn: $settings.enablePostProcessing)
+                Toggle(L.tr("Enable AI Refinement", "Включить AI-обработку"), isOn: $settings.enablePostProcessing)
                     .onChange(of: settings.enablePostProcessing) { _, _ in
                         settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
                         onSave()
                     }
-                Text("Applies formatting, custom prompts, and grammar fixes after transcription is complete.")
+                Text(L.tr("Applies formatting, custom prompts, and grammar fixes after transcription is complete.", "Применяет форматирование, пользовательские промпты и исправления грамматики после завершения транскрибации."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 22)
@@ -695,9 +721,9 @@ struct AIConfigView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text("OpenAI API Key").font(.caption).foregroundStyle(.secondary)
+                            Text(L.tr("OpenAI API Key", "OpenAI API Key")).font(.caption).foregroundStyle(.secondary)
                             if settings.engineType == .cloud {
-                                Text("(Using key from Transcription Engine)").font(.system(size: 9)).foregroundStyle(Color.accentColor)
+                                Text(L.tr("(Using key from Transcription Engine)", "(Используется ключ из блока транскрибации)")).font(.system(size: 9)).foregroundStyle(Color.accentColor)
                             }
                         }
                         SecureField("sk-...", text: $settings.apiKey)
@@ -706,7 +732,7 @@ struct AIConfigView: View {
                                 settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
                                 onSave()
                             }
-                        Text("OpenAI GPT: reliable formatting and structuring.")
+                        Text(L.tr("OpenAI GPT: reliable formatting and structuring.", "OpenAI GPT: надёжное форматирование и структурирование."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -717,38 +743,38 @@ struct AIConfigView: View {
                 Divider()
                 
                 VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Speaker Diarization (AI-powered)", isOn: $settings.enableSpeakerDiarization)
+                    Toggle(L.tr("Speaker Diarization (AI-powered)", "Диаризация спикеров (AI)"), isOn: $settings.enableSpeakerDiarization)
                         .onChange(of: settings.enableSpeakerDiarization) { _, _ in 
                             onSave() 
                         }
 
                     if shouldShowDedicatedDiarizationAPIKey {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("OpenAI API Key").font(.caption).foregroundStyle(.secondary)
+                            Text(L.tr("OpenAI API Key", "OpenAI API Key")).font(.caption).foregroundStyle(.secondary)
                             SecureField("sk-...", text: $settings.apiKey)
                                 .textFieldStyle(.roundedBorder)
                                 .onChange(of: settings.apiKey) { _, _ in
                                     settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
                                     onSave()
                                 }
-                            Text("Required for diarization when transcription runs locally.")
+                            Text(L.tr("Required for diarization when transcription runs locally.", "Нужно для диаризации, когда транскрибация выполняется локально."))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
                     
-                    Text("Uses AI to identify and split different speakers in the transcription. Best for interviews and meetings.")
+                    Text(L.tr("Uses AI to identify and split different speakers in the transcription. Best for interviews and meetings.", "Использует AI для определения и разделения разных спикеров в транскрипции. Лучше всего подходит для интервью и встреч."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
                     if settings.enableSpeakerDiarization && !settings.canUseSpeakerDiarization {
-                        Text("Add an OpenAI API key to enable diarization.")
+                        Text(L.tr("Add an OpenAI API key to enable diarization.", "Добавьте OpenAI API key, чтобы включить диаризацию."))
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
 
                     if settings.enableSpeakerDiarization {
-                        Text("When diarization is enabled, standard AI refinement is skipped to preserve speaker turns.")
+                        Text(L.tr("When diarization is enabled, standard AI refinement is skipped to preserve speaker turns.", "Когда включена диаризация, стандартная AI-обработка пропускается, чтобы сохранить очередность спикеров."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -774,7 +800,7 @@ struct ModeCard: View {
                             .font(.title3)
                             .foregroundStyle(isSelected ? SW.accent : (isEnabled ? .primary : .secondary))
                         
-                        Text(mode.name)
+                        Text(mode.localizedName)
                             .font(.headline)
                             .foregroundStyle(isSelected ? SW.accent : (isEnabled ? .primary : .secondary))
                         
@@ -785,13 +811,13 @@ struct ModeCard: View {
                         }
                     }
                     
-                    Text(mode.description)
+                    Text(mode.localizedDescription)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                     
                     if !isEnabled {
-                        Text("Requires API Key & AI Refinement Enabled")
+                        Text(L.tr("Requires API Key & AI Refinement Enabled", "Нужен API key и включённая AI-обработка"))
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(.orange.opacity(0.8))
                             .padding(.top, 4)
@@ -822,8 +848,8 @@ struct ModeCard: View {
             .opacity(isEnabled ? 1.0 : 0.6)
             
             VStack(alignment: .leading, spacing: 12) {
-                ExampleBox(title: "Input:", text: mode.exampleInput, icon: "mic")
-                ExampleBox(title: "Output:", text: mode.exampleOutput, icon: "sparkles", isOutput: true)
+                ExampleBox(title: L.tr("Input:", "Вход:"), text: mode.exampleInput, icon: "mic")
+                ExampleBox(title: L.tr("Output:", "Выход:"), text: mode.exampleOutput, icon: "sparkles", isOutput: true)
             }
             .opacity(isEnabled || mode.name == TranscriptionMode.dictation.name ? 1.0 : 0.4)
         }

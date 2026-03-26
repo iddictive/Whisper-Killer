@@ -56,14 +56,14 @@ struct RecordingOverlayContent: View {
                 if recorder.isTooQuiet {
                     HStack(spacing: 3) {
                         Image(systemName: "speaker.slash.fill").font(.system(size: 9))
-                        Text("Low").font(.system(size: 10, weight: .bold))
+                        Text(L.tr("Low", "Тихо")).font(.system(size: 10, weight: .bold))
                     }
                     .foregroundStyle(.orange).padding(.horizontal, 7).padding(.vertical, 3)
                     .background(Capsule().fill(.orange.opacity(0.15)))
                 } else if recorder.isTooNoisy {
                     HStack(spacing: 3) {
                         Image(systemName: "waveform.badge.exclamationmark").font(.system(size: 9))
-                        Text("Noise").font(.system(size: 10, weight: .bold))
+                        Text(L.tr("Noise", "Шум")).font(.system(size: 10, weight: .bold))
                     }
                     .foregroundStyle(.red).padding(.horizontal, 7).padding(.vertical, 3)
                     .background(Capsule().fill(.red.opacity(0.15)))
@@ -75,7 +75,7 @@ struct RecordingOverlayContent: View {
                 
                 cancelButton
             } else if appState.state == .processing || appState.state == .typing {
-                Text(appState.state == .processing ? appState.processingStage.rawValue : "Typing...")
+                Text(appState.state == .processing ? localizedProcessingStage : L.tr("Typing...", "Печать..."))
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
             } else {
@@ -88,7 +88,7 @@ struct RecordingOverlayContent: View {
                         Button {
                             appState.openMicrophoneSettings()
                         } label: {
-                            Text("Settings")
+                            Text(L.tr("Settings", "Настройки"))
                                 .font(.system(size: 11, weight: .bold))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
@@ -139,10 +139,19 @@ struct RecordingOverlayContent: View {
     private var statusText: String {
         if let error = appState.lastError { return error }
         switch appState.state {
-        case .recording: return "Recording..."
-        case .processing: return appState.processingStage.rawValue
-        case .typing: return "Typing..."
+        case .recording: return L.tr("Recording...", "Запись...")
+        case .processing: return localizedProcessingStage
+        case .typing: return L.tr("Typing...", "Печать...")
         case .idle: return ""
+        }
+    }
+
+    private var localizedProcessingStage: String {
+        switch appState.processingStage {
+        case .converting: return L.tr("Converting...", "Конвертация...")
+        case .transcribing: return L.tr("Transcribing...", "Транскрибация...")
+        case .postProcessing: return L.tr("Post-processing...", "Постобработка...")
+        case .none: return ""
         }
     }
 
