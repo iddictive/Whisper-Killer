@@ -620,18 +620,24 @@ final class AppState: ObservableObject {
                 
                 print("whisper_debug: 📝 Raw transcription result: '\(rawText)' (length: \(rawText.count))")
 
-                guard !rawText.isEmpty else {
-                   if rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    showError("No speech detected. Try speaking more clearly or check your microphone.")
+                let trimmedRawText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedRawText.isEmpty else {
+                    let errorMessage = "No speech detected. Try speaking more clearly or check your microphone."
+                    saveFailedRecordingHistoryEntry(
+                        audioURL: audioURL,
+                        rawText: rawText,
+                        processedText: processedText,
+                        errorMessage: errorMessage,
+                        modeName: selectedModeName,
+                        duration: recordingDuration,
+                        engineUsed: selectedEngine + " + Error",
+                        usage: usage
+                    )
+                    showError(errorMessage)
                     state = .idle
                     processingStage = .none
                     recorder.cleanup()
-                    return
-                }
-                    state = .idle
-                    processingStage = .none
-                    showOverlayWindow = true // Keep open to show error
-                    recorder.cleanup()
+                    currentEngine = nil
                     return
                 }
 
@@ -769,21 +775,16 @@ final class AppState: ObservableObject {
 
             } catch {
                 print("whisper_debug: ❌ Transcription task failed: \(error)")
-                let persistentAudioPath = persistRecordingAudio(from: audioURL)
-                let fallbackText = processedText.isEmpty ? rawText : processedText
-                let entry = TranscriptionHistoryEntry(
+                saveFailedRecordingHistoryEntry(
+                    audioURL: audioURL,
                     rawText: rawText,
-                    processedText: fallbackText,
-                    processingError: error.localizedDescription,
+                    processedText: processedText,
+                    errorMessage: error.localizedDescription,
                     modeName: selectedModeName,
                     duration: recordingDuration,
                     engineUsed: selectedEngine + " + Error",
-                    usage: usage,
-                    audioFilePath: persistentAudioPath,
-                    ownsAudioFile: persistentAudioPath != nil
+                    usage: usage
                 )
-                Storage.shared.addTranscriptionHistoryEntry(entry)
-                history.insert(entry, at: 0)
                 showError(error.localizedDescription)
                 state = .idle
                 processingStage = .none
@@ -809,6 +810,33 @@ final class AppState: ObservableObject {
             print("whisper_debug: ❌ Failed to move recording: \(error)")
             return nil
         }
+    }
+
+    private func saveFailedRecordingHistoryEntry(
+        audioURL: URL,
+        rawText: String,
+        processedText: String,
+        errorMessage: String,
+        modeName: String,
+        duration: TimeInterval,
+        engineUsed: String,
+        usage: UsageLog?
+    ) {
+        let persistentAudioPath = persistRecordingAudio(from: audioURL)
+        let fallbackText = processedText.isEmpty ? rawText : processedText
+        let entry = TranscriptionHistoryEntry(
+            rawText: rawText,
+            processedText: fallbackText,
+            processingError: errorMessage,
+            modeName: modeName,
+            duration: duration,
+            engineUsed: engineUsed,
+            usage: usage,
+            audioFilePath: persistentAudioPath,
+            ownsAudioFile: persistentAudioPath != nil
+        )
+        Storage.shared.addTranscriptionHistoryEntry(entry)
+        history.insert(entry, at: 0)
     }
 
     private func scheduleStopAndTranscribe(after delay: TimeInterval) {
