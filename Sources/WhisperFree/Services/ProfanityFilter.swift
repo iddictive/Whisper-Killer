@@ -44,6 +44,10 @@ enum ProfanityFilter {
         return CustomProfanityDictionary(fileName: url.lastPathComponent, terms: normalizedTerms)
     }
 
+    private static let bundledTerms: [String] = {
+        normalizeCustomTerms(loadBundledTerms(named: "en") + loadBundledTerms(named: "ru"))
+    }()
+
     private static let englishPatterns: [String] = [
         "motherfucker(?:s)?",
         "fuck(?:er|ers|ed|ing|in)?",
@@ -62,23 +66,33 @@ enum ProfanityFilter {
     private static let russianPatterns: [String] = [
         "бля(?:д(?:ь|и|ина|ины|иной|ину|ями|ях|ский|ская|ское|ские|ских|ским|скими|скую)?|т(?:ь|и)?|ха|хи|ху)?",
         "сук(?:а|и|у|е|ой|ою|ами|ах)",
+        "сучар(?:а|у|е|ой|ою|ы)?",
         "ху(?:й|я|ю|ем|е|и|йн(?:я|и|ю|е|ей|ями|ях)|ево|евый|евая|евое|евые|евым|евых|ево)",
+        "наху(?:й|я|ю|е|ем|и)?",
         "пизд(?:а|ы|е|у|ой|ец|еца|ецу|ецом|ецы|ецов|юк|юка|юку|юком)",
         "(?:е|ё)б(?:ать|ал(?:а|и|о)?|ан(?:ый|ая|ое|ые|ого|ому|ым|ыми|ую)?|нут(?:ь|ый|ая|ое|ые)?|нул(?:а|и|о)?|усь|ешь|ете|ись)",
+        "вы(?:е|ё)б(?:у|ешь|ет|ем|ете|ут|ал(?:а|и|о)?|ан(?:ный|ная|ное|ные|ного|ному|ным|ными|ную)?)",
+        "(?:е|ё)буч(?:ий|ая|ее|ие|его|ему|им|ими|их|ую)",
         "мудак(?:и|а|у|ом|ами|ах)?",
         "мраз(?:ь|и|ью)",
+        "мразот(?:а|у|е|ой|ою|ы)?",
         "говн(?:о|а|е|у|ом|ы|ами|ах)",
         "дерьм(?:о|а|е|у|ом|ы|ами|ах)",
+        "шалав(?:а|у|е|ой|ою|ы)?",
         "шлюх(?:а|и|у|е|ой|ою|ами|ах)",
-        "сволоч(?:ь|и|ью)"
+        "сволоч(?:ь|и|ью)",
+        "кончен(?:ый|ая|ое|ые|ого|ому|ым|ыми|ую|ых)"
     ]
 
     private static func profanityRegex(for settings: AppSettings) -> NSRegularExpression {
+        let bundledPatterns = bundledTerms
+            .sorted { $0.count > $1.count }
+            .map(NSRegularExpression.escapedPattern(for:))
         let customPatterns = normalizeCustomTerms(settings.customProfanityDictionaries.flatMap(\.terms))
             .sorted { $0.count > $1.count }
             .map(NSRegularExpression.escapedPattern(for:))
 
-        let combined = (englishPatterns + russianPatterns + customPatterns).joined(separator: "|")
+        let combined = (englishPatterns + russianPatterns + bundledPatterns + customPatterns).joined(separator: "|")
         let pattern = "(?iu)(?<![\\p{L}\\p{N}])(?:\(combined))(?![\\p{L}\\p{N}])"
         return try! NSRegularExpression(pattern: pattern)
     }
@@ -155,6 +169,26 @@ enum ProfanityFilter {
         }
 
         return nil
+    }
+
+    private static func loadBundledTerms(named name: String) -> [String] {
+        let candidateURLs: [URL?] = [
+            Bundle.module.url(forResource: name, withExtension: "txt", subdirectory: "Resources/Profanity"),
+            Bundle.module.resourceURL?.appendingPathComponent("Resources/Profanity/\(name).txt"),
+            Bundle.main.url(forResource: name, withExtension: "txt", subdirectory: "Resources/Profanity"),
+            Bundle.main.resourceURL?.appendingPathComponent("Resources/Profanity/\(name).txt")
+        ]
+
+        for candidateURL in candidateURLs {
+            guard let candidateURL,
+                  let content = readString(from: candidateURL) else { continue }
+            return content
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+
+        return []
     }
 
     private static func normalizeCustomTerms(_ terms: [String]) -> [String] {
