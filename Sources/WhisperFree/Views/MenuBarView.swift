@@ -2,12 +2,24 @@ import SwiftUI
 
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
+    
+    private let popoverMinWidth: CGFloat = 420
+    private let popoverIdealWidth: CGFloat = 450
+    private let popoverMaxWidth: CGFloat = 520
+    private let popoverMinHeight: CGFloat = 520
 
     var body: some View {
         VStack(spacing: 0) {
             mainContent
         }
-        .frame(width: 340)
+        .frame(
+            minWidth: popoverMinWidth,
+            idealWidth: popoverIdealWidth,
+            maxWidth: popoverMaxWidth,
+            minHeight: popoverMinHeight,
+            alignment: .top
+        )
+        .fixedSize(horizontal: false, vertical: true)
         .background(VisualEffectView(material: .hudWindow, blendingMode: .withinWindow).ignoresSafeArea())
     }
 
@@ -402,7 +414,12 @@ struct MenuBarView: View {
                 GitHubUpdater.shared.checkForUpdates(manual: true)
             }
         }
-        .frame(width: 340)
+        .frame(
+            minWidth: popoverMinWidth,
+            idealWidth: popoverIdealWidth,
+            maxWidth: .infinity,
+            alignment: .top
+        )
         .onAppear {
             if !appState.settings.setupCompleted {
                 DispatchQueue.main.async {
@@ -421,6 +438,7 @@ struct MenuBarView: View {
                     .frame(width: 20, alignment: .center)
                 Text(title)
                     .font(.system(size: 13))
+                    .lineLimit(1)
                 Spacer()
             }
             .padding(.horizontal, 16)
