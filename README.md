@@ -137,9 +137,8 @@ make install
 Useful commands:
 
 ```bash
-make verify   # compile debug + release
-make run      # run from source
-make app      # create local .app bundle
+make install  # reinstall app to /Applications and launch it
+make verify   # verify release build
 ```
 
 ---
@@ -276,9 +275,8 @@ make install
 Полезные команды:
 
 ```bash
-make verify   # собрать debug + release
-make run      # запуск из исходников
-make app      # локальная сборка .app bundle
+make install  # переустановить приложение в /Applications и запустить
+make verify   # проверить release-сборку
 ```
 
 ---

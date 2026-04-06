@@ -35,12 +35,17 @@ struct LiveTranslatorSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button(appState.showLiveTranslatorOverlay ? L.tr("Stop Mic -> RU", "Стоп микрофон -> RU") : L.tr("Mic -> RU", "Микрофон -> RU")) {
+                    appState.toggleRussianMicrophoneTranslator()
+                }
+                .buttonStyle(.borderedProminent)
                 Toggle("", isOn: $appState.settings.liveTranslatorEnabled)
                     .toggleStyle(.switch)
                     .labelsHidden()
                     .onChange(of: appState.settings.liveTranslatorEnabled) { _, _ in
                         appState.saveSettings()
                         appState.reloadHotkeyManager()
+                        notifyLiveTranslatorSettingsChanged()
                     }
             }
             .padding(.bottom, 8)
@@ -113,6 +118,7 @@ struct LiveTranslatorSettingsView: View {
                                 .labelsHidden()
                                 .onChange(of: appState.settings.useScreenCaptureKit) { _, _ in
                                     appState.saveSettings()
+                                    notifyLiveTranslatorSettingsChanged()
                                 }
                         }
                         
@@ -139,6 +145,7 @@ struct LiveTranslatorSettingsView: View {
                             .opacity(appState.settings.useScreenCaptureKit ? 0.5 : 1.0)
                             .onChange(of: appState.settings.liveTranslatorInputDeviceID) { _, _ in
                                 appState.saveSettings()
+                                notifyLiveTranslatorSettingsChanged()
                             }
                         }
                     }
@@ -156,7 +163,10 @@ struct LiveTranslatorSettingsView: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        .onChange(of: appState.settings.liveTranslatorEngine) { _, _ in appState.saveSettings() }
+                        .onChange(of: appState.settings.liveTranslatorEngine) { _, _ in
+                            appState.saveSettings()
+                            notifyLiveTranslatorSettingsChanged()
+                        }
                         
                         Divider()
                         
@@ -233,7 +243,7 @@ struct LiveTranslatorSettingsView: View {
                                                 .frame(width: 250)
                                                 .onChange(of: appState.settings.liveTranslatorLocalModel) { _, _ in 
                                                     appState.saveSettings()
-                                                    NotificationCenter.default.post(name: NSNotification.Name("LiveTranslatorSettingsChanged"), object: nil)
+                                                    notifyLiveTranslatorSettingsChanged()
                                                 }
                                             }
                                             
@@ -252,7 +262,10 @@ struct LiveTranslatorSettingsView: View {
                                         HStack {
                                             TextField("Custom model name (e.g. qwen2.5:3b)", text: $appState.settings.liveTranslatorLocalModel)
                                                 .textFieldStyle(.roundedBorder)
-                                                .onChange(of: appState.settings.liveTranslatorLocalModel) { _, _ in appState.saveSettings() }
+                                                .onChange(of: appState.settings.liveTranslatorLocalModel) { _, _ in
+                                                    appState.saveSettings()
+                                                    notifyLiveTranslatorSettingsChanged()
+                                                }
                                             
                                             Button(isPulling ? "Pulling..." : "Download") {
                                                 pullModel(name: appState.settings.liveTranslatorLocalModel)
@@ -293,7 +306,10 @@ struct LiveTranslatorSettingsView: View {
                                 }
                             }
                             .frame(width: 150)
-                            .onChange(of: appState.settings.liveTranslatorTargetLanguage) { _, _ in appState.saveSettings() }
+                            .onChange(of: appState.settings.liveTranslatorTargetLanguage) { _, _ in
+                                appState.saveSettings()
+                                notifyLiveTranslatorSettingsChanged()
+                            }
                         }
                     }
                     .padding(8)
@@ -323,6 +339,10 @@ struct LiveTranslatorSettingsView: View {
         if modifierFlags.contains(CGEventFlags.maskCommand) { str += "⌘ " }
         str += "Press any key..."
         return str
+    }
+
+    private func notifyLiveTranslatorSettingsChanged() {
+        NotificationCenter.default.post(name: NSNotification.Name("LiveTranslatorSettingsChanged"), object: nil)
     }
     
     private func pullModel(name: String) {

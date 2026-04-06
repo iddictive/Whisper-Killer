@@ -2,6 +2,12 @@ import Foundation
 import Combine
 import AVFoundation
 
+struct LiveTranscriptSegment: Identifiable, Equatable, Sendable {
+    let id: UUID
+    var originalText: String
+    var translatedText: String
+}
+
 @MainActor
 final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     static let shared = LiveTranslatorManager()
@@ -10,6 +16,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     @Published var originalText: String = ""
     @Published var translatedText: String = ""
     @Published var statusMessage: String?
+    @Published var transcriptSegments: [LiveTranscriptSegment] = []
     
     private var translationTask: Task<Void, Never>?
     private var process: Process?
@@ -57,6 +64,13 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         stop()
         start()
     }
+
+    private func failToStart(with message: String) {
+        statusMessage = message
+        isRunning = false
+        NotificationCenter.default.post(name: .liveTranslatorDidFailToStart, object: message)
+        NotificationCenter.default.post(name: .liveTranslatorDidStop, object: nil)
+    }
     
     func start() {
         guard AppState.liveTranslatorFeatureAvailable else {
@@ -76,20 +90,20 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         // 1. Validate Model
         let modelSize = currentSettings.localModelSize
         guard let modelURL = AppState.shared.modelManager.findModelPath(for: modelSize) else {
-            statusMessage = "Whisper model '\(modelSize.rawValue)' not found. Please download it in Engine settings."
+            failToStart(with: "Whisper model '\(modelSize.rawValue)' not found. Please download it in Engine settings.")
             return
         }
         let modelPath = modelURL.path
         
         // 2. SCK vs Device Index
         if currentSettings.useScreenCaptureKit {
-            statusMessage = "System Audio Capture is temporarily disabled."
+            startSystemAudioCapture()
             return
         }
 
         let binaryPath = "/opt/homebrew/bin/whisper-stream"
         guard FileManager.default.fileExists(atPath: binaryPath) else {
-            statusMessage = "whisper-stream not found. Please run 'brew install whisper-cpp'."
+            failToStart(with: "whisper-stream not found. Please run 'brew install whisper-cpp'.")
             return
         }
         
@@ -136,13 +150,47 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             isRunning = true
             originalText = ""
             translatedText = ""
+            transcriptSegments = []
             rawStreamBuffer = ""
             statusMessage = "Listening..."
             resetSilenceTimer()
             NotificationCenter.default.post(name: .liveTranslatorDidStart, object: nil)
         } catch {
-            statusMessage = "Failed to start stream: \(error.localizedDescription)"
-            isRunning = false
+            failToStart(with: "Failed to start stream: \(error.localizedDescription)")
+        }
+    }
+
+    private func startSystemAudioCapture() {
+        statusMessage = "Starting system audio capture..."
+        originalText = ""
+        translatedText = ""
+        transcriptSegments = []
+        rawStreamBuffer = ""
+        lastSentText = ""
+        sckAudioBuffer.removeAll(keepingCapacity: true)
+        translationTask?.cancel()
+        transcriptionTask?.cancel()
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            do {
+                try await SystemAudioCapturer.shared.startCapture { [weak self] data in
+                    self?.handleSCKBuffer(data)
+                }
+
+                self.isUsingSCK = true
+                self.isRunning = true
+                self.isTranscribingSCK = false
+                self.statusMessage = "Listening..."
+                self.resetSilenceTimer()
+                self.startSCKTranscriptionLoop()
+                NotificationCenter.default.post(name: .liveTranslatorDidStart, object: nil)
+            } catch {
+                self.isUsingSCK = false
+                self.isTranscribingSCK = false
+                self.failToStart(with: "Failed to start system audio capture: \(error.localizedDescription)")
+            }
         }
     }
     
@@ -172,6 +220,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         statusMessage = nil
         originalText = ""
         translatedText = ""
+        transcriptSegments = []
         rawStreamBuffer = ""
         lastSentText = ""
         translationTask?.cancel()
@@ -247,6 +296,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         isRunning = false
         originalText = ""
         translatedText = ""
+        transcriptSegments = []
         rawStreamBuffer = ""
         lastSentText = ""
         translationTask?.cancel()
@@ -352,6 +402,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
                 
                 await MainActor.run {
                     self.translatedText = translationResult
+                    self.upsertTranscriptSegment(original: text, translated: translationResult)
                     self.statusMessage = "Listening..."
                 }
             } catch {
@@ -375,6 +426,38 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
                 self?.lastSentText = ""
             }
         }
+    }
+
+    private func upsertTranscriptSegment(original: String, translated: String) {
+        let original = original.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translated = translated.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !original.isEmpty, !translated.isEmpty else { return }
+
+        if let lastIndex = transcriptSegments.indices.last {
+            let lastSegment = transcriptSegments[lastIndex]
+
+            if lastSegment.originalText == original {
+                if lastSegment.translatedText != translated {
+                    transcriptSegments[lastIndex].translatedText = translated
+                }
+                return
+            }
+
+            if original.hasPrefix(lastSegment.originalText) || lastSegment.originalText.hasPrefix(original) {
+                transcriptSegments[lastIndex].originalText = original
+                transcriptSegments[lastIndex].translatedText = translated
+                return
+            }
+        }
+
+        transcriptSegments.append(
+            LiveTranscriptSegment(
+                id: UUID(),
+                originalText: original,
+                translatedText: translated
+            )
+        )
     }
 
     // MARK: - SCK Audio Logic
@@ -470,7 +553,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
                     self.originalText = text
                     let settings = Storage.shared.loadSettings()
                     self.triggerTranslation(
-                        targetLanguage: settings.liveTranslatorTargetLanguage,
+                        targetLanguage: AppSettings.normalizedLiveTranslatorTargetLanguage(settings.liveTranslatorTargetLanguage),
                         engine: settings.liveTranslatorEngine,
                         localModel: settings.liveTranslatorLocalModel
                     )

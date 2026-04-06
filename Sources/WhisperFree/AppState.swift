@@ -22,7 +22,7 @@ enum ProcessingStage: String {
 @MainActor
 final class AppState: ObservableObject {
     static let shared = AppState()
-    static let liveTranslatorFeatureAvailable = false
+    static let liveTranslatorFeatureAvailable = true
     // MARK: - Published State
     @Published var state: AppRecordingState = .idle
     @Published var processingStage: ProcessingStage = .none
@@ -171,6 +171,13 @@ final class AppState: ObservableObject {
         NotificationCenter.default.publisher(for: .liveTranslatorDidStop)
             .sink { [weak self] _ in
                 self?.showLiveTranslatorOverlay = false
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .liveTranslatorDidFailToStart)
+            .sink { [weak self] notification in
+                guard let message = notification.object as? String, !message.isEmpty else { return }
+                self?.showError(message)
             }
             .store(in: &cancellables)
     }
@@ -548,10 +555,13 @@ final class AppState: ObservableObject {
                 }
             }
 
+            let filteredRawText = ProfanityFilter.apply(to: rawText, settings: settings)
+            let filteredProcessedText = ProfanityFilter.apply(to: processedText, settings: settings)
+
             guard let index = history.firstIndex(where: { $0.entryId == entry.entryId }) else { return }
 
-            history[index].rawText = rawText
-            history[index].processedText = processedText
+            history[index].rawText = filteredRawText
+            history[index].processedText = filteredProcessedText
             history[index].summaryText = nil
             history[index].processingError = processingErrorMessage
             history[index].modeName = settings.selectedMode.name
@@ -568,7 +578,7 @@ final class AppState: ObservableObject {
                 saveSettings()
             }
 
-            lastTranscription = processedText
+            lastTranscription = filteredProcessedText
         } catch {
             if let index = history.firstIndex(where: { $0.entryId == entry.entryId }) {
                 history[index].processingError = error.localizedDescription
@@ -709,6 +719,9 @@ final class AppState: ObservableObject {
                     }
                 }
 
+                let filteredRawText = ProfanityFilter.apply(to: rawText, settings: settings)
+                processedText = ProfanityFilter.apply(to: processedText, settings: settings)
+
                 // 4. Store result (no auto-clipboard — user copies manually from tray)
 
                 // 5. Hide overlay BEFORE insertion to return focus to target app
@@ -747,7 +760,7 @@ final class AppState: ObservableObject {
                 }
 
                 let entry = TranscriptionHistoryEntry(
-                    rawText: rawText,
+                    rawText: filteredRawText,
                     processedText: processedText,
                     processingError: processingErrorMessage,
                     modeName: selectedModeName,
@@ -823,9 +836,10 @@ final class AppState: ObservableObject {
         usage: UsageLog?
     ) {
         let persistentAudioPath = persistRecordingAudio(from: audioURL)
-        let fallbackText = processedText.isEmpty ? rawText : processedText
+        let filteredRawText = ProfanityFilter.apply(to: rawText, settings: settings)
+        let fallbackText = processedText.isEmpty ? filteredRawText : ProfanityFilter.apply(to: processedText, settings: settings)
         let entry = TranscriptionHistoryEntry(
-            rawText: rawText,
+            rawText: filteredRawText,
             processedText: fallbackText,
             processingError: errorMessage,
             modeName: modeName,
@@ -908,6 +922,47 @@ final class AppState: ObservableObject {
         } else {
             LiveTranslatorManager.shared.start()
         }
+    }
+
+    func toggleRussianMicrophoneTranslator() {
+        guard Self.liveTranslatorFeatureAvailable else {
+            showError("Live Translator is planned for a future release.")
+            return
+        }
+
+        if LiveTranslatorManager.shared.isRunning {
+            LiveTranslatorManager.shared.stop()
+            return
+        }
+
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+
+        switch status {
+        case .authorized:
+            startRussianMicrophoneTranslator()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        self?.startRussianMicrophoneTranslator()
+                    } else {
+                        self?.showError("Microphone access denied. Please enable it in System Settings → Privacy & Security.")
+                    }
+                }
+            }
+        case .denied, .restricted:
+            showError("Microphone access denied. Please enable it in System Settings → Privacy & Security.")
+        @unknown default:
+            showError("Microphone access denied. Please enable it in System Settings → Privacy & Security.")
+        }
+    }
+
+    private func startRussianMicrophoneTranslator() {
+        settings.useScreenCaptureKit = false
+        settings.liveTranslatorTargetLanguage = "Russian"
+        saveSettings()
+        NotificationCenter.default.post(name: NSNotification.Name("LiveTranslatorSettingsChanged"), object: nil)
+        LiveTranslatorManager.shared.start()
     }
 
     // MARK: - History

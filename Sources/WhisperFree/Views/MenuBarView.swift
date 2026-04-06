@@ -121,6 +121,26 @@ struct MenuBarView: View {
                 }
                 .buttonStyle(.plain)
 
+                if AppState.liveTranslatorFeatureAvailable {
+                    Button {
+                        appState.toggleRussianMicrophoneTranslator()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: appState.showLiveTranslatorOverlay ? "stop.circle.fill" : "captions.bubble.fill")
+                                .font(.system(size: 10))
+                            Text(appState.showLiveTranslatorOverlay ? L.tr("Stop RU", "Стоп RU") : L.tr("Mic -> RU", "Мик -> RU"))
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundStyle(appState.showLiveTranslatorOverlay ? .white : .primary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule().fill(appState.showLiveTranslatorOverlay ? Color.accentColor : Color.primary.opacity(0.08))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 // State indicator
                 if appState.state == .processing {
                     ProgressView().controlSize(.mini)
@@ -360,6 +380,12 @@ struct MenuBarView: View {
                     Divider()
                     menuButton(icon: "captions.bubble", title: appState.showLiveTranslatorOverlay ? L.tr("Stop Live Translator", "Остановить Live Translator") : L.tr("Start Live Translator", "Запустить Live Translator")) {
                         appState.toggleLiveTranslator()
+                    }
+                }
+
+                if AppState.liveTranslatorFeatureAvailable {
+                    menuButton(icon: "mic.badge.plus", title: appState.showLiveTranslatorOverlay ? L.tr("Stop Mic -> Russian", "Остановить микрофон -> русский") : L.tr("Start Mic -> Russian", "Запустить микрофон -> русский")) {
+                        appState.toggleRussianMicrophoneTranslator()
                     }
                 }
             }

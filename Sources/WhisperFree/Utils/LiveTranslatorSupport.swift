@@ -3,6 +3,7 @@ import Foundation
 extension Notification.Name {
     static let liveTranslatorDidStart = Notification.Name("LiveTranslatorDidStart")
     static let liveTranslatorDidStop = Notification.Name("LiveTranslatorDidStop")
+    static let liveTranslatorDidFailToStart = Notification.Name("LiveTranslatorDidFailToStart")
 }
 
 extension AppSettings {

@@ -508,6 +508,7 @@ struct AppSettings: Codable {
     var apiKey: String = ""
     var postProcessingEngine: PostProcessingEngine = .openai
     var autoTypeResult: Bool = true
+    var enableProfanityFilter: Bool = false
     var language: String = "auto"
     var selectedModeName: String = TranscriptionMode.dictation.name
     var customModes: [TranscriptionMode] = []
@@ -525,6 +526,7 @@ struct AppSettings: Codable {
     var usageLogs: [UsageLog] = []
     var experimentalAutoEnter: Bool = false
     var enableSpeakerDiarization: Bool = false
+    var customProfanityDictionaries: [CustomProfanityDictionary] = []
     var selectedInputDeviceID: String? = nil
     var lifetimeWords: Int = 0
     var lifetimeDuration: Double = 0
@@ -541,12 +543,12 @@ struct AppSettings: Codable {
     var liveTranslatorCompactMode: Bool = false
 
     enum CodingKeys: String, CodingKey {
-        case apiKey, postProcessingEngine, autoTypeResult, language,
+        case apiKey, postProcessingEngine, autoTypeResult, enableProfanityFilter, language,
              selectedModeName, customModes, recordingMode, engineType, localModelSize,
              showOverlay, setupCompleted, hotkeyConfig, insertionMethod,
              automaticallyChecksForUpdates, automaticallyDownloadsUpdates,
              enablePostProcessing, useMonochromeMenuIcon, usageLogs,
-             experimentalAutoEnter, enableSpeakerDiarization, selectedInputDeviceID,
+             experimentalAutoEnter, enableSpeakerDiarization, customProfanityDictionaries, selectedInputDeviceID,
              lifetimeWords, lifetimeDuration, audioRetentionPolicy,
              liveTranslatorEnabled, liveTranslatorTargetLanguage, liveTranslatorEngine, liveTranslatorLocalModel,
              liveTranslatorInputDeviceID, liveTranslatorHotkeyConfig, useScreenCaptureKit, liveTranslatorCompactMode
@@ -559,6 +561,7 @@ struct AppSettings: Codable {
         apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         postProcessingEngine = try container.decodeIfPresent(PostProcessingEngine.self, forKey: .postProcessingEngine) ?? .openai
         autoTypeResult = try container.decodeIfPresent(Bool.self, forKey: .autoTypeResult) ?? true
+        enableProfanityFilter = try container.decodeIfPresent(Bool.self, forKey: .enableProfanityFilter) ?? false
         language = try container.decodeIfPresent(String.self, forKey: .language) ?? "auto"
         selectedModeName = try container.decodeIfPresent(String.self, forKey: .selectedModeName) ?? TranscriptionMode.dictation.name
         customModes = try container.decodeIfPresent([TranscriptionMode].self, forKey: .customModes) ?? []
@@ -576,6 +579,7 @@ struct AppSettings: Codable {
         usageLogs = try container.decodeIfPresent([UsageLog].self, forKey: .usageLogs) ?? []
         experimentalAutoEnter = try container.decodeIfPresent(Bool.self, forKey: .experimentalAutoEnter) ?? false
         enableSpeakerDiarization = try container.decodeIfPresent(Bool.self, forKey: .enableSpeakerDiarization) ?? false
+        customProfanityDictionaries = try container.decodeIfPresent([CustomProfanityDictionary].self, forKey: .customProfanityDictionaries) ?? []
         selectedInputDeviceID = try container.decodeIfPresent(String.self, forKey: .selectedInputDeviceID)
         lifetimeWords = try container.decodeIfPresent(Int.self, forKey: .lifetimeWords) ?? 0
         lifetimeDuration = try container.decodeIfPresent(Double.self, forKey: .lifetimeDuration) ?? 0
@@ -658,4 +662,14 @@ struct AppSettings: Codable {
         ("sv", "Swedish"),
         ("uk", "Ukrainian"),
     ]
+}
+
+struct CustomProfanityDictionary: Codable, Identifiable, Hashable {
+    var id: UUID = UUID()
+    var fileName: String
+    var terms: [String]
+
+    var entryCount: Int {
+        terms.count
+    }
 }

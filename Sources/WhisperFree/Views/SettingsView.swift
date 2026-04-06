@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
@@ -22,6 +23,9 @@ struct SettingsView: View {
     @State private var apiValidationState: OpenAIAPIKeyValidationState = .idle
     @State private var isRunningNetworkDiagnostics = false
     @State private var networkDiagnosticLines: [String] = []
+    @State private var showProfanityDictionaryImporter = false
+    @State private var isProfanityDictionaryDropTarget = false
+    @State private var profanityDictionaryMessage: String?
 
     private var appVersionText: String {
         let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -193,6 +197,18 @@ struct SettingsView: View {
             ToolbarItem(placement: .principal) {
                 Text(columnTitle)
                     .font(.system(size: 13, weight: .semibold))
+            }
+        }
+        .fileImporter(
+            isPresented: $showProfanityDictionaryImporter,
+            allowedContentTypes: [.plainText, .utf8PlainText, .commaSeparatedText, .json],
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case .success(let urls):
+                importProfanityDictionaries(from: urls)
+            case .failure(let error):
+                profanityDictionaryMessage = error.localizedDescription
             }
         }
     }
@@ -416,6 +432,97 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
             }
+            .background(Color.primary.opacity(0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+
+        VStack(alignment: .leading, spacing: 16) {
+            Text(L.tr("Output Text", "Текст результата"))
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle(L.tr("Profanity filter", "Мат-фильтр"), isOn: $appState.settings.enableProfanityFilter)
+                    .onChange(of: appState.settings.enableProfanityFilter) { _, _ in
+                        appState.saveSettings()
+                    }
+
+                Text(L.tr("Removes standalone profane words from English and Russian transcripts.", "Удаляет отдельные матерные слова из русской и английской транскрибации."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 22)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(L.tr("Custom dictionaries", "Пользовательские словари"))
+                            .font(.subheadline)
+                        Spacer()
+                        Button(L.tr("Add Files", "Добавить файлы")) {
+                            showProfanityDictionaryImporter = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+
+                    Text(L.tr("Supported: .txt, .csv, .json. Text and CSV files can contain one word or phrase per line. Commas and semicolons are also supported. Lines starting with # or // are ignored. JSON can be [\"word\", \"phrase\"] or {\"words\": [...]} .", "Поддерживаются .txt, .csv, .json. В текстовых и CSV-файлах можно писать по одному слову или фразе на строку. Запятые и точки с запятой тоже поддерживаются. Строки, начинающиеся с # или //, игнорируются. JSON может быть вида [\"слово\", \"фраза\"] или {\"words\": [...]} ."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ExampleBox(
+                        title: L.tr("Example", "Пример"),
+                        text: "fuck\nshit\nбля\nсука\n# comment",
+                        icon: "doc.text"
+                    )
+
+                    profanityDictionaryDropZone
+
+                    if let profanityDictionaryMessage {
+                        Text(profanityDictionaryMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if appState.settings.customProfanityDictionaries.isEmpty {
+                        Text(L.tr("No custom dictionaries added yet.", "Пока нет добавленных словарей."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(appState.settings.customProfanityDictionaries) { dictionary in
+                                HStack(spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(dictionary.fileName)
+                                            .font(.system(size: 12, weight: .semibold))
+                                        Text(L.tr("\(dictionary.entryCount) entries", "\(dictionary.entryCount) слов"))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    Button(role: .destructive) {
+                                        removeProfanityDictionary(dictionary)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(.vertical, 10)
+
+                                if dictionary.id != appState.settings.customProfanityDictionaries.last?.id {
+                                    Divider()
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .background(Color.primary.opacity(0.04))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                }
+            }
+            .padding()
             .background(Color.primary.opacity(0.03))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
@@ -835,6 +942,90 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var profanityDictionaryDropZone: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(
+                    isProfanityDictionaryDropTarget ? Color.accentColor : Color.secondary.opacity(0.2),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [6, 3])
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isProfanityDictionaryDropTarget ? Color.accentColor.opacity(0.05) : Color.primary.opacity(0.02))
+                )
+
+            VStack(spacing: 8) {
+                Image(systemName: "tray.and.arrow.down")
+                    .font(.system(size: 22))
+                    .foregroundStyle(isProfanityDictionaryDropTarget ? Color.accentColor : .secondary)
+                Text(L.tr("Drop dictionary files here", "Перетащите сюда файлы словаря"))
+                    .font(.system(size: 12, weight: .medium))
+                Text(L.tr("or click to choose files", "или нажмите, чтобы выбрать файлы"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 18)
+        }
+        .onDrop(of: [.fileURL], isTargeted: $isProfanityDictionaryDropTarget) { providers in
+            handleProfanityDictionaryDrop(providers)
+        }
+        .onTapGesture {
+            showProfanityDictionaryImporter = true
+        }
+    }
+
+    private func handleProfanityDictionaryDrop(_ providers: [NSItemProvider]) -> Bool {
+        for provider in providers {
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
+                guard let data = data as? Data,
+                      let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+
+                DispatchQueue.main.async {
+                    importProfanityDictionaries(from: [url])
+                }
+            }
+        }
+        return true
+    }
+
+    private func importProfanityDictionaries(from urls: [URL]) {
+        guard !urls.isEmpty else { return }
+
+        var importedFiles = 0
+        var importedEntries = 0
+        var errors: [String] = []
+
+        for url in urls {
+            do {
+                let dictionary = try ProfanityFilter.importDictionary(from: url)
+                appState.settings.customProfanityDictionaries.removeAll { $0.fileName == dictionary.fileName }
+                appState.settings.customProfanityDictionaries.append(dictionary)
+                importedFiles += 1
+                importedEntries += dictionary.entryCount
+            } catch {
+                errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+
+        if importedFiles > 0 {
+            appState.saveSettings()
+        }
+
+        if importedFiles > 0 && errors.isEmpty {
+            profanityDictionaryMessage = L.tr("Imported \(importedFiles) file(s), \(importedEntries) entries.", "Импортировано файлов: \(importedFiles), слов: \(importedEntries).")
+        } else if importedFiles > 0 {
+            profanityDictionaryMessage = ([L.tr("Imported \(importedFiles) file(s), \(importedEntries) entries.", "Импортировано файлов: \(importedFiles), слов: \(importedEntries).")] + errors).joined(separator: "\n")
+        } else {
+            profanityDictionaryMessage = errors.joined(separator: "\n")
+        }
+    }
+
+    private func removeProfanityDictionary(_ dictionary: CustomProfanityDictionary) {
+        appState.settings.customProfanityDictionaries.removeAll { $0.id == dictionary.id }
+        appState.saveSettings()
+        profanityDictionaryMessage = nil
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {

@@ -200,9 +200,12 @@ final class QueueItem: ObservableObject, Identifiable {
                     )
                 }
 
+                let filteredRawText = ProfanityFilter.apply(to: text, settings: settings)
+                let filteredProcessedText = ProfanityFilter.apply(to: processedText, settings: settings)
+
                 await MainActor.run {
-                    self.rawResult = text
-                    self.result = processedText
+                    self.rawResult = filteredRawText
+                    self.result = filteredProcessedText
                     self.summary = nil
                     self.summaryError = nil
                     self.status = .done
@@ -219,8 +222,8 @@ final class QueueItem: ObservableObject, Identifiable {
 
                     // Save to history
                     let entry = TranscriptionHistoryEntry(
-                        rawText: text,
-                        processedText: processedText,
+                        rawText: filteredRawText,
+                        processedText: filteredProcessedText,
                         modeName: settings.selectedMode.name,
                         duration: 0,
                         engineUsed: settings.engineType.rawValue + (totalPromptTokens + totalCompletionTokens > 0 ? " + AI" : ""),
