@@ -6,7 +6,6 @@ struct MenuBarView: View {
     private let popoverMinWidth: CGFloat = 420
     private let popoverIdealWidth: CGFloat = 450
     private let popoverMaxWidth: CGFloat = 520
-    private let popoverMinHeight: CGFloat = 520
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,7 +15,6 @@ struct MenuBarView: View {
             minWidth: popoverMinWidth,
             idealWidth: popoverIdealWidth,
             maxWidth: popoverMaxWidth,
-            minHeight: popoverMinHeight,
             alignment: .top
         )
         .fixedSize(horizontal: false, vertical: true)
