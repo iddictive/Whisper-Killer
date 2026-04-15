@@ -92,16 +92,16 @@ final class QueueItem: ObservableObject, Identifiable {
         self.fileName = url.lastPathComponent
     }
 
-    func loadDuration() async {
+    func loadDuration(settings: AppSettings) async {
         if let dur = await CloudWhisper.fileDuration(url: url) {
             self.durationSeconds = dur
             self.rangeEnd = dur
-            self.estimatedCost = UsageLog.estimateAudioCost(durationSeconds: dur)
+            self.estimatedCost = UsageLog.estimateAudioCost(durationSeconds: dur, model: settings.cloudTranscriptionModel)
         }
     }
 
-    func updateCost() {
-        self.estimatedCost = UsageLog.estimateAudioCost(durationSeconds: selectedDuration)
+    func updateCost(settings: AppSettings) {
+        self.estimatedCost = UsageLog.estimateAudioCost(durationSeconds: selectedDuration, model: settings.cloudTranscriptionModel)
     }
 
     func cancel() {
@@ -778,7 +778,7 @@ struct FileTranscriptionView: View {
 
             // Load duration and cost estimate
             Task {
-                await item.loadDuration()
+                await item.loadDuration(settings: appState.settings)
             }
         }
         // processNextInQueue() removed to wait for user confirmation
@@ -1192,7 +1192,7 @@ struct QueueCardView: View {
                 end: $item.rangeEnd,
                 range: 0...totalDuration,
                 onEditingChanged: {
-                    item.updateCost()
+                    item.updateCost(settings: appState.settings)
                 }
             )
             .padding(.horizontal, 4)

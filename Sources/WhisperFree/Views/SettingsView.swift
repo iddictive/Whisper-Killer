@@ -546,12 +546,32 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(
                         appState.settings.engineType == .cloud
-                            ? L.tr("Cloud transcription uses OpenAI's Whisper API. It is fast and highly accurate, but requires an internet connection.", "Облачная транскрибация использует OpenAI Whisper API. Это быстро и точно, но требует интернет-соединения.")
+                            ? L.tr("Cloud transcription uses OpenAI speech-to-text models. New GPT-4o Transcribe variants are available here alongside Whisper-1.", "Облачная транскрибация использует speech-to-text модели OpenAI. Здесь доступны новые варианты GPT-4o Transcribe вместе с Whisper-1.")
                             : L.tr("Local models run entirely on your Mac. They are private and work offline. Larger models are more accurate but use more memory.", "Локальные модели работают полностью на вашем Mac. Они приватные и доступны офлайн. Более крупные модели точнее, но требуют больше памяти.")
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
+
+                    if appState.settings.engineType == .cloud {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Picker(L.tr("Cloud model", "Облачная модель"), selection: $appState.settings.cloudTranscriptionModel) {
+                                ForEach(CloudTranscriptionModel.allCases, id: \.self) { model in
+                                    Text(model.localizedTitle).tag(model)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .onChange(of: appState.settings.cloudTranscriptionModel) { _, _ in
+                                appState.saveSettings()
+                            }
+
+                            Text(appState.settings.cloudTranscriptionModel.localizedDescription)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal)
+                    }
 
                     OpenAIAPIKeySettingsCard(
                         apiKey: $appState.settings.apiKey,
@@ -575,6 +595,11 @@ struct SettingsView: View {
                                         Text(size.sizeDescription)
                                             .font(.system(size: 11))
                                             .foregroundStyle(.secondary)
+                                        if size.forcesEnglishDecoding {
+                                            Text(L.tr("English-first model", "Модель в первую очередь для английского"))
+                                                .font(.system(size: 10, weight: .medium))
+                                                .foregroundStyle(.orange)
+                                        }
                                     }
 
                                     Spacer()

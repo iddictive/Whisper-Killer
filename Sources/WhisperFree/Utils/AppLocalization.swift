@@ -139,6 +139,30 @@ extension TranscriptionEngineType {
     }
 }
 
+extension CloudTranscriptionModel {
+    var localizedTitle: String {
+        switch self {
+        case .whisper1:
+            return "Whisper-1"
+        case .gpt4oMiniTranscribe:
+            return "GPT-4o Mini Transcribe"
+        case .gpt4oTranscribe:
+            return "GPT-4o Transcribe"
+        }
+    }
+
+    var localizedDescription: String {
+        switch self {
+        case .whisper1:
+            return L.tr("Stable Whisper API model with simple per-minute pricing.", "Стабильная Whisper API-модель с простой поминутной ценой.")
+        case .gpt4oMiniTranscribe:
+            return L.tr("Newer speech-to-text model with better recognition than Whisper-1 at lower cost than full GPT-4o Transcribe.", "Новая speech-to-text модель с лучшим распознаванием, чем у Whisper-1, и более низкой ценой, чем у полного GPT-4o Transcribe.")
+        case .gpt4oTranscribe:
+            return L.tr("Highest accuracy OpenAI transcription model in this app.", "Самая точная OpenAI-модель транскрибации в этом приложении.")
+        }
+    }
+}
+
 extension AudioRetentionPolicy {
     var localizedTitle: String {
         switch self {

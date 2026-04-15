@@ -93,7 +93,9 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
                 "--threads", "\(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))"
             ]
 
-            if let lang = language, lang != "auto" {
+            let effectiveLanguage = modelSize.forcesEnglishDecoding ? "en" : language
+
+            if let lang = effectiveLanguage, lang != "auto" {
                 args += ["--language", lang]
             }
 
@@ -380,40 +382,11 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         print("whisper_debug: ---BEGIN---")
         print(raw)
         print("whisper_debug: ---END---")
-        
-        let lines = raw.components(separatedBy: .newlines)
-        let textLines = lines
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { line in
-                // Filter out obvious whisper-cpp status/metadata lines
-                let isMetadata = line.hasPrefix("whisper_") || line.hasPrefix("main:") || line.contains("progress =")
-                guard !line.isEmpty && !isMetadata else {
-                    return false
-                }
-                
-                // Hallucination/Credits Blacklist
-                let blacklist = [
-                    "DimaTorzok",
-                    "субтитры сделал",
-                    "Добавил субтитры",
-                    "Субтитры подготовил",
-                    "Отредактировал",
-                    "Продолжение следует",
-                    "To be continued",
-                    "Subtitles by",
-                    "Translated by",
-                    "Edited by",
-                    "Thank you.", // Common silence hallucination
-                    "Thank you for watching!",
-                    "Подпишитесь на канал"
-                ]
-                
-                let isBlacklisted = blacklist.contains { phrase in
-                    line.localizedCaseInsensitiveContains(phrase)
-                }
-                
-                return !isBlacklisted
-            }
+
+        let lines = raw
+            .components(separatedBy: .newlines)
+            .map(cleanWhisperOutputLine)
+        let textLines = lines.filter { !$0.isEmpty }
 
         // Repetition Filter: Remove exact duplicate lines that often appear at the end
         var uniqueLines: [String] = []
@@ -428,13 +401,57 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         return result
     }
 
+    private func cleanWhisperOutputLine(_ rawLine: String) -> String {
+        let metadataPatterns = [
+            #"whisper_print_progress_callback:\s*progress\s*=\s*\d+%"#,
+            #"whisper_print_timings:[^\n]*"#,
+            #"whisper_full_with_state:[^\n]*"#,
+            #"whisper_(?:init|model_load|backend_init)[^\n]*"#,
+            #"ggml_[^\n]*"#,
+            #"system_info:[^\n]*"#,
+            #"main:[^\n]*"#
+        ]
+
+        var line = rawLine
+        for pattern in metadataPatterns {
+            line = line.replacingOccurrences(
+                of: pattern,
+                with: "",
+                options: .regularExpression
+            )
+        }
+
+        let blacklist = [
+            "DimaTorzok",
+            "субтитры сделал",
+            "Добавил субтитры",
+            "Субтитры подготовил",
+            "Отредактировал",
+            "Продолжение следует",
+            "To be continued",
+            "Subtitles by",
+            "Translated by",
+            "Edited by",
+            "Thank you.", // Common silence hallucination
+            "Thank you for watching!",
+            "Подпишитесь на канал"
+        ]
+
+        for phrase in blacklist {
+            line = line.replacingOccurrences(of: phrase, with: "", options: .caseInsensitive)
+        }
+
+        line = line.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        return line.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func extractProgress(from line: String) -> Float? {
         // Look for "progress = 42%" or "[ 42%] progress = 42%"
         // Using a simpler but more robust split search if regex is overkill
         if let progressPart = line.components(separatedBy: "progress =").last?.trimmingCharacters(in: .whitespaces),
            let percentStr = progressPart.components(separatedBy: "%").first,
            let percent = Float(percentStr.trimmingCharacters(in: .whitespaces)) {
-            return percent / 100.0
+            return min(percent / 100.0, 1.0)
         }
         
         // Fallback to regex for patterns like "[ 42%]"
@@ -444,7 +461,7 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             if let match = regex.firstMatch(in: line, options: [], range: nsRange) {
                 if let range = Range(match.range(at: 1), in: line),
                    let percent = Float(line[range]) {
-                    return percent / 100.0
+                    return min(percent / 100.0, 1.0)
                 }
             }
         }

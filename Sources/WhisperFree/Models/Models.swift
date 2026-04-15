@@ -189,7 +189,8 @@ struct UsageLog: Codable, Identifiable {
     }
     
     // Estimates based on Whisper API ($0.006 / minute = $0.0001 / second)
-    static func estimateAudioCost(durationSeconds: TimeInterval) -> Double {
+    static func estimateAudioCost(durationSeconds: TimeInterval, model: CloudTranscriptionModel) -> Double? {
+        guard model.supportsDurationCostEstimate else { return nil }
         return durationSeconds * 0.0001
     }
 }
@@ -305,6 +306,20 @@ enum TranscriptionEngineType: String, Codable, CaseIterable {
     }
 }
 
+enum CloudTranscriptionModel: String, Codable, CaseIterable {
+    case whisper1 = "whisper-1"
+    case gpt4oMiniTranscribe = "gpt-4o-mini-transcribe"
+    case gpt4oTranscribe = "gpt-4o-transcribe"
+
+    var apiName: String {
+        rawValue
+    }
+
+    var supportsDurationCostEstimate: Bool {
+        self == .whisper1
+    }
+}
+
 // MARK: - Local Model Size
 
 enum LocalModelSize: String, Codable, CaseIterable {
@@ -313,6 +328,7 @@ enum LocalModelSize: String, Codable, CaseIterable {
     case small = "Small"
     case medium = "Medium"
     case largeV3Turbo = "Large v3 Turbo"
+    case distilLargeV35 = "Distil Large v3.5"
     case largeV3 = "Large v3"
 
     var fileName: String {
@@ -322,13 +338,19 @@ enum LocalModelSize: String, Codable, CaseIterable {
         case .small: return "ggml-small.bin"
         case .medium: return "ggml-medium.bin"
         case .largeV3Turbo: return "ggml-large-v3-turbo.bin"
+        case .distilLargeV35: return "ggml-distil-large-v3.5.bin"
         case .largeV3: return "ggml-large-v3.bin"
         }
     }
 
     var downloadURL: URL {
-        let base = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
-        return URL(string: "\(base)/\(fileName)") ?? URL(string: "https://huggingface.co")!
+        switch self {
+        case .distilLargeV35:
+            return URL(string: "https://huggingface.co/distil-whisper/distil-large-v3.5-ggml/resolve/main/ggml-model.bin")!
+        default:
+            let base = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
+            return URL(string: "\(base)/\(fileName)") ?? URL(string: "https://huggingface.co")!
+        }
     }
 
     var sizeDescription: String {
@@ -338,6 +360,7 @@ enum LocalModelSize: String, Codable, CaseIterable {
         case .small: return "~460 MB · Solid accuracy"
         case .medium: return "~1.5 GB · High accuracy"
         case .largeV3Turbo: return "~1.6 GB · Best speed/quality"
+        case .distilLargeV35: return "~1.5 GB · Faster English-first model"
         case .largeV3: return "~3.1 GB · Maximum accuracy"
         }
     }
@@ -349,6 +372,7 @@ enum LocalModelSize: String, Codable, CaseIterable {
         case .small: return 3
         case .medium: return 4
         case .largeV3Turbo: return 4
+        case .distilLargeV35: return 4
         case .largeV3: return 5
         }
     }
@@ -360,8 +384,13 @@ enum LocalModelSize: String, Codable, CaseIterable {
         case .small: return "⚡⚡"
         case .medium: return "⚡⚡"
         case .largeV3Turbo: return "⚡⚡"
+        case .distilLargeV35: return "⚡⚡⚡"
         case .largeV3: return "⚡"
         }
+    }
+
+    var forcesEnglishDecoding: Bool {
+        self == .distilLargeV35
     }
 
     /// Recommended model based on available RAM
@@ -506,6 +535,7 @@ struct HotkeyConfig: Codable, Equatable, Hashable {
 
 struct AppSettings: Codable {
     var apiKey: String = ""
+    var cloudTranscriptionModel: CloudTranscriptionModel = .whisper1
     var postProcessingEngine: PostProcessingEngine = .openai
     var autoTypeResult: Bool = true
     var enableProfanityFilter: Bool = false
@@ -543,7 +573,7 @@ struct AppSettings: Codable {
     var liveTranslatorCompactMode: Bool = false
 
     enum CodingKeys: String, CodingKey {
-        case apiKey, postProcessingEngine, autoTypeResult, enableProfanityFilter, language,
+        case apiKey, cloudTranscriptionModel, postProcessingEngine, autoTypeResult, enableProfanityFilter, language,
              selectedModeName, customModes, recordingMode, engineType, localModelSize,
              showOverlay, setupCompleted, hotkeyConfig, insertionMethod,
              automaticallyChecksForUpdates, automaticallyDownloadsUpdates,
@@ -559,6 +589,7 @@ struct AppSettings: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
+        cloudTranscriptionModel = try container.decodeIfPresent(CloudTranscriptionModel.self, forKey: .cloudTranscriptionModel) ?? .whisper1
         postProcessingEngine = try container.decodeIfPresent(PostProcessingEngine.self, forKey: .postProcessingEngine) ?? .openai
         autoTypeResult = try container.decodeIfPresent(Bool.self, forKey: .autoTypeResult) ?? true
         enableProfanityFilter = try container.decodeIfPresent(Bool.self, forKey: .enableProfanityFilter) ?? false

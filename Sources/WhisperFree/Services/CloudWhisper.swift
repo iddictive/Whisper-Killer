@@ -6,12 +6,14 @@ import FoundationNetworking
 
 final class CloudWhisper: TranscriptionEngine {
     private let apiKey: String
+    private let model: CloudTranscriptionModel
     private let maxUploadBytes = 25 * 1024 * 1024 // OpenAI 25 MB limit
     /// Maximum chunk duration in seconds for splitting large files (10 minutes)
     private let maxChunkDuration: TimeInterval = 600
 
-    init(apiKey: String) {
+    init(apiKey: String, model: CloudTranscriptionModel) {
         self.apiKey = apiKey
+        self.model = model
     }
 
     // MARK: - Public API
@@ -136,7 +138,7 @@ final class CloudWhisper: TranscriptionEngine {
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         var body = Data()
-        body.appendMultipart(boundary: boundary, name: "model", value: "whisper-1")
+        body.appendMultipart(boundary: boundary, name: "model", value: model.apiName)
         
         // Suppress hallucinations (Subeditor credits, "To be continued" repetitions)
         let suppressionPrompt = "Чистая расшифровка разговора без указания редакторов, корректоров и субтитров. Не писать слово 'Продолжение следует'. Clean transcription without any subeditor or proofreader credits."

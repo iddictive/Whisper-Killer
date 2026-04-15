@@ -96,6 +96,8 @@ final class AppState: ObservableObject {
     private var keyDownTime: Date?
     private var isHoldActive = false
     private var pendingStopTask: Task<Void, Never>?
+    private var currentProcessingTask: Task<Void, Never>?
+    private var currentProcessingToken: UUID?
     private let postReleaseTail: TimeInterval = 0.45
 
     private init() {
@@ -432,8 +434,8 @@ final class AppState: ObservableObject {
     func cancelRecording() {
         cancelPendingStopTask()
         if state == .processing {
-            // Cancel transcription if it's running
-            currentEngine?.cancel()
+            cancelProcessing()
+            return
         }
         
         _ = recorder.stopRecording()
@@ -444,6 +446,23 @@ final class AppState: ObservableObject {
     }
 
     private var currentEngine: TranscriptionEngine?
+
+    func cancelProcessing() {
+        guard state == .processing else { return }
+
+        cancelPendingStopTask()
+        currentProcessingToken = nil
+        currentProcessingTask?.cancel()
+        currentProcessingTask = nil
+        currentEngine?.cancel()
+        currentEngine = nil
+
+        _ = recorder.stopRecording()
+        recorder.cleanup()
+        state = .idle
+        processingStage = .none
+        showOverlayWindow = false
+    }
 
     func retranscribeHistoryEntry(_ entry: TranscriptionHistoryEntry) async {
         guard state == .idle else {
@@ -603,13 +622,24 @@ final class AppState: ObservableObject {
         state = .processing
         processingStage = .transcribing
 
-        Task { @MainActor in
+        let processingToken = UUID()
+        currentProcessingToken = processingToken
+
+        currentProcessingTask = Task { @MainActor in
             var rawText = ""
             var processedText = ""
             var usage: UsageLog? = nil
             var processingErrorMessage: String?
             let selectedModeName = settings.selectedMode.name
             let selectedEngine = settings.engineType.rawValue
+
+            defer {
+                if self.currentProcessingToken == processingToken {
+                    self.currentEngine = nil
+                    self.currentProcessingTask = nil
+                    self.currentProcessingToken = nil
+                }
+            }
 
             do {
                 // Diagnostic: check audio file before sending
@@ -627,6 +657,7 @@ final class AppState: ObservableObject {
                 let lang = settings.language == "auto" ? nil : settings.language
                 rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil, onProgress: nil)
                 self.currentEngine = nil
+                try Task.checkCancellation()
                 
                 print("whisper_debug: 📝 Raw transcription result: '\(rawText)' (length: \(rawText.count))")
 
@@ -667,6 +698,7 @@ final class AppState: ObservableObject {
                     do {
                         let processor = PostProcessor(settings: settings)
                         let result = try await processor.process(text: rawText, mode: settings.selectedMode)
+                        try Task.checkCancellation()
                         processedText = result.text
                         
                         // Create usage log only if AI was actually used
@@ -697,6 +729,7 @@ final class AppState: ObservableObject {
                     do {
                         let processor = PostProcessor(settings: settings)
                         let diarizationResult = try await processor.diarize(text: processedText)
+                        try Task.checkCancellation()
                         processedText = diarizationResult.text
                         
                         // Accumulate tokens
@@ -721,6 +754,7 @@ final class AppState: ObservableObject {
 
                 let filteredRawText = ProfanityFilter.apply(to: rawText, settings: settings)
                 processedText = ProfanityFilter.apply(to: processedText, settings: settings)
+                try Task.checkCancellation()
 
                 // 4. Store result (no auto-clipboard — user copies manually from tray)
 
@@ -732,6 +766,7 @@ final class AppState: ObservableObject {
                     state = .typing
                     // Small delay to let system handle window closing and focus return
                     try await Task.sleep(nanoseconds: 50_000_000)
+                    try Task.checkCancellation()
                     AutoTyper.insert(text: processedText, method: settings.insertionMethod)
                     
                     if settings.experimentalAutoEnter {
@@ -787,6 +822,12 @@ final class AppState: ObservableObject {
 
 
             } catch {
+                if Task.isCancelled || error is CancellationError {
+                    print("whisper_debug: ⏹️ Processing cancelled by user")
+                    recorder.cleanup()
+                    return
+                }
+
                 print("whisper_debug: ❌ Transcription task failed: \(error)")
                 saveFailedRecordingHistoryEntry(
                     audioURL: audioURL,
