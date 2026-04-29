@@ -308,25 +308,29 @@ struct SetupWizardView: View {
 
     private var permissionsStep: some View {
         VStack(spacing: 14) {
-            permissionCard(
+            permissionBridgeCard(
                 icon: "hand.raised.fill",
                 title: L.tr("Accessibility", "Accessibility"),
-                desc: L.tr("For the global ⌥+Space hotkey to work anywhere", "Чтобы глобальный ⌥+Space работал везде"),
-                granted: appState.isHotkeyTrusted
+                desc: L.tr("Drag WhisperKiller into the Accessibility list, then enable it.", "Перетащите WhisperKiller в список Accessibility и включите его."),
+                granted: appState.isHotkeyTrusted,
+                supportsAppDrag: true,
+                actionTitle: L.tr("Open", "Открыть")
             ) {
                 appState.requestAccessibilityPermission()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { refreshStatus() }
             }
 
-            permissionCard(
+            permissionBridgeCard(
                 icon: "mic.fill",
                 title: L.tr("Microphone", "Микрофон"),
-                desc: L.tr("To capture your voice for transcription", "Чтобы захватывать ваш голос для транскрибации"),
-                granted: micGranted
+                desc: L.tr("Use the native macOS prompt for voice capture.", "Разрешите доступ в системном запросе macOS."),
+                granted: micGranted,
+                supportsAppDrag: false,
+                actionTitle: L.tr("Grant", "Выдать")
             ) {
                 AVCaptureDevice.requestAccess(for: .audio) { granted in
-                    DispatchQueue.main.async { 
-                        micGranted = granted 
+                    DispatchQueue.main.async {
+                        micGranted = granted
                         if !granted {
                             // If denied, guide to settings
                             let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
@@ -362,7 +366,7 @@ struct SetupWizardView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                    
+
                     Button {
                         let url = URL(fileURLWithPath: "/Applications")
                         NSWorkspace.shared.open(url)
@@ -386,47 +390,79 @@ struct SetupWizardView: View {
         }
     }
 
-    private func permissionCard(icon: String, title: String, desc: String, granted: Bool, action: @escaping () -> Void) -> some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(granted ? Color.accentColor.opacity(0.15) : Color.orange.opacity(0.15))
-                    .frame(width: 40, height: 40)
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundStyle(granted ? Color.accentColor : .orange)
+    private func permissionBridgeCard(
+        icon: String,
+        title: String,
+        desc: String,
+        granted: Bool,
+        supportsAppDrag: Bool,
+        actionTitle: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(granted ? Color.accentColor.opacity(0.15) : Color.orange.opacity(0.15))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: icon)
+                        .font(.system(size: 16))
+                        .foregroundStyle(granted ? Color.accentColor : .orange)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(textPrimary)
+                    Text(desc).font(.system(size: 11)).foregroundStyle(textSecondary)
+                }
+
+                Spacer()
+
+                if granted {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(L.tr("Granted", "Выдано"))
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.accentColor.opacity(0.12))
+                    .clipShape(Capsule())
+                } else {
+                    Button(action: action) {
+                        Text(actionTitle)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Color.orange)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(textPrimary)
-                Text(desc).font(.system(size: 11)).foregroundStyle(textSecondary)
-            }
+            if !granted {
+                HStack(spacing: 10) {
+                    permissionTile(
+                        icon: "app.fill",
+                        title: "WhisperKiller",
+                        subtitle: supportsAppDrag ? L.tr("Drag", "Перетащить") : L.tr("App", "Приложение"),
+                        draggable: supportsAppDrag
+                    )
 
-            Spacer()
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(textSecondary)
 
-            if granted {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
-                    Text(L.tr("Granted", "Выдано"))
-                        .font(.system(size: 11, weight: .medium))
+                    permissionTile(
+                        icon: supportsAppDrag ? "list.bullet.rectangle" : "switch.2",
+                        title: supportsAppDrag ? L.tr("Accessibility", "Accessibility") : L.tr("macOS Prompt", "Запрос macOS"),
+                        subtitle: supportsAppDrag ? L.tr("Drop here", "В список") : L.tr("Allow", "Разрешить"),
+                        draggable: false
+                    )
                 }
-                .foregroundStyle(Color.accentColor)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color.accentColor.opacity(0.12))
-                .clipShape(Capsule())
-            } else {
-                Button(action: action) {
-                    Text(L.tr("Grant", "Выдать"))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(Color.orange)
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
             }
         }
         .padding(14)
@@ -436,6 +472,42 @@ struct SetupWizardView: View {
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(granted ? Color.accentColor.opacity(0.15) : borderSubtle, lineWidth: 1)
         )
+    }
+
+    private func permissionTile(icon: String, title: String, subtitle: String, draggable: Bool) -> some View {
+        let tile = HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(draggable ? accentPink : textSecondary)
+                .frame(width: 22, height: 22)
+                .background((draggable ? accentPink : textSecondary).opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(textPrimary)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 48)
+        .background(Color.white.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(borderSubtle, lineWidth: 1))
+
+        if draggable {
+            return AnyView(tile.onDrag {
+                NSItemProvider(object: Bundle.main.bundleURL as NSURL)
+            })
+        }
+
+        return AnyView(tile)
     }
 
     // ═══════════════════════════════════════════════
@@ -508,7 +580,7 @@ struct SetupWizardView: View {
     private var localEngineCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             localEngineStatusRow
-            
+
             Text(L.tr("MODEL", "МОДЕЛЬ"))
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(textSecondary)
@@ -1080,13 +1152,13 @@ struct SetupWizardView: View {
         appState.settings.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         appState.settings.engineType = selectedEngine
         appState.settings.localModelSize = selectedModel
-        
+
         // If no API key is provided, default to Raw mode to avoid AI processing errors
         if appState.settings.apiKey.isEmpty {
             print("whisper_debug: 🗝️ No API key provided, defaulting to Raw mode")
             appState.settings.selectedModeName = "Raw"
         }
-        
+
         appState.settings.setupCompleted = true
         appState.saveSettings()
         appState.reloadHotkeyManager()
