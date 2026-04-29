@@ -75,9 +75,9 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int64) ?? 0
         print("whisper_debug: 📄 Model file: \(path), size: \(fileSize) bytes")
 
-        let whisperBinary = findWhisperBinary()
+        let whisperBinary = Self.findWhisperBinary()
         guard let binary = whisperBinary else {
-            throw TranscriptionError.transcriptionFailed("whisper-cpp not found.")
+            throw TranscriptionError.transcriptionFailed("whisper-cpp not found. Install it with brew install whisper-cpp.")
         }
 
         return try await withCheckedThrowingContinuation { continuation in
@@ -212,7 +212,7 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         }
     }
 
-    private func findWhisperBinary() -> String? {
+    static func findWhisperBinary() -> String? {
         let possiblePaths = [
             "/opt/homebrew/bin/whisper-cli",
             "/opt/homebrew/bin/whisper-cpp",

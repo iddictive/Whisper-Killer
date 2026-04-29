@@ -6,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject var modelManager: ModelManager
     @ObservedObject var recorder: AudioRecorder
     @ObservedObject private var updater = GitHubUpdater.shared
+    @ObservedObject private var dependencyInstaller = DependencyInstaller.shared
     @State private var selectedTab: String? = "app"
     
     // Custom Mode State
@@ -191,6 +192,7 @@ struct SettingsView: View {
             WindowHeaderUnderlay()
         }
         .onAppear {
+            dependencyInstaller.refreshHomebrewStatus()
             modelManager.refreshDownloadedModels()
         }
         .toolbar {
@@ -587,6 +589,11 @@ struct SettingsView: View {
 
                     if appState.settings.engineType == .local {
                         VStack(spacing: 0) {
+                            homebrewStatusRow
+                            Divider().padding(.horizontal)
+                            whisperCppStatusRow
+                            Divider().padding(.horizontal)
+
                             ForEach(LocalModelSize.allCases, id: \.self) { size in
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -672,6 +679,97 @@ struct SettingsView: View {
                 .background(Color.primary.opacity(0.03))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
+    }
+
+    private var whisperCppStatusRow: some View {
+        let isInstalled = dependencyInstaller.isWhisperCppInstalled
+        let hasHomebrew = dependencyInstaller.isHomebrewInstalled
+
+        return HStack(spacing: 10) {
+            Image(systemName: isInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(isInstalled ? Color.accentColor : .orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    isInstalled
+                        ? L.tr("whisper-cpp detected", "whisper-cpp найден")
+                        : L.tr("whisper-cpp not found", "whisper-cpp не найден")
+                )
+                .font(.system(size: 13, weight: .semibold))
+
+                if dependencyInstaller.isInstallingWhisperCpp {
+                    Text(L.tr("Installing with Homebrew…", "Устанавливаю через Homebrew…"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                } else if !hasHomebrew {
+                    Text(L.tr("Homebrew required", "Сначала нужен Homebrew"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                } else if !dependencyInstaller.whisperCppStatus.isEmpty {
+                    Text(dependencyInstaller.whisperCppStatus)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer()
+
+            if dependencyInstaller.isInstallingWhisperCpp {
+                ProgressView()
+                    .controlSize(.small)
+            } else if !isInstalled && hasHomebrew {
+                Button(L.tr("Install", "Установить")) {
+                    dependencyInstaller.installWhisperCpp()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 12)
+    }
+
+    private var homebrewStatusRow: some View {
+        let isInstalled = dependencyInstaller.isHomebrewInstalled
+
+        return HStack(spacing: 10) {
+            Image(systemName: isInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(isInstalled ? Color.accentColor : .orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    isInstalled
+                        ? L.tr("Homebrew detected", "Homebrew найден")
+                        : L.tr("Homebrew not found", "Homebrew не найден")
+                )
+                .font(.system(size: 13, weight: .semibold))
+
+                if !dependencyInstaller.homebrewStatus.isEmpty {
+                    Text(dependencyInstaller.homebrewStatus)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer()
+
+            if isInstalled {
+                EmptyView()
+            } else if dependencyInstaller.isInstallingHomebrew {
+                Button(L.tr("Refresh", "Обновить")) {
+                    dependencyInstaller.refreshHomebrewStatus()
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Button(L.tr("Install", "Установить")) {
+                    dependencyInstaller.installHomebrew()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 12)
     }
 
     @ViewBuilder

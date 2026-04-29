@@ -4,6 +4,7 @@ import AVFoundation
 struct SetupWizardView: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var modelManager: ModelManager
+    @ObservedObject private var dependencyInstaller = DependencyInstaller.shared
     var onComplete: () -> Void
 
     @State private var currentStep = 0
@@ -12,6 +13,7 @@ struct SetupWizardView: View {
     @State private var selectedModel: LocalModelSize = .base
     @State private var apiValidationState: OpenAIAPIKeyValidationState = .idle
     @State private var micGranted = false
+    @State private var homebrewInstalled = false
     @State private var whisperInstalled = false
     @State private var animateGlow = false
 
@@ -529,14 +531,89 @@ struct SetupWizardView: View {
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(textSecondary)
             }
 
-            HStack(spacing: 10) {
-                Image(systemName: whisperInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(whisperInstalled ? Color.accentColor : .red)
-                Text(whisperInstalled ? "whisper-cpp detected" : "whisper-cpp not found")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(whisperInstalled ? Color.accentColor : .red)
-                Spacer()
-                if !whisperInstalled {
+            VStack(spacing: 8) {
+                homebrewDependencyRow
+                whisperCppDependencyRow
+            }
+
+            if !homebrewInstalled && !dependencyInstaller.homebrewStatus.isEmpty {
+                Text(dependencyInstaller.homebrewStatus)
+                    .font(.system(size: 10))
+                    .foregroundStyle(textSecondary)
+                    .lineLimit(2)
+            } else if !whisperInstalled && !dependencyInstaller.whisperCppStatus.isEmpty {
+                Text(dependencyInstaller.whisperCppStatus)
+                    .font(.system(size: 10))
+                    .foregroundStyle(textSecondary)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    private var homebrewDependencyRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: homebrewInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(homebrewInstalled ? Color.accentColor : .red)
+            Text(
+                homebrewInstalled
+                    ? L.tr("Homebrew detected", "Homebrew найден")
+                    : L.tr("Homebrew not found", "Homebrew не найден")
+            )
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(homebrewInstalled ? Color.accentColor : .red)
+            Spacer()
+            if !homebrewInstalled {
+                if dependencyInstaller.isInstallingHomebrew {
+                    Button {
+                        refreshStatus()
+                    } label: {
+                        Text(L.tr("Refresh", "Обновить"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(accentPink.opacity(0.2))
+                            .foregroundStyle(accentPink)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        installHomebrew()
+                    } label: {
+                        Text(L.tr("Install", "Установить"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(accentPink.opacity(0.2))
+                            .foregroundStyle(accentPink)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(10)
+        .background(homebrewInstalled ? Color.accentColor.opacity(0.06) : Color.red.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var whisperCppDependencyRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: whisperInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(whisperInstalled ? Color.accentColor : .red)
+            Text(
+                whisperInstalled
+                    ? L.tr("whisper-cpp detected", "whisper-cpp найден")
+                    : L.tr("whisper-cpp not found", "whisper-cpp не найден")
+            )
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(whisperInstalled ? Color.accentColor : .red)
+            Spacer()
+            if !whisperInstalled {
+                if dependencyInstaller.isInstallingWhisperCpp {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else if homebrewInstalled {
                     Button {
                         installWhisperCpp()
                     } label: {
@@ -551,10 +628,10 @@ struct SetupWizardView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(10)
-            .background(whisperInstalled ? Color.accentColor.opacity(0.06) : Color.red.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
+        .padding(10)
+        .background(whisperInstalled ? Color.accentColor.opacity(0.06) : Color.red.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func modelRow(_ size: LocalModelSize) -> some View {
@@ -968,28 +1045,24 @@ struct SetupWizardView: View {
 
     private func refreshStatus() {
         micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        dependencyInstaller.refreshHomebrewStatus()
+        homebrewInstalled = dependencyInstaller.isHomebrewInstalled
         whisperInstalled = checkWhisperInstalled()
         modelManager.refreshDownloadedModels()
     }
 
     private func checkWhisperInstalled() -> Bool {
-        let possibleBins = [
-            "/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli",
-            "/opt/homebrew/bin/whisper-cpp", "/usr/local/bin/whisper-cpp",
-            "/opt/homebrew/bin/main", "/usr/local/bin/main"
-        ]
-        return possibleBins.contains { path in
-            let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-            return FileManager.default.fileExists(atPath: url.path) && FileManager.default.isExecutableFile(atPath: url.path)
-        }
+        LocalWhisper.findWhisperBinary() != nil
     }
 
     private func installWhisperCpp() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-c", "/opt/homebrew/bin/brew install whisper-cpp 2>&1 || /usr/local/bin/brew install whisper-cpp 2>&1"]
-        try? process.run()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { refreshStatus() }
+        dependencyInstaller.installWhisperCpp {
+            refreshStatus()
+        }
+    }
+
+    private func installHomebrew() {
+        dependencyInstaller.installHomebrew()
     }
 
     private func testAPI() {

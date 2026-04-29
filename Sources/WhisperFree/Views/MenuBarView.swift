@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject private var dependencyInstaller = DependencyInstaller.shared
     
     private let popoverMinWidth: CGFloat = 420
     private let popoverIdealWidth: CGFloat = 450
@@ -347,11 +348,57 @@ struct MenuBarView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .lineLimit(2)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .lineLimit(2)
+
+                        if isMissingWhisperCppError {
+                            if !dependencyInstaller.isHomebrewInstalled {
+                                Text(dependencyInstaller.homebrewStatus.isEmpty ? L.tr("Homebrew required", "Сначала нужен Homebrew") : dependencyInstaller.homebrewStatus)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.orange.opacity(0.85))
+                                    .lineLimit(2)
+                            } else if dependencyInstaller.isInstallingWhisperCpp {
+                                HStack(spacing: 6) {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                    Text(L.tr("Installing whisper-cpp…", "Устанавливаю whisper-cpp…"))
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(.orange)
+                                }
+                            } else if !dependencyInstaller.whisperCppStatus.isEmpty {
+                                Text(dependencyInstaller.whisperCppStatus)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.orange.opacity(0.85))
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+
                     Spacer()
+
+                    if isMissingWhisperCppError {
+                        Button {
+                            if dependencyInstaller.isHomebrewInstalled {
+                                dependencyInstaller.installWhisperCpp {
+                                    if dependencyInstaller.isWhisperCppInstalled {
+                                        appState.clearError()
+                                    }
+                                }
+                            } else {
+                                dependencyInstaller.installHomebrew()
+                            }
+                        } label: {
+                            Text(dependencyInstaller.isHomebrewInstalled ? L.tr("Install", "Установить") : L.tr("Install Brew", "Установить Brew"))
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(dependencyInstaller.isInstallingWhisperCpp || dependencyInstaller.isInstallingHomebrew)
+                    }
+
                     Button {
                         appState.clearError()
                     } label: {
@@ -364,7 +411,9 @@ struct MenuBarView: View {
                 .padding(.vertical, 8)
                 .background(Color.orange.opacity(0.1))
                 .onTapGesture {
-                    appState.clearError()
+                    if !isMissingWhisperCppError {
+                        appState.clearError()
+                    }
                 }
             }
 
@@ -444,5 +493,9 @@ struct MenuBarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private var isMissingWhisperCppError: Bool {
+        appState.lastError?.localizedCaseInsensitiveContains("whisper-cpp not found") == true
     }
 }

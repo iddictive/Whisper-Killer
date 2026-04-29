@@ -24,8 +24,202 @@ final class DependencyInstaller: ObservableObject {
     @Published var isInstallingOllama = false
     @Published var ollamaProgress: Double = 0.0
     @Published var ollamaStatus: String = ""
+    @Published var isInstallingHomebrew = false
+    @Published var homebrewStatus: String = ""
+    @Published var isInstallingWhisperCpp = false
+    @Published var whisperCppStatus: String = ""
     
     private init() {}
+
+    // MARK: - whisper.cpp Installation
+
+    var isHomebrewInstalled: Bool {
+        Self.findHomebrewPath() != nil
+    }
+
+    var isWhisperCppInstalled: Bool {
+        LocalWhisper.findWhisperBinary() != nil
+    }
+
+    func installHomebrew() {
+        guard !isInstallingHomebrew else { return }
+
+        isInstallingHomebrew = true
+        homebrewStatus = "Opening Homebrew installer in Terminal..."
+
+        Task(priority: .userInitiated) {
+            let result = await Task.detached(priority: .userInitiated) {
+                Self.openHomebrewInstallerInTerminal()
+            }.value
+
+            switch result {
+            case .success:
+                self.homebrewStatus = "Finish Homebrew setup in Terminal, then return here."
+            case .failure(let error):
+                self.isInstallingHomebrew = false
+                self.homebrewStatus = error.localizedDescription
+            }
+        }
+    }
+
+    func refreshHomebrewStatus() {
+        if isHomebrewInstalled {
+            isInstallingHomebrew = false
+            homebrewStatus = "Homebrew detected."
+        } else if isInstallingHomebrew {
+            homebrewStatus = "Finish Homebrew setup in Terminal, then return here."
+        }
+    }
+
+    func installWhisperCpp(onComplete: (() -> Void)? = nil) {
+        guard !isInstallingWhisperCpp else { return }
+
+        guard isHomebrewInstalled else {
+            whisperCppStatus = "Homebrew is required first."
+            return
+        }
+
+        isInstallingWhisperCpp = true
+        whisperCppStatus = "Installing whisper-cpp..."
+
+        Task(priority: .userInitiated) {
+            let result = await Task.detached(priority: .userInitiated) {
+                Self.runBrewInstallWhisperCpp()
+            }.value
+
+            self.isInstallingWhisperCpp = false
+
+            switch result {
+            case .success:
+                self.whisperCppStatus = "whisper-cpp installed."
+            case .failure(let error):
+                self.whisperCppStatus = error.localizedDescription
+            }
+
+            onComplete?()
+        }
+    }
+
+    nonisolated private static func runBrewInstallWhisperCpp() -> Result<Void, DependencyError> {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+
+        let brewPath = findHomebrewPath()
+        process.arguments = [
+            "-lc",
+            """
+            "\(brewPath ?? "brew")" install whisper-cpp
+            """
+        ]
+
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("whisper_cpp_install_\(UUID().uuidString).log")
+        _ = FileManager.default.createFile(atPath: outputURL.path, contents: nil)
+        guard let outputHandle = try? FileHandle(forWritingTo: outputURL) else {
+            return .failure(.installationFailed("Could not create install log."))
+        }
+        defer {
+            try? outputHandle.close()
+            try? FileManager.default.removeItem(at: outputURL)
+        }
+
+        process.standardOutput = outputHandle
+        process.standardError = outputHandle
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                let output = (try? String(contentsOf: outputURL, encoding: .utf8))?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let message = installFailureMessage(from: output, status: process.terminationStatus)
+                return .failure(.installationFailed(message))
+            }
+
+            return .success(())
+        } catch {
+            return .failure(.installationFailed(error.localizedDescription))
+        }
+    }
+
+    nonisolated private static func installFailureMessage(from output: String?, status: Int32) -> String {
+        guard let output, !output.isEmpty else {
+            return "brew install whisper-cpp exited with code \(status)."
+        }
+
+        let maxLength = 600
+        if output.count <= maxLength {
+            return output
+        }
+
+        return String(output.suffix(maxLength))
+    }
+
+    nonisolated static func findHomebrewPath() -> String? {
+        let possiblePaths = [
+            "/opt/homebrew/bin/brew",
+            "/usr/local/bin/brew"
+        ]
+
+        for path in possiblePaths where FileManager.default.isExecutableFile(atPath: path) {
+            return path
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        process.arguments = ["brew"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try? process.run()
+        process.waitUntilExit()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let path, !path.isEmpty, FileManager.default.isExecutableFile(atPath: path) {
+            return path
+        }
+
+        return nil
+    }
+
+    nonisolated private static func openHomebrewInstallerInTerminal() -> Result<Void, DependencyError> {
+        let command = #"""
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        echo
+        echo "Homebrew setup finished. Return to WhisperKiller."
+        """#
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "\(appleScriptEscaped(command))"
+        end tell
+        """
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                return .failure(.scriptExecutionFailed)
+            }
+
+            return .success(())
+        } catch {
+            return .failure(.installationFailed(error.localizedDescription))
+        }
+    }
+
+    nonisolated private static func appleScriptEscaped(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "; ")
+    }
     
     // MARK: - Ollama Installation
     
