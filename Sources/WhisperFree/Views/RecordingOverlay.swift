@@ -58,15 +58,15 @@ struct RecordingOverlayContent: View {
                         Image(systemName: "speaker.slash.fill").font(.system(size: 9))
                         Text(L.tr("Low", "Тихо")).font(.system(size: 10, weight: .bold))
                     }
-                    .foregroundStyle(.orange).padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(Capsule().fill(.orange.opacity(0.15)))
+                    .foregroundStyle(SW.warning).padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).fill(SW.warning.opacity(0.15)))
                 } else if recorder.isTooNoisy {
                     HStack(spacing: 3) {
                         Image(systemName: "waveform.badge.exclamationmark").font(.system(size: 9))
                         Text(L.tr("Noise", "Шум")).font(.system(size: 10, weight: .bold))
                     }
-                    .foregroundStyle(.red).padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(Capsule().fill(.red.opacity(0.15)))
+                    .foregroundStyle(SW.danger).padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).fill(SW.danger.opacity(0.15)))
                 }
 
                 Text(formatDuration(recorder.recordingDuration))
@@ -119,7 +119,7 @@ struct RecordingOverlayContent: View {
                 Capsule().fill(Color.black.opacity(0.45))
             }
         )
-        .clipShape(Capsule())
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusLarge, style: .continuous))
         .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
         .environment(\.colorScheme, .dark)
         .padding(8)
@@ -131,12 +131,12 @@ struct RecordingOverlayContent: View {
     }
 
     private var statusColor: Color {
-        if let _ = appState.lastError { return .red }
+        if let _ = appState.lastError { return SW.danger }
         switch appState.state {
-        case .recording: return .red
-        case .processing: return .orange
-        case .typing: return .blue
-        case .idle: return .gray
+        case .recording: return SW.danger
+        case .processing: return SW.warning
+        case .typing: return SW.accent
+        case .idle: return SW.secondaryText
         }
     }
 

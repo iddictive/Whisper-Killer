@@ -93,11 +93,16 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
                 "--threads", "\(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))"
             ]
 
-            let effectiveLanguage = modelSize.forcesEnglishDecoding ? "en" : language
-
-            if let lang = effectiveLanguage, lang != "auto" {
-                args += ["--language", lang]
+            let supportedArguments = Self.supportedWhisperArguments(for: binary)
+            if supportedArguments.contains("--suppress-nst") {
+                args.append("--suppress-nst")
             }
+            if supportedArguments.contains("--max-context") {
+                args += ["--max-context", "0"]
+            }
+
+            let effectiveLanguage = modelSize.forcesEnglishDecoding ? "en" : (language ?? "auto")
+            args += ["--language", effectiveLanguage]
 
             process.arguments = args
             print("whisper_debug: 🚀 Running: \(binary) \(args.joined(separator: " "))")
@@ -396,7 +401,7 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
             }
         }
 
-        let result = uniqueLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = TranscriptSanitizer.cleanWhisperText(uniqueLines.joined(separator: " "))
         print("whisper_debug: 📝 Parsed result: '\(result)' (kept \(uniqueLines.count)/\(lines.count) lines)")
         return result
     }
@@ -443,6 +448,30 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
 
         line = line.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
         return line.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func supportedWhisperArguments(for binary: String) -> Set<String> {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binary)
+        process.arguments = ["--help"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return []
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let helpText = String(data: data, encoding: .utf8) ?? ""
+        let regex = try? NSRegularExpression(pattern: #"--[A-Za-z0-9][A-Za-z0-9-]*"#)
+        let range = NSRange(helpText.startIndex..<helpText.endIndex, in: helpText)
+        let matches = regex?.matches(in: helpText, options: [], range: range) ?? []
+        return Set(matches.compactMap { Range($0.range, in: helpText).map { String(helpText[$0]) } })
     }
 
     private func extractProgress(from line: String) -> Float? {

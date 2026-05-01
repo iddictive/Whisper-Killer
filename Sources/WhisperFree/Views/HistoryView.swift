@@ -78,36 +78,37 @@ struct HistoryView: View {
 
 
     private var statsHeader: some View {
-        HStack(spacing: 16) {
-            statItem(title: L.tr("AVG. WPM", "СРЕД. WPM"), value: "\(appState.averageWPM)", icon: "speedometer", color: .cyan)
-            statItem(title: L.tr("TOTAL WORDS", "ВСЕГО СЛОВ"), value: "\(appState.totalWords)", icon: "text.wordspacing", color: .purple)
-            statItem(title: L.tr("TIME SAVED", "СЭКОНОМЛЕНО"), value: formatSavedTime(appState.estimatedTimeSaved), icon: "hourglass", color: .orange)
+        HStack(spacing: 8) {
+            statItem(title: L.tr("WPM", "WPM"), value: "\(appState.averageWPM)", icon: "speedometer", color: SW.accent)
+            statItem(title: L.tr("Words", "Слова"), value: "\(appState.totalWords)", icon: "text.wordspacing", color: SW.secondaryText)
+            statItem(title: L.tr("Saved", "Сэкономлено"), value: formatSavedTime(appState.estimatedTimeSaved), icon: "hourglass", color: SW.warning)
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 24)
+        .padding(.bottom, 12)
     }
 
     private func statItem(title: String, value: String, icon: String, color: Color) -> some View {
-        VStack(spacing: 6) {
+        HStack(spacing: 7) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.system(size: 10))
                 Text(title)
-                    .font(.system(size: 9, weight: .bold))
+                    .font(SW.labelFont)
             }
             .foregroundStyle(color)
             
             Text(value)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .background(color.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(SW.rowBackground)
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(color.opacity(0.15), lineWidth: 1)
+            RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
+                .strokeBorder(SW.border, lineWidth: 1)
         )
     }
 
@@ -131,8 +132,9 @@ struct HistoryView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color.primary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(SW.rowBackground)
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous).strokeBorder(SW.border, lineWidth: 1))
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
     }
@@ -180,12 +182,12 @@ struct HistoryView: View {
             rowContent(entry)
             rowActions(entry)
         }
-        .padding(16)
-        .background(Color.primary.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(12)
+        .background(SW.rowBackground)
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
+            RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
+                .strokeBorder(SW.border, lineWidth: 1)
         )
         .alert(L.tr("Rename Transcription", "Переименовать транскрипцию"), isPresented: .init(get: { renamingEntry?.entryId == entry.entryId }, set: { if !$0 { renamingEntry = nil } })) {
             TextField(L.tr("Transcription text", "Текст транскрипции"), text: $newTranscriptionText)
@@ -209,22 +211,22 @@ struct HistoryView: View {
                 Image(systemName: mode?.icon ?? "text.bubble")
                     .font(.system(size: 9))
                 Text(entry.modeName)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(SW.labelFont)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(Color.accentColor.opacity(0.12))
-            .foregroundStyle(Color.accentColor)
-            .clipShape(Capsule())
+            .background(SW.accent.opacity(0.12))
+            .foregroundStyle(SW.accent)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
 
             // Engine badge
             Text(entry.engineUsed)
                 .font(.system(size: 9, weight: .semibold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .background(Color.primary.opacity(0.06))
+                .background(SW.rowBackground)
                 .foregroundStyle(.secondary)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             
             // File badge if imported
             if entry.isFromFileImport {
@@ -236,9 +238,9 @@ struct HistoryView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .background(Color.orange.opacity(0.15))
-                .foregroundStyle(.orange)
-                .clipShape(Capsule())
+                .background(SW.warning.opacity(0.13))
+                .foregroundStyle(SW.warning)
+                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
 
             // Usage info
@@ -247,9 +249,9 @@ struct HistoryView: View {
                     .font(.system(size: 9, weight: .bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(Color.orange.opacity(0.15))
-                    .foregroundStyle(.orange)
-                .clipShape(Capsule())
+                    .background(SW.warning.opacity(0.13))
+                    .foregroundStyle(SW.warning)
+                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
 
             if entry.summaryText?.isEmpty == false {
@@ -257,9 +259,9 @@ struct HistoryView: View {
                     .font(.system(size: 9, weight: .bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(Color.cyan.opacity(0.15))
-                    .foregroundStyle(.cyan)
-                    .clipShape(Capsule())
+                    .background(SW.accent.opacity(0.12))
+                    .foregroundStyle(SW.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
 
             if entry.processingError?.isEmpty == false {
@@ -267,9 +269,9 @@ struct HistoryView: View {
                     .font(.system(size: 9, weight: .bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(Color.red.opacity(0.15))
-                    .foregroundStyle(.red)
-                    .clipShape(Capsule())
+                    .background(SW.danger.opacity(0.12))
+                    .foregroundStyle(SW.danger)
+                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
 
             Spacer()
@@ -303,8 +305,8 @@ struct HistoryView: View {
                     }
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.04))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(SW.rowBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
                 }
 
                 if entry.rawText != entry.processedText {
@@ -318,8 +320,8 @@ struct HistoryView: View {
                     }
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.04))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(SW.rowBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
                 }
 
                 if let processingError = entry.processingError, !processingError.isEmpty {
@@ -333,8 +335,8 @@ struct HistoryView: View {
                     }
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.red.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(SW.danger.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
                 }
             }
         }
@@ -350,7 +352,7 @@ struct HistoryView: View {
                     .font(.system(size: 11, weight: .bold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.cyan)
+            .foregroundStyle(SW.accent)
             
             Button {
                 newTranscriptionText = entry.summaryText ?? entry.processedText
@@ -360,7 +362,7 @@ struct HistoryView: View {
                     .font(.system(size: 11, weight: .bold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.purple)
+            .foregroundStyle(SW.secondaryText)
 
             if entry.summaryText?.isEmpty == false {
                 Button {
@@ -399,7 +401,7 @@ struct HistoryView: View {
                         .font(.system(size: 11, weight: .bold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.orange)
+                .foregroundStyle(SW.warning)
 
                 Button {
                     let url = URL(fileURLWithPath: path)

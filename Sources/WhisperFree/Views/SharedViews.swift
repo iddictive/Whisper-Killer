@@ -68,6 +68,33 @@ struct WindowHeaderUnderlay: View {
     }
 }
 
+struct NonDraggableContainer<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        ZStack {
+            NonDraggableRepresentable()
+            content
+        }
+    }
+}
+
+private struct NonDraggableRepresentable: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        NonDraggableNSView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private final class NonDraggableNSView: NSView {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
 // MARK: - Hotkey Input Handling
 
 struct KeyEventHandlingView: NSViewRepresentable {

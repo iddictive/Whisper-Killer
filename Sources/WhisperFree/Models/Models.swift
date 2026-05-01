@@ -17,7 +17,7 @@ enum AudioRetentionPolicy: String, Codable, CaseIterable {
     case thirtyDays = "30 Days"
     case ninetyDays = "90 Days"
     case forever = "Forever"
-    
+
     var days: Int? {
         switch self {
         case .oneDay: return 1
@@ -154,7 +154,7 @@ struct TranscriptionMode: Codable, Identifiable, Hashable {
     )
 
     static let builtInModes: [TranscriptionMode] = [.raw, .dictation, .email, .code, .notes, .userStory]
-    
+
     // Placeholder values for UI creation
     static let placeholderName = "Summary"
     static let placeholderDescription = "Extracts key points into a short summary."
@@ -164,7 +164,7 @@ struct TranscriptionMode: Codable, Identifiable, Hashable {
 }
 
 // MARK: - Usage & History
-    
+
 struct UsageLog: Codable, Identifiable {
     var id: UUID = UUID()
     let date: Date
@@ -175,7 +175,7 @@ struct UsageLog: Codable, Identifiable {
     let totalTokens: Int
     let estimatedCost: Double
     var audioDurationSeconds: TimeInterval? = nil
-    
+
     // Estimates based on gpt-4o-mini ($0.15 / 1M input, $0.60 / 1M output)
     static func estimateCost(prompt: Int, completion: Int, engine: PostProcessingEngine) -> Double {
         switch engine {
@@ -187,11 +187,10 @@ struct UsageLog: Codable, Identifiable {
             return 0
         }
     }
-    
-    // Estimates based on Whisper API ($0.006 / minute = $0.0001 / second)
+
+    // Estimates based on OpenAI transcription pricing per audio minute.
     static func estimateAudioCost(durationSeconds: TimeInterval, model: CloudTranscriptionModel) -> Double? {
-        guard model.supportsDurationCostEstimate else { return nil }
-        return durationSeconds * 0.0001
+        durationSeconds / 60.0 * model.pricePerMinute
     }
 }
 
@@ -235,10 +234,14 @@ enum RecordingMode: String, Codable, CaseIterable {
     case pushToTalk = "Push to Talk"
 
     var description: String {
+        description(hotkey: HotkeyConfig().displayString)
+    }
+
+    func description(hotkey: String) -> String {
         switch self {
-        case .hold: return "Hold ⌥+Space to record, release to transcribe"
-        case .toggle: return "Press ⌥+Space to start, press again to stop"
-        case .pushToTalk: return "Hold ⌥+Space (300ms+) to record, release to transcribe"
+        case .hold: return "Hold \(hotkey) to record, release to transcribe"
+        case .toggle: return "Press \(hotkey) to start, press again to stop"
+        case .pushToTalk: return "Hold \(hotkey) for push-to-talk"
         }
     }
 
@@ -256,7 +259,7 @@ enum RecordingMode: String, Codable, CaseIterable {
 enum InsertionMethod: String, Codable, CaseIterable {
     case paste = "Single Block (Clipboard)"
     case type = "Incremental (Typing)"
-    
+
     var icon: String {
         switch self {
         case .paste: return "doc.on.clipboard"
@@ -315,8 +318,15 @@ enum CloudTranscriptionModel: String, Codable, CaseIterable {
         rawValue
     }
 
-    var supportsDurationCostEstimate: Bool {
-        self == .whisper1
+    var pricePerMinute: Double {
+        switch self {
+        case .whisper1:
+            return 0.006
+        case .gpt4oMiniTranscribe:
+            return 0.003
+        case .gpt4oTranscribe:
+            return 0.006
+        }
     }
 }
 
@@ -561,7 +571,7 @@ struct AppSettings: Codable {
     var lifetimeWords: Int = 0
     var lifetimeDuration: Double = 0
     var audioRetentionPolicy: AudioRetentionPolicy = .thirtyDays
-    
+
     // Live Translator
     var liveTranslatorEnabled: Bool = false
     var liveTranslatorTargetLanguage: String = "ru"
@@ -652,7 +662,7 @@ struct AppSettings: Codable {
     func isModeEnabled(_ mode: TranscriptionMode) -> Bool {
         // Raw is always available (it's the only non-AI mode).
         if mode.name == TranscriptionMode.raw.name { return true }
-        
+
         // All other modes (Dictation, Email, etc.) require global AI enablement AND keys
         guard enablePostProcessing else { return false }
 

@@ -8,7 +8,6 @@ echo "🔍 Starting Permissions & Deployment Fix..."
 
 APP_NAME="WhisperKiller"
 BUNDLE_ID="com.whisperkiller.app"
-OLD_BUNDLE_IDS=("com.whisperfree.app" "com.whisperflow.app" "WhisperFree" "WhisperFlow")
 DEST_DIR="/Applications"
 
 # Helper for non-sudo operations with sudo fallbacks
@@ -25,17 +24,28 @@ safe_chown() {
 }
 
 safe_xattr() {
-    find "$1" -exec xattr -c {} + 2>/dev/null || sudo find "$1" -exec xattr -c {} + 2>/dev/null
+    dot_clean -m "$1" 2>/dev/null || true
+    find "$1" -name '._*' -delete 2>/dev/null || true
+    find "$1" -print0 | xargs -0 xattr -c 2>/dev/null || sudo find "$1" -print0 | xargs -0 xattr -c 2>/dev/null
 }
 
-# 1. Reset only legacy TCC entries.
-# Never reset the active bundle ID during install/update or macOS will ask again.
-echo "🛡️ Cleaning up legacy TCC permissions without touching current app access..."
-for id in "${OLD_BUNDLE_IDS[@]}"; do
-    echo "  - Resetting legacy ID $id..."
-    tccutil reset Accessibility "$id" 2>/dev/null
-    tccutil reset Microphone "$id" 2>/dev/null
-done
+safe_codesign() {
+    local app_path="$1"
+    local entitlements="Sources/WhisperFree/Resources/WhisperKiller.entitlements"
+
+    if [ ! -f "$entitlements" ]; then
+        return 0
+    fi
+
+    rm -rf "$app_path/Contents/_CodeSignature" 2>/dev/null || sudo rm -rf "$app_path/Contents/_CodeSignature"
+    codesign --force --options runtime --deep --entitlements "$entitlements" --sign - "$app_path" >/dev/null 2>&1 || \
+        sudo codesign --force --options runtime --deep --entitlements "$entitlements" --sign - "$app_path" >/dev/null 2>&1
+}
+
+# 1. Preserve TCC permissions during install/update.
+# Do not reset current or legacy bundle IDs here; users may keep valid grants
+# while testing migration builds side by side.
+echo "🛡️ Preserving existing TCC permissions..."
 
 # 2. Kill all existing instances
 echo "🔪 Killing old processes..."
@@ -88,7 +98,8 @@ if [ -d "$SOURCE_APP" ]; then
     safe_cp "$SOURCE_APP" "$DEST_DIR/"
     safe_chown "$(whoami):admin" "$DEST_DIR/$APP_NAME.app"
     safe_xattr "$DEST_DIR/$APP_NAME.app"
-    
+    safe_codesign "$DEST_DIR/$APP_NAME.app"
+
     echo "🏃 Launching from /Applications..."
     open "$DEST_DIR/$APP_NAME.app"
 else

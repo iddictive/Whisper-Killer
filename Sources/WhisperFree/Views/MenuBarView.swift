@@ -3,10 +3,15 @@ import SwiftUI
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject private var dependencyInstaller = DependencyInstaller.shared
-    
+
     private let popoverMinWidth: CGFloat = 420
     private let popoverIdealWidth: CGFloat = 450
     private let popoverMaxWidth: CGFloat = 520
+
+    private var selectedInputDeviceName: String {
+        appState.availableInputDevices.first(where: { $0.uniqueID == appState.settings.selectedInputDeviceID })?.localizedName
+            ?? L.tr("Default", "По умолчанию")
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,26 +34,30 @@ struct MenuBarView: View {
                 Button {
                     appState.requestAccessibilityPermission()
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.white)
+                            .font(.system(size: 12))
+                            .foregroundStyle(SW.warning)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(L.tr("Accessibility Not Granted", "Нет доступа к Accessibility"))
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.white)
-                            Text(L.tr("Click to open Settings", "Нажмите, чтобы открыть настройки"))
+                            Text(L.tr("Accessibility access needed", "Нужен Accessibility"))
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(SW.primaryText)
+                                .lineLimit(1)
+                            Text(L.tr("Open Settings", "Открыть настройки"))
                                 .font(.system(size: 10))
-                                .foregroundStyle(.white.opacity(0.8))
+                                .foregroundStyle(SW.secondaryText)
+                                .lineLimit(1)
                         }
+                        .layoutPriority(1)
                         Spacer()
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.white.opacity(0.8))
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(SW.secondaryText)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange))
+                    .background(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous).fill(SW.warning.opacity(0.12)))
+                    .overlay(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous).strokeBorder(SW.warning.opacity(0.24), lineWidth: 1))
                     .padding(.horizontal, 8)
                     .padding(.top, 8)
                     .padding(.bottom, 4)
@@ -57,158 +66,15 @@ struct MenuBarView: View {
             }
 
             // ─── Header + Record ────────────────
-            HStack(spacing: 10) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Text("WhisperKiller")
-                    .font(.system(size: 13, weight: .bold))
-
-                // Input Source Dropdown
-                Menu {
-                    Button {
-                        appState.settings.selectedInputDeviceID = nil
-                        appState.saveSettings()
-                    } label: {
-                        HStack {
-                            Text(L.tr("System Default", "Системный"))
-                            if appState.settings.selectedInputDeviceID == nil {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    ForEach(appState.availableInputDevices, id: \.uniqueID) { device in
-                        Button {
-                            appState.settings.selectedInputDeviceID = device.uniqueID
-                            appState.saveSettings()
-                        } label: {
-                            HStack {
-                                Text(device.localizedName)
-                                if appState.settings.selectedInputDeviceID == device.uniqueID {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 8))
-                        Text(appState.availableInputDevices.first(where: { $0.uniqueID == appState.settings.selectedInputDeviceID })?.localizedName ?? L.tr("Default", "По умолчанию"))
-                            .font(.system(size: 10, weight: .medium))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 6))
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.primary.opacity(0.06))
-                    .clipShape(Capsule())
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-
-                Spacer()
-
-                // Record / Stop button inline
-                Button {
-                    appState.toggleFromMenuBar()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: appState.state == .recording ? "stop.fill" : "mic.fill")
-                            .font(.system(size: 10))
-                        Text(appState.state == .recording ? L.tr("Stop", "Стоп") : L.tr("Rec", "Запись"))
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .foregroundStyle(appState.state == .recording ? .white : .primary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule().fill(appState.state == .recording ? Color.red : Color.primary.opacity(0.08))
-                    )
-                }
-                .buttonStyle(.plain)
-
-                if AppState.liveTranslatorFeatureAvailable {
-                    Button {
-                        appState.toggleRussianMicrophoneTranslator()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: appState.showLiveTranslatorOverlay ? "stop.circle.fill" : "captions.bubble.fill")
-                                .font(.system(size: 10))
-                            Text(appState.showLiveTranslatorOverlay ? L.tr("Stop RU", "Стоп RU") : L.tr("Mic -> RU", "Мик -> RU"))
-                                .font(.system(size: 10, weight: .semibold))
-                        }
-                        .foregroundStyle(appState.showLiveTranslatorOverlay ? .white : .primary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule().fill(appState.showLiveTranslatorOverlay ? Color.accentColor : Color.primary.opacity(0.08))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // State indicator
-                if appState.state == .processing {
-                    ProgressView().controlSize(.mini)
-                }
-            }
+            headerControls
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
 
             Divider()
 
-            // ─── AI Mode Pills ──────────────────
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(appState.settings.allModes) { mode in
-                        let isActive = appState.settings.selectedModeName == mode.name
-                        let isEnabled = appState.settings.isModeEnabled(mode)
-                        
-                        Button {
-                            if isEnabled {
-                                appState.settings.selectedModeName = mode.name
-                                appState.saveSettings()
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: mode.icon)
-                                    .font(.system(size: 10))
-                                Text(mode.localizedName)
-                                    .font(.system(size: 11, weight: .medium))
-                                
-                                if !isEnabled {
-                                    Image(systemName: "lock.fill")
-                                        .font(.system(size: 8))
-                                }
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                isActive
-                                    ? Color.accentColor.opacity(0.12)
-                                    : (isEnabled ? Color.primary.opacity(0.04) : Color.primary.opacity(0.02))
-                            )
-                            .foregroundStyle(isActive ? AnyShapeStyle(.primary) : (isEnabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.secondary.opacity(0.4))))
-                            .clipShape(Capsule())
-                            .overlay(
-                                Capsule().strokeBorder(
-                                    isActive ? Color.accentColor.opacity(0.3) : Color.clear,
-                                    lineWidth: 1
-                                )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!isEnabled)
-                    }
-                }
+            modeToolbar
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-            }
 
             Divider()
 
@@ -232,16 +98,16 @@ struct MenuBarView: View {
                             .fixedSize()
                             .padding(.horizontal, 9)
                             .padding(.vertical, 5)
-                            .background(isActive ? Color.accentColor.opacity(0.12) : Color.clear)
+                            .background(isActive ? SW.accent.opacity(0.12) : Color.clear)
                             .foregroundStyle(isActive ? .primary : .secondary)
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .background(Color.primary.opacity(0.04))
-                .clipShape(Capsule())
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
-                .frame(height: 24)
+                .background(SW.rowBackground)
+                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).strokeBorder(SW.border, lineWidth: 1))
+                .frame(height: 26)
 
                 Spacer()
 
@@ -275,10 +141,10 @@ struct MenuBarView: View {
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
                     .foregroundStyle(.primary.opacity(0.8))
-                    .background(Color.primary.opacity(0.04))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
-                    .frame(height: 24)
+                    .background(SW.rowBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).strokeBorder(SW.border, lineWidth: 1))
+                    .frame(height: 26)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -289,10 +155,10 @@ struct MenuBarView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.primary.opacity(0.04))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
-                    .frame(height: 24)
+                    .background(SW.rowBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).strokeBorder(SW.border, lineWidth: 1))
+                    .frame(height: 26)
                     .fixedSize()
             }
             .padding(.horizontal, 16)
@@ -304,11 +170,11 @@ struct MenuBarView: View {
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
                     Text(L.tr("LAST TRANSCRIPTION", "ПОСЛЕДНЯЯ ТРАНСКРИПЦИЯ"))
-                        .font(.caption2)
+                        .font(SW.labelFont)
                         .foregroundStyle(.secondary)
 
                     Text(lastText)
-                        .font(.caption)
+                        .font(SW.compactFont)
                         .lineLimit(4)
                         .foregroundStyle(.primary)
 
@@ -323,15 +189,15 @@ struct MenuBarView: View {
                         HStack(spacing: 6) {
                             Image(systemName: appState.copiedFeedback ? "checkmark" : "doc.on.doc.fill")
                                 .font(.system(size: 12, weight: .semibold))
-                            Text(appState.copiedFeedback ? L.tr("Copied!", "Скопировано!") : L.tr("Copy to Clipboard", "Скопировать"))
+                            Text(appState.copiedFeedback ? L.tr("Copied", "Скопировано") : L.tr("Copy", "Копировать"))
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 7)
                         .foregroundStyle(.white)
                         .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(appState.copiedFeedback ? Color.accentColor.opacity(0.3) : Color.accentColor)
+                            RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
+                                .fill(appState.copiedFeedback ? SW.accent.opacity(0.3) : SW.accent)
                         )
                     }
                     .buttonStyle(.plain)
@@ -434,7 +300,7 @@ struct MenuBarView: View {
                 menuButton(icon: "wand.and.stars", title: L.tr("Setup Wizard", "Мастер настройки")) {
                     AppDelegate.shared?.showSetupWizard()
                 }
-                
+
                 if AppState.liveTranslatorFeatureAvailable && appState.settings.liveTranslatorEnabled {
                     Divider()
                     menuButton(icon: "captions.bubble", title: appState.showLiveTranslatorOverlay ? L.tr("Stop Live Translator", "Остановить Live Translator") : L.tr("Start Live Translator", "Запустить Live Translator")) {
@@ -474,6 +340,193 @@ struct MenuBarView: View {
                 }
             }
         }
+    }
+
+    private var headerControls: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+
+                Text("WhisperKiller")
+                    .font(.system(size: 13, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .allowsTightening(true)
+            }
+            .frame(minWidth: 112, alignment: .leading)
+            .layoutPriority(3)
+
+            inputDeviceMenu
+                .frame(maxWidth: 132)
+                .layoutPriority(1)
+
+            Spacer(minLength: 4)
+
+            recordButton
+
+            if AppState.liveTranslatorFeatureAvailable {
+                liveTranslatorButton
+            }
+
+            if appState.state == .processing {
+                ProgressView().controlSize(.mini)
+            }
+        }
+    }
+
+    private var modeToolbar: some View {
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(appState.settings.allModes) { mode in
+                        let isEnabled = appState.settings.isModeEnabled(mode)
+                        let isSelected = appState.settings.selectedModeName == mode.name
+
+                        Button {
+                            guard isEnabled else { return }
+                            appState.settings.selectedModeName = mode.name
+                            appState.saveSettings()
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: isEnabled ? mode.icon : "lock.fill")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text(mode.localizedName)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(isSelected ? SW.accent.opacity(0.14) : SW.rowBackground)
+                            .foregroundStyle(isSelected ? SW.accent : (isEnabled ? SW.primaryText : SW.secondaryText))
+                            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous)
+                                    .strokeBorder(isSelected ? SW.accent.opacity(0.32) : SW.border, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!isEnabled)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            SWStatusBadge(
+                title: recordingStateTitle,
+                icon: appState.state == .idle ? "checkmark.circle" : "waveform",
+                color: appState.state == .idle ? SW.secondaryText : SW.accent
+            )
+        }
+    }
+
+    private var recordingStateTitle: String {
+        switch appState.state {
+        case .idle: return L.tr("Ready", "Готово")
+        case .recording: return L.tr("Recording", "Запись")
+        case .processing: return L.tr("Processing", "Обработка")
+        case .typing: return L.tr("Typing", "Печать")
+        }
+    }
+
+    private var inputDeviceMenu: some View {
+        Menu {
+            Button {
+                appState.settings.selectedInputDeviceID = nil
+                appState.saveSettings()
+            } label: {
+                HStack {
+                    Text(L.tr("System Default", "Системный"))
+                    if appState.settings.selectedInputDeviceID == nil {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+
+            Divider()
+
+            ForEach(appState.availableInputDevices, id: \.uniqueID) { device in
+                Button {
+                    appState.settings.selectedInputDeviceID = device.uniqueID
+                    appState.saveSettings()
+                } label: {
+                    HStack {
+                        Text(device.localizedName)
+                        if appState.settings.selectedInputDeviceID == device.uniqueID {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 8))
+                Text(selectedInputDeviceName)
+                    .font(.system(size: 10, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 6))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(SW.rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+        }
+        .menuStyle(.borderlessButton)
+    }
+
+    private var recordButton: some View {
+        Button {
+            appState.toggleFromMenuBar()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: appState.state == .recording ? "stop.fill" : "mic.fill")
+                    .font(.system(size: 10))
+                Text(appState.state == .recording ? L.tr("Stop", "Стоп") : L.tr("Rec", "Rec"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            .foregroundStyle(appState.state == .recording ? .white : .primary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .frame(minWidth: 54)
+            .background(
+                RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous)
+                    .fill(appState.state == .recording ? SW.danger : SW.rowBackground)
+            )
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+    }
+
+    private var liveTranslatorButton: some View {
+        Button {
+            appState.toggleRussianMicrophoneTranslator()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: appState.showLiveTranslatorOverlay ? "stop.circle.fill" : "captions.bubble.fill")
+                    .font(.system(size: 10))
+                Text(appState.showLiveTranslatorOverlay ? L.tr("Stop RU", "Стоп") : L.tr("Mic -> RU", "RU"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            .foregroundStyle(appState.showLiveTranslatorOverlay ? .white : .primary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .frame(minWidth: 50)
+            .background(
+                RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous)
+                    .fill(appState.showLiveTranslatorOverlay ? SW.accent : SW.rowBackground)
+            )
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
     }
 
     private func menuButton(icon: String, title: String, action: @escaping () -> Void) -> some View {

@@ -4,9 +4,9 @@ import Combine
 
 class GitHubUpdater: ObservableObject {
     static let shared = GitHubUpdater()
-    private let repo = "iddictive/Whisper-Free"
-    private let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0.0"
-    
+    private let repo = "iddictive/Whisper-Killer"
+    private let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.0"
+
     @Published var isChecking = false
     @Published var updateAvailable = false
     @Published var latestVersion: String?
@@ -14,51 +14,51 @@ class GitHubUpdater: ObservableObject {
     @Published var isDownloading = false
     @Published var downloadProgress: Double = 0
     @Published var error: String?
-    
+
     private var downloadTask: URLSessionDownloadTask?
     private var observation: NSKeyValueObservation?
 
     func checkForUpdates(manual: Bool = false) {
         guard !isChecking else { return }
-        
+
         // Check settings
         let defaults = UserDefaults.standard
         let autoCheck = defaults.bool(forKey: "automaticallyChecksForUpdates")
         if !manual && !autoCheck { return }
-        
+
         isChecking = true
         error = nil
-        
+
         print("🔍 Checking for updates at https://api.github.com/repos/\(repo)/releases/latest")
-        
+
         let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
         var request = URLRequest(url: url)
         request.setValue("WhisperKillerUpdater", forHTTPHeaderField: "User-Agent")
-        
+
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 self?.isChecking = false
-                guard let data = data, error == nil else { 
+                guard let data = data, error == nil else {
                     self?.error = error?.localizedDescription ?? "Network error"
-                    return 
+                    return
                 }
-                
+
                 do {
                     if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let tagName = json["tag_name"] as? String {
-                        
+
                         let latest = tagName.replacingOccurrences(of: "v", with: "")
                         self?.latestVersion = latest
-                        
+
                         let defaults = UserDefaults.standard
                         let automaticallyDownloadsUpdates = defaults.bool(forKey: "automaticallyDownloadsUpdates")
-                        
+
                         if self?.compareVersions(current: self?.currentVersion ?? "", latest: latest) == true {
                             self?.updateAvailable = true
                             let assets = json["assets"] as? [[String: Any]]
                             let dmgAsset = assets?.first(where: { ($0["name"] as? String)?.hasSuffix(".dmg") == true })
                             self?.downloadUrl = dmgAsset?["browser_download_url"] as? String
-                            
+
                             if manual {
                                 self?.showUpdateAlert(version: latest, downloadUrl: self?.downloadUrl)
                             } else if automaticallyDownloadsUpdates {
@@ -88,7 +88,7 @@ class GitHubUpdater: ObservableObject {
         alert.informativeText = "A new version (\(version)) of WhisperKiller is available. Would you like to download and install it now?"
         alert.addButton(withTitle: "Download & Install")
         alert.addButton(withTitle: "Later")
-        
+
         if alert.runModal() == .alertFirstButtonReturn {
             startDownload()
         }
@@ -96,16 +96,16 @@ class GitHubUpdater: ObservableObject {
 
     func startDownload() {
         guard let urlString = downloadUrl, let url = URL(string: urlString), !isDownloading else { return }
-        
+
         isDownloading = true
         downloadProgress = 0
         error = nil
-        
+
         downloadTask = URLSession.shared.downloadTask(with: url) { [weak self] localURL, _, error in
             DispatchQueue.main.async {
                 self?.isDownloading = false
                 self?.observation = nil
-                
+
                 if let localURL = localURL, error == nil {
                     let tempPath = NSTemporaryDirectory() + "WhisperKillerUpdate.dmg"
                     try? FileManager.default.removeItem(atPath: tempPath)
@@ -116,14 +116,14 @@ class GitHubUpdater: ObservableObject {
                 }
             }
         }
-        
+
         // Track progress
         observation = downloadTask?.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
             DispatchQueue.main.async {
                 self?.downloadProgress = progress.fractionCompleted
             }
         }
-        
+
         downloadTask?.resume()
     }
 
@@ -135,7 +135,7 @@ class GitHubUpdater: ObservableObject {
             alert.informativeText = "The update has been downloaded. WhisperKiller will close to install the new version."
             alert.addButton(withTitle: "Install & Relaunch")
             alert.addButton(withTitle: "Later")
-            
+
             if alert.runModal() == .alertFirstButtonReturn {
                 self.runInstallScript(dmgPath: dmgPath)
             }
@@ -150,6 +150,10 @@ class GitHubUpdater: ObservableObject {
         let script = """
         set -e
         while kill -0 \(pid) 2>/dev/null; do sleep 0.1; done
+        for id in com.whisperfree.app com.whisperflow.app WhisperFree WhisperFlow; do
+            tccutil reset Accessibility "$id" 2>/dev/null || true
+            tccutil reset Microphone "$id" 2>/dev/null || true
+        done
         rm -rf "\(mountPath)" "\(stagedAppPath)"
         mkdir -p "\(mountPath)"
         hdiutil attach "\(dmgPath)" -mountpoint "\(mountPath)" -nobrowse -quiet
