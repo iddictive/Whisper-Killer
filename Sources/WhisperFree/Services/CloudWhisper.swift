@@ -40,7 +40,7 @@ final class CloudWhisper: TranscriptionEngine {
             print("whisper_debug: ☁️ File needs chunking: \(fileSize) bytes, \(String(format: "%.0f", totalDuration))s duration")
             let result = try await transcribeInChunks(fileURL: uploadURL, totalDuration: totalDuration, language: language, startTime: startTime, onProgress: onProgress)
             onProgress?(1.0, nil)
-            return result
+            return TranscriptSanitizer.cleanWhisperText(result)
         }
 
         // Single-file upload path
@@ -50,7 +50,7 @@ final class CloudWhisper: TranscriptionEngine {
         print("whisper_debug: ☁️ Transcription complete in \(String(format: "%.1f", elapsed))s")
         onProgress?(1.0, nil)
 
-        return text
+        return TranscriptSanitizer.cleanWhisperText(text)
     }
 
     // MARK: - Chunked Transcription
@@ -140,8 +140,7 @@ final class CloudWhisper: TranscriptionEngine {
         var body = Data()
         body.appendMultipart(boundary: boundary, name: "model", value: model.apiName)
         
-        // Suppress hallucinations (Subeditor credits, "To be continued" repetitions)
-        let suppressionPrompt = "Чистая расшифровка разговора без указания редакторов, корректоров и субтитров. Не писать слово 'Продолжение следует'. Clean transcription without any subeditor or proofreader credits."
+        let suppressionPrompt = "Return only spoken participant speech. Ignore subtitle/editor credits, title cards, and unrelated silence repetitions. Вернуть только речь участников; игнорировать титры, подписи редакторов, заставки и несвязанные повторы во время тишины."
         body.appendMultipart(boundary: boundary, name: "prompt", value: suppressionPrompt)
         
         if let lang = language, lang != "auto" {

@@ -4,8 +4,8 @@ import Combine
 
 class GitHubUpdater: ObservableObject {
     static let shared = GitHubUpdater()
-    private let repo = "iddictive/Whisper-Free"
-    private let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0.0"
+    private let repo = "iddictive/Whisper-Killer"
+    private let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.0"
 
     @Published var isChecking = false
     @Published var updateAvailable = false

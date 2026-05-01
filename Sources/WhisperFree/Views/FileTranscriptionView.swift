@@ -1,320 +1,5 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import CoreMedia
-
-// MARK: - Queue Item Model
-
-enum QueueItemStatus: Equatable {
-    case queued
-    case extracting
-    case uploading
-    case transcribing
-    case postProcessing
-    case done
-    case error(String)
-    case cancelled
-
-    var label: String {
-        switch self {
-        case .queued: return L.tr("In Queue", "В очереди")
-        case .extracting: return L.tr("Converting...", "Конвертация...")
-        case .uploading: return L.tr("Uploading...", "Загрузка...")
-        case .transcribing: return L.tr("Transcribing...", "Транскрибация...")
-        case .postProcessing: return L.tr("AI Processing...", "AI-обработка...")
-        case .done: return L.tr("Done", "Готово")
-        case .error: return L.tr("Error", "Ошибка")
-        case .cancelled: return L.tr("Cancelled", "Отменено")
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .queued: return "clock"
-        case .extracting: return "waveform"
-        case .uploading: return "arrow.up.circle"
-        case .transcribing: return "text.bubble"
-        case .postProcessing: return "sparkles"
-        case .done: return "checkmark.circle.fill"
-        case .error: return "exclamationmark.triangle.fill"
-        case .cancelled: return "xmark.circle"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .queued: return .secondary
-        case .extracting, .uploading, .transcribing, .postProcessing: return .accentColor
-        case .done: return .accentColor // Changed from green to blue
-        case .error: return .red
-        case .cancelled: return .orange
-        }
-    }
-}
-
-@MainActor
-final class QueueItem: ObservableObject, Identifiable {
-    let id = UUID()
-    let url: URL
-    let fileName: String
-
-    @Published var status: QueueItemStatus = .queued
-    @Published var progress: Float = 0
-    @Published var result: String?
-    @Published var rawResult: String?
-    @Published var summary: String?
-    @Published var estimatedCost: Double?
-    @Published var rangeStart: Double = 0
-    @Published var rangeEnd: Double = 0
-    @Published var durationSeconds: TimeInterval?
-    // Fix RangeSlider window dragging (High-priority gesture) (completed)
-    // Fix RangeSlider clipping (Horizontal padding) (completed)
-    // Hide cost display completely for Local mode (completed)
-    // Replace hardcoded durations with dynamic file timestamps (completed)
-    @Published var transcriptionSpeed: Double? // e.g., 12x realtime
-    @Published var isExpanded = false
-    @Published var isSummarizing = false
-    @Published var summaryError: String?
-
-    var historyEntryID: UUID?
-
-    var selectedDuration: TimeInterval {
-        guard let total = durationSeconds else { return 0 }
-        let end = rangeEnd > 0 ? rangeEnd : total
-        return max(0, end - rangeStart)
-    }
-
-    var engine: (any TranscriptionEngine)?
-    private var transcriptionTask: Task<Void, Never>?
-    private var startTime: Date?
-
-    init(url: URL) {
-        self.url = url
-        self.fileName = url.lastPathComponent
-    }
-
-    func loadDuration(settings: AppSettings) async {
-        if let dur = await CloudWhisper.fileDuration(url: url) {
-            self.durationSeconds = dur
-            self.rangeEnd = dur
-            self.estimatedCost = UsageLog.estimateAudioCost(durationSeconds: dur, model: settings.cloudTranscriptionModel)
-        }
-    }
-
-    func updateCost(settings: AppSettings) {
-        self.estimatedCost = UsageLog.estimateAudioCost(durationSeconds: selectedDuration, model: settings.cloudTranscriptionModel)
-    }
-
-    func cancel() {
-        engine?.cancel()
-        transcriptionTask?.cancel()
-        status = .cancelled
-        progress = 0
-    }
-
-    func startTranscription(settings: AppSettings, appState: AppState) {
-        startTime = Date()
-        let engine = TranscriptionEngineFactory.create(for: settings.engineType, settings: settings)
-        self.engine = engine
-
-        transcriptionTask = Task { [weak self] in
-            guard let self = self else { return }
-            do {
-                self.status = .extracting
-
-                let timeRange: CMTimeRange? = (rangeStart > 0 || (rangeEnd > 0 && rangeEnd < (self.durationSeconds ?? 0))) ? CMTimeRange(
-                    start: CMTime(seconds: rangeStart, preferredTimescale: 1000),
-                    duration: CMTime(seconds: max(0, rangeEnd - rangeStart), preferredTimescale: 1000)
-                ) : nil
-
-                let text = try await engine.transcribe(
-                    audioURL: self.url,
-                    language: settings.language == "auto" ? nil : settings.language,
-                    timeRange: timeRange
-                ) { p, _ in
-                    Task { @MainActor in
-                        self.progress = p
-                        let isLocal = settings.engineType == .local
-                        
-                        if p < (isLocal ? 0.15 : 0.10) {
-                            self.status = .extracting
-                        } else if !isLocal && p < 0.30 {
-                            self.status = .uploading
-                        } else {
-                            self.status = .transcribing
-                        }
-                    }
-                }
-
-                // AI Refinement post-processing
-                // If Diarization is enabled, we skip standard refinement to avoid double-processing/hallucinations
-                var processedText = text
-                var totalPromptTokens = 0
-                var totalCompletionTokens = 0
-                var usage: UsageLog? = nil
-                let shouldRunDiarization = settings.enableSpeakerDiarization && settings.canUseSpeakerDiarization
-                let shouldRunStandardPostProcessing = !shouldRunDiarization
-                    && settings.enablePostProcessing
-                    && settings.selectedMode.name != "Raw"
-                    && !settings.selectedMode.systemPrompt.isEmpty
-
-                if shouldRunDiarization {
-                    print("ℹ️ Skipping standard AI refinement because Diarization is active.")
-                } else if shouldRunStandardPostProcessing {
-                    await MainActor.run { self.status = .postProcessing }
-                    do {
-                        let processor = PostProcessor(settings: settings)
-                        let result = try await processor.process(text: text, mode: settings.selectedMode)
-                        processedText = result.text
-                        totalPromptTokens += result.promptTokens
-                        totalCompletionTokens += result.completionTokens
-                    } catch {
-                        print("⚠️ File AI refinement failed: \(error)")
-                    }
-                }
-
-                // Diarization post-processing
-                if shouldRunDiarization {
-                    await MainActor.run { self.status = .postProcessing }
-                    do {
-                        let processor = PostProcessor(settings: settings)
-                        let diarizationResult = try await processor.diarize(text: processedText)
-                        processedText = diarizationResult.text
-                        totalPromptTokens += diarizationResult.promptTokens
-                        totalCompletionTokens += diarizationResult.completionTokens
-                    } catch {
-                        print("⚠️ File diarization failed: \(error)")
-                    }
-                }
-                
-                // Create final usage log if tokens were consumed
-                if totalPromptTokens + totalCompletionTokens > 0 {
-                    let usageEngine: PostProcessingEngine = shouldRunDiarization ? .openai : settings.postProcessingEngine
-                    usage = UsageLog(
-                        date: Date(),
-                        modeName: shouldRunDiarization ? "Diarization" : settings.selectedMode.name,
-                        engine: usageEngine.rawValue,
-                        promptTokens: totalPromptTokens,
-                        completionTokens: totalCompletionTokens,
-                        totalTokens: totalPromptTokens + totalCompletionTokens,
-                        estimatedCost: UsageLog.estimateCost(prompt: totalPromptTokens, completion: totalCompletionTokens, engine: usageEngine)
-                    )
-                }
-
-                let filteredRawText = ProfanityFilter.apply(to: text, settings: settings)
-                let filteredProcessedText = ProfanityFilter.apply(to: processedText, settings: settings)
-
-                await MainActor.run {
-                    self.rawResult = filteredRawText
-                    self.result = filteredProcessedText
-                    self.summary = nil
-                    self.summaryError = nil
-                    self.status = .done
-                    self.progress = 1.0
-                    self.isExpanded = true
-
-                    // Calculate speed
-                    if let dur = self.durationSeconds, let start = self.startTime {
-                        let elapsed = Date().timeIntervalSince(start)
-                        if elapsed > 0 {
-                            self.transcriptionSpeed = dur / elapsed
-                        }
-                    }
-
-                    // Save to history
-                    let entry = TranscriptionHistoryEntry(
-                        rawText: filteredRawText,
-                        processedText: filteredProcessedText,
-                        modeName: settings.selectedMode.name,
-                        duration: 0,
-                        engineUsed: settings.engineType.rawValue + (totalPromptTokens + totalCompletionTokens > 0 ? " + AI" : ""),
-                        usage: usage,
-                        isFromFileImport: true,
-                        audioFilePath: self.url.path,
-                        ownsAudioFile: false
-                    )
-                    self.historyEntryID = entry.entryId
-                    Storage.shared.addTranscriptionHistoryEntry(entry)
-                    appState.history.insert(entry, at: 0)
-                }
-            } catch {
-                await MainActor.run {
-                    let rawText = self.rawResult ?? ""
-                    let processedText = self.result ?? self.rawResult ?? ""
-                    let entry = TranscriptionHistoryEntry(
-                        rawText: rawText,
-                        processedText: processedText,
-                        processingError: error.localizedDescription,
-                        modeName: settings.selectedMode.name,
-                        duration: 0,
-                        engineUsed: settings.engineType.rawValue + " + Error",
-                        usage: nil,
-                        isFromFileImport: true,
-                        audioFilePath: self.url.path,
-                        ownsAudioFile: false
-                    )
-                    self.historyEntryID = entry.entryId
-                    Storage.shared.addTranscriptionHistoryEntry(entry)
-                    appState.history.insert(entry, at: 0)
-
-                    if self.status != .cancelled {
-                        self.status = .error(error.localizedDescription)
-                    }
-                    self.progress = 0
-                }
-            }
-        }
-    }
-
-    func summarize(appState: AppState) {
-        guard !isSummarizing else { return }
-
-        let sourceText = (rawResult ?? result ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sourceText.isEmpty else {
-            summaryError = L.tr("Nothing to summarize yet.", "Пока нечего суммировать.")
-            return
-        }
-
-        isSummarizing = true
-        summaryError = nil
-
-        Task { [weak self] in
-            guard let self else { return }
-
-            do {
-                let processor = PostProcessor(settings: appState.settings)
-                let summaryResult = try await processor.summarizeTranscript(text: sourceText)
-                let totalTokens = summaryResult.promptTokens + summaryResult.completionTokens
-                let usage = totalTokens > 0 ? UsageLog(
-                    date: Date(),
-                    modeName: "Auto Summary",
-                    engine: summaryResult.engine.rawValue,
-                    promptTokens: summaryResult.promptTokens,
-                    completionTokens: summaryResult.completionTokens,
-                    totalTokens: totalTokens,
-                    estimatedCost: UsageLog.estimateCost(
-                        prompt: summaryResult.promptTokens,
-                        completion: summaryResult.completionTokens,
-                        engine: summaryResult.engine
-                    )
-                ) : nil
-
-                await MainActor.run {
-                    self.summary = summaryResult.text
-                    self.isSummarizing = false
-
-                    if let historyEntryID = self.historyEntryID {
-                        appState.saveSummary(entryId: historyEntryID, summary: summaryResult.text, usage: usage)
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    self.summaryError = error.localizedDescription
-                    self.isSummarizing = false
-                }
-            }
-        }
-    }
-}
 
 // MARK: - Main View
 
@@ -365,26 +50,26 @@ struct FileTranscriptionView: View {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 8) {
                     if !queueItems.isEmpty {
-                        let totalCost = queueItems.compactMap { $0.estimatedCost }.reduce(0, +)
+                        let totalCost = totalDisplayCost
                         let doneCount = queueItems.filter { $0.status == .done }.count
                         
-                        if appState.settings.engineType == .cloud && totalCost > 0 {
-                            Text(L.tr("Est. Cost: $\(String(format: "%.3f", totalCost))", "Оценка: $\(String(format: "%.3f", totalCost))"))
+                        if totalCost > 0 {
+                            Text(L.tr("Est. $\(String(format: "%.3f", totalCost))", "Оценка $\(String(format: "%.3f", totalCost))"))
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(SW.warning)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
-                                .background(Color.orange.opacity(0.12))
-                                .clipShape(Capsule())
+                                .background(SW.warning.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
                         }
                         
                         Text(L.tr("\(doneCount)/\(queueItems.count) files", "\(doneCount)/\(queueItems.count) файлов"))
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
-                            .background(Color.accentColor.opacity(0.12))
-                            .foregroundStyle(Color.accentColor)
-                            .clipShape(Capsule())
+                            .background(SW.accent.opacity(0.12))
+                            .foregroundStyle(SW.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
                     }
                     
                     if !queueItems.isEmpty && !isProcessing {
@@ -404,6 +89,12 @@ struct FileTranscriptionView: View {
         .onDisappear {
             for item in queueItems { item.cancel() }
             queueItems.removeAll()
+        }
+        .onChange(of: appState.settings.cloudTranscriptionModel) { _, _ in
+            updateVisibleCosts()
+        }
+        .onChange(of: appState.settings.engineType) { _, _ in
+            updateVisibleCosts()
         }
         .fileImporter(
             isPresented: $showFilePicker,
@@ -449,8 +140,7 @@ struct FileTranscriptionView: View {
     // MARK: - Config Bar
 
     private var configBar: some View {
-        HStack(spacing: 12) {
-            // Mode Selection
+        HStack(spacing: 10) {
             Menu {
                 ForEach(appState.settings.allModes) { mode in
                     let isEnabled = appState.settings.isModeEnabled(mode)
@@ -476,11 +166,11 @@ struct FileTranscriptionView: View {
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 8))
                 }
-                .font(.system(size: 11, weight: .medium))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.primary.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .font(SW.compactFont)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(SW.rowBackground)
+                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -502,11 +192,11 @@ struct FileTranscriptionView: View {
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 8))
                 }
-                .font(.system(size: 11, weight: .medium))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.primary.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .font(SW.compactFont)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(SW.rowBackground)
+                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -522,16 +212,19 @@ struct FileTranscriptionView: View {
 
             Spacer()
 
-            // Engine Selector
             Menu {
                 Button {
                     appState.settings.engineType = .local
+                    appState.saveSettings()
+                    updateVisibleCosts()
                 } label: {
                     Label(L.tr("Local (whisper.cpp)", "Локально (whisper.cpp)"), systemImage: "cpu")
                 }
 
                 Button {
                     appState.settings.engineType = .cloud
+                    appState.saveSettings()
+                    updateVisibleCosts()
                 } label: {
                     Label(L.tr("Cloud (OpenAI)", "Облако (OpenAI)"), systemImage: "cloud.fill")
                 }
@@ -543,18 +236,18 @@ struct FileTranscriptionView: View {
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 8))
                 }
-                .font(.system(size: 11, weight: .medium))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.primary.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .font(SW.compactFont)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(SW.rowBackground)
+                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
-        .background(Color.primary.opacity(0.02))
+        .background(SW.windowBackground.opacity(0.45))
     }
 
     // MARK: - Queue List
@@ -582,21 +275,21 @@ struct FileTranscriptionView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(
-                    isDragging ? Color.accentColor : Color.secondary.opacity(0.15),
+                    isDragging ? SW.accent : SW.border,
                     style: StrokeStyle(lineWidth: 1, dash: [5, 3])
                 )
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(isDragging ? Color.accentColor.opacity(0.05) : Color.clear)
+                        .fill(isDragging ? SW.accent.opacity(0.06) : Color.clear)
                 )
 
             HStack(spacing: 6) {
                 Image(systemName: "plus.circle")
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(SW.secondaryText)
                 Text(L.tr("Drop more files or click to add", "Перетащите ещё файлы или нажмите, чтобы добавить"))
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(SW.secondaryText)
             }
         }
         .frame(height: 40)
@@ -615,13 +308,14 @@ struct FileTranscriptionView: View {
             Divider()
             HStack(spacing: 12) {
                 // Total estimated cost
-                if appState.settings.engineType == .cloud {
-                    let totalCost = queueItems.compactMap(\.estimatedCost).reduce(0, +)
-                    if totalCost > 0 {
-                        Text(L.tr("Total Estimated Cost: ~$\(String(format: "%.2f", totalCost))", "Общая оценка: ~$\(String(format: "%.2f", totalCost))"))
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.orange)
-                    }
+                let totalCost = totalDisplayCost
+                if totalCost > 0 {
+                    SWMetricBadge(
+                        title: L.tr("Estimate", "Оценка"),
+                        value: "$\(String(format: "%.3f", totalCost))",
+                        icon: "creditcard",
+                        color: SW.warning
+                    )
                 }
 
                 if !queueItems.isEmpty {
@@ -678,27 +372,27 @@ struct FileTranscriptionView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
-                        isDragging ? Color.accentColor : Color.secondary.opacity(0.2),
+                        isDragging ? SW.accent : SW.border,
                         style: StrokeStyle(lineWidth: 1.5, dash: [6, 3])
                     )
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(isDragging ? Color.accentColor.opacity(0.05) : Color.primary.opacity(0.02))
+                            .fill(isDragging ? SW.accent.opacity(0.06) : SW.rowBackground)
                     )
 
                 VStack(spacing: 12) {
                     Image(systemName: "arrow.down.doc.fill")
                         .font(.system(size: 32))
-                        .foregroundStyle(isDragging ? Color.accentColor : .secondary.opacity(0.6))
+                        .foregroundStyle(isDragging ? SW.accent : SW.tertiaryText)
                         .padding(.bottom, 2)
 
                     Text(L.tr("Drop audio or video here", "Перетащите сюда аудио или видео"))
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.primary.opacity(0.7))
+                        .foregroundStyle(SW.primaryText)
 
                     Text(L.tr("MP3, WAV, M4A, MP4, MOV", "MP3, WAV, M4A, MP4, MOV"))
                         .font(.system(size: 10))
-                        .foregroundStyle(.secondary.opacity(0.5))
+                        .foregroundStyle(SW.secondaryText)
                 }
             }
             .frame(height: 160)
@@ -745,8 +439,8 @@ struct FileTranscriptionView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color.red.opacity(0.9))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .background(SW.danger.opacity(0.92))
+                .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
                 .padding(20)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -782,6 +476,16 @@ struct FileTranscriptionView: View {
             }
         }
         // processNextInQueue() removed to wait for user confirmation
+    }
+
+    private var totalDisplayCost: Double {
+        queueItems.compactMap { $0.displayCost(settings: appState.settings) }.reduce(0, +)
+    }
+
+    private func updateVisibleCosts() {
+        for item in queueItems {
+            item.updateCost(settings: appState.settings)
+        }
     }
 
     private func processNextInQueue() {
@@ -828,38 +532,6 @@ struct FileTranscriptionView: View {
         guard !isProcessing else { return }
         processNextInQueue()
     }
-}
-
-// MARK: - Native Window Drag Blocker
-
-/// A container that prevents macOS from dragging the window when clicking/dragging inside it.
-/// Necessary when NSWindow.isMovableByWindowBackground is true.
-struct NonDraggableContainer<Content: View>: View {
-    let content: Content
-    
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-    
-    var body: some View {
-        ZStack {
-            NonDraggableRepresentable()
-            content
-        }
-    }
-}
-
-private struct NonDraggableRepresentable: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NonDraggableNSView()
-        return view
-    }
-    
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-private class NonDraggableNSView: NSView {
-    override var mouseDownCanMoveWindow: Bool { false }
 }
 
 // MARK: - Range Slider Component
@@ -995,11 +667,11 @@ struct QueueCardView: View {
             resultRow
         }
         .padding(10)
-        .background(Color.primary.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(SW.rowBackground)
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(item.status == .done ? Color.accentColor.opacity(0.4) : Color.primary.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
+                .stroke(item.status == .done ? SW.accent.opacity(0.35) : SW.border, lineWidth: 1)
         )
         .padding(.vertical, 2)
     }
@@ -1020,19 +692,25 @@ struct QueueCardView: View {
 
             Spacer()
 
+            provenanceBadge
             statusBadge
             actionButton
         }
     }
 
     private var statusBadge: some View {
-        HStack(spacing: 4) {
-            Image(systemName: item.status.icon)
-                .font(.system(size: 9))
-            Text(item.status.label)
-                .font(.system(size: 10, weight: .medium))
+        SWStatusBadge(title: item.status.label, icon: item.status.icon, color: item.status.color)
+    }
+
+    @ViewBuilder
+    private var provenanceBadge: some View {
+        if let provenance = item.runProvenance {
+            SWStatusBadge(
+                title: provenance.displayName,
+                icon: provenance.engineType == .cloud ? "cloud.fill" : "cpu",
+                color: SW.secondaryText
+            )
         }
-        .foregroundStyle(item.status.color)
     }
 
     @ViewBuilder
@@ -1049,7 +727,7 @@ struct QueueCardView: View {
         } else if item.status == .queued {
             HStack(spacing: 8) {
                 Button {
-                    item.startTranscription(settings: AppState.shared.settings, appState: AppState.shared)
+                    item.startTranscription(settings: appState.settings, appState: appState)
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "play.fill")
@@ -1059,9 +737,9 @@ struct QueueCardView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(Color.accentColor)
+                    .background(SW.accent)
                     .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
                 }
                 .buttonStyle(.plain)
 
@@ -1078,11 +756,11 @@ struct QueueCardView: View {
             Button(action: onCancel) {
                 ZStack {
                     Circle()
-                        .fill(Color.red.opacity(0.1))
+                        .fill(SW.danger.opacity(0.1))
                         .frame(width: 22, height: 22)
                     Image(systemName: "stop.fill")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(SW.danger)
                 }
             }
             .buttonStyle(.plain)
@@ -1104,7 +782,8 @@ struct QueueCardView: View {
     // MARK: - Row 3: Metrics
 
     private var metricsRow: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
+            durationLabel
             costLabel
             speedLabel
             errorLabel
@@ -1115,24 +794,25 @@ struct QueueCardView: View {
 
     @ViewBuilder
     private var durationLabel: some View {
-        if let dur = item.durationSeconds {
-            Text(formatDuration(dur))
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.secondary)
+        if item.selectedDuration > 0 {
+            SWMetricBadge(
+                title: L.tr("Audio", "Аудио"),
+                value: formatDuration(item.selectedDuration),
+                icon: "timer",
+                color: SW.secondaryText
+            )
         }
     }
 
     @ViewBuilder
     private var costLabel: some View {
-        let settings = AppState.shared.settings
-        if settings.engineType == .cloud, let cost = item.estimatedCost {
-            Text("$\(String(format: "%.2f", cost))")
-                .font(.system(size: 10, weight: .bold))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.orange.opacity(0.15))
-                .foregroundStyle(.orange)
-                .clipShape(Capsule())
+        if let cost = item.displayCostEstimate(settings: appState.settings) {
+            SWMetricBadge(
+                title: cost.model.localizedTitle,
+                value: cost.compactLabel,
+                icon: "creditcard",
+                color: SW.warning
+            )
         }
     }
 
@@ -1145,7 +825,7 @@ struct QueueCardView: View {
                 Text(L.tr("\(String(format: "%.0f", speed))x realtime", "\(String(format: "%.0f", speed))x от реального времени"))
                     .font(.system(size: 9, weight: .medium))
             }
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(SW.accent)
         }
     }
 
@@ -1154,7 +834,7 @@ struct QueueCardView: View {
         if let msg = errorMessage {
             Text(msg)
                 .font(.system(size: 9))
-                .foregroundStyle(.red)
+                .foregroundStyle(SW.danger)
                 .lineLimit(1)
         }
     }
@@ -1164,7 +844,7 @@ struct QueueCardView: View {
         if item.status == .done {
             Text("100%")
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.blue)
+                .foregroundStyle(SW.accent)
         } else if item.progress > 0 && !isError && item.status != .cancelled {
             Text(String(format: "%d%%", Int(item.progress * 100)))
                 .font(.system(size: 9, design: .monospaced))
@@ -1181,7 +861,7 @@ struct QueueCardView: View {
                 Spacer()
                 Text("\(formatDuration(item.rangeStart)) / \(formatDuration(item.rangeEnd))")
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Color.accentColor)
+                .foregroundStyle(SW.accent)
                 Text(L.tr("(\(formatDuration(item.selectedDuration)) selected)", "(\(formatDuration(item.selectedDuration)) выбрано)"))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
@@ -1199,8 +879,8 @@ struct QueueCardView: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 4)
-        .background(Color.primary.opacity(0.02))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .background(SW.rowBackground)
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
     }
 
     // MARK: - Row 4: Result

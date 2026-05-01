@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # WhisperKiller Rapid Installer
-# This script builds the latest code and performs a clean deploy with permission resets.
+# This script builds the latest code and installs it while preserving existing permissions.
 
 set -e
 
@@ -21,7 +21,12 @@ BINARY_SOURCE=".build/release/WhisperKiller"
 
 if [ -d "$APP_BUNDLE" ]; then
     mkdir -p "$APP_BUNDLE/Contents/MacOS"
+    mkdir -p "$APP_BUNDLE/Contents/Resources"
     cp "$BINARY_SOURCE" "$APP_BUNDLE/Contents/MacOS/WhisperKiller"
+    cp "Sources/WhisperFree/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+    if [ -f "Sources/WhisperFree/Resources/AppIcon.icns" ]; then
+        cp "Sources/WhisperFree/Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+    fi
 else
     echo "❌ Error: $APP_BUNDLE structure not found. Please ensure it exists."
     exit 1

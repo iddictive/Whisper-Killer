@@ -45,7 +45,7 @@ final class HotkeyManager {
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
-            options: .defaultTap,
+            options: .listenOnly,
             eventsOfInterest: eventMask,
             callback: { proxy, type, event, refcon -> Unmanaged<CGEvent>? in
                 guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
@@ -97,7 +97,7 @@ final class HotkeyManager {
             // Hotkey pressed!
             isKeyDown = true
             DispatchQueue.main.async { [weak self] in self?.onKeyDown?() }
-            return nil // swallow
+            return pass
         }
 
         // ── STATE B: Hotkey IS held (recording) ─────────────────────
@@ -120,7 +120,7 @@ final class HotkeyManager {
             if kc == config.keyCode {
                 isKeyDown = false
                 DispatchQueue.main.async { [weak self] in self?.onKeyUp?() }
-                return nil // swallow
+                return pass
             }
             return pass
         }
@@ -128,7 +128,7 @@ final class HotkeyManager {
         if type == .keyDown {
             let kc = Int(event.getIntegerValueField(.keyboardEventKeycode))
             if kc == config.keyCode {
-                return nil // swallow key-repeat
+                return pass
             }
             return pass
         }

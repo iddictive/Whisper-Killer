@@ -43,7 +43,7 @@ final class PostProcessor {
     }
 
     func summarizeTranscript(text: String) async throws -> ProcessedResult {
-        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedText = TranscriptSanitizer.cleanForSummarization(text)
         guard !trimmedText.isEmpty else {
             return ProcessedResult(text: text, promptTokens: 0, completionTokens: 0, engine: .openai)
         }
@@ -66,15 +66,89 @@ final class PostProcessor {
         - Do not add any intro or outro outside those sections.
         """
 
-        switch try await resolveFollowUpEngine() {
+        let engine = try await resolveFollowUpEngine()
+        let chunks = splitTextForFollowUp(trimmedText)
+
+        guard chunks.count > 1 else {
+            return try await runFollowUpChat(
+                engine: engine,
+                systemPrompt: systemPrompt,
+                userText: trimmedText,
+                temperature: 0.2,
+                maxTokens: 2048
+            )
+        }
+
+        let chunkPrompt = """
+        Extract compact follow-up notes from this transcript chunk.
+        Preserve concrete facts, decisions, owners, dates, blockers, and open questions.
+        Ignore obvious ASR artifacts such as repeated identical phrases, standalone ellipses, and subtitle credits.
+        Use only information present in the chunk.
+        Return concise markdown bullets under:
+        ## Topics
+        ## Speaker Threads
+        ## Decisions
+        ## Action Items
+        ## Open Questions
+        """
+
+        var partials: [String] = []
+        var promptTokens = 0
+        var completionTokens = 0
+
+        for (index, chunk) in chunks.enumerated() {
+            let result = try await runFollowUpChat(
+                engine: engine,
+                systemPrompt: chunkPrompt,
+                userText: "Chunk \(index + 1) of \(chunks.count):\n\n\(chunk)",
+                temperature: 0.1,
+                maxTokens: 1200
+            )
+            partials.append(result.text)
+            promptTokens += result.promptTokens
+            completionTokens += result.completionTokens
+        }
+
+        let combinedNotes = partials.enumerated()
+            .map { "Chunk \($0.offset + 1):\n\($0.element)" }
+            .joined(separator: "\n\n")
+        let finalResult = try await runFollowUpChat(
+            engine: engine,
+            systemPrompt: systemPrompt,
+            userText: combinedNotes,
+            temperature: 0.1,
+            maxTokens: 2048
+        )
+
+        return ProcessedResult(
+            text: finalResult.text,
+            promptTokens: promptTokens + finalResult.promptTokens,
+            completionTokens: completionTokens + finalResult.completionTokens,
+            engine: finalResult.engine
+        )
+    }
+
+    private func runFollowUpChat(
+        engine: FollowUpEngine,
+        systemPrompt: String,
+        userText: String,
+        temperature: Double,
+        maxTokens: Int
+    ) async throws -> ProcessedResult {
+        switch engine {
         case .openAI:
-            return try await openAIChat(systemPrompt: systemPrompt, userText: trimmedText, temperature: 0.2, maxTokens: 2048)
+            return try await openAIChat(
+                systemPrompt: systemPrompt,
+                userText: userText,
+                temperature: temperature,
+                maxTokens: maxTokens
+            )
         case .ollama(let model):
             let content = try await localEngine.chat(
                 systemPrompt: systemPrompt,
-                userText: trimmedText,
+                userText: userText,
                 model: model,
-                temperature: 0.2
+                temperature: temperature
             )
             return ProcessedResult(
                 text: content,
@@ -83,6 +157,30 @@ final class PostProcessor {
                 engine: .ollama
             )
         }
+    }
+
+    private func splitTextForFollowUp(_ text: String, maxCharacters: Int = 12_000) -> [String] {
+        guard text.count > maxCharacters else { return [text] }
+
+        let words = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        var chunks: [String] = []
+        var current = ""
+
+        for word in words {
+            let nextLength = current.isEmpty ? word.count : current.count + word.count + 1
+            if nextLength > maxCharacters, !current.isEmpty {
+                chunks.append(current)
+                current = word
+            } else {
+                current = current.isEmpty ? word : current + " " + word
+            }
+        }
+
+        if !current.isEmpty {
+            chunks.append(current)
+        }
+
+        return chunks
     }
 
     private func openAIChat(systemPrompt: String, userText: String, temperature: Double, maxTokens: Int) async throws -> ProcessedResult {

@@ -26,8 +26,8 @@ struct SetupWizardView: View {
     private let accentMag  = SW.accentIndigo
     private let bgDark = SW.bg
     private let bgCard = SW.card
-    private let bgCardHover = Color(white: 1.0, opacity: 0.09)
-    private let borderSubtle = Color(white: 1.0, opacity: 0.08)
+    private let bgCardHover = SW.cardHover
+    private let borderSubtle = SW.border
     private let textPrimary = Color.white
     private let textSecondary = Color(white: 0.55)
 
@@ -62,58 +62,30 @@ struct SetupWizardView: View {
     }
 
     var body: some View {
-        ZStack {
-            // Background
+        ZStack(alignment: .bottom) {
             bgDark.ignoresSafeArea()
 
-            // Ambient glow
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [accentGold.opacity(0.1), accentPink.opacity(0.05), .clear],
-                        center: .center,
-                        startRadius: 60,
-                        endRadius: 300
-                    )
-                )
-                .scaleEffect(animateGlow ? 1.1 : 0.9)
-                .offset(y: -60)
-                .animation(.easeInOut(duration: 4).repeatForever(autoreverses: true), value: animateGlow)
-
             VStack(spacing: 0) {
-                // ─── Header ────────────────────────
                 header
-                    .padding(.top, 32)
-                    .padding(.bottom, 16)
+                    .padding(.top, 22)
+                    .padding(.bottom, 12)
 
-                // ─── Progress bar ──────────────────
                 progressBar
                     .padding(.horizontal, 40)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 16)
 
-                // ─── Content ───────────────────────
-                ScrollView(showsIndicators: false) {
-                    Group {
-                        switch currentStep {
-                        case 0: welcomeStep
-                        case 1: permissionsStep
-                        case 2: engineStep
-                        case 3: apiKeyStep
-                        case 4: readyStep
-                        default: EmptyView()
-                        }
-                    }
-                    .padding(.horizontal, 36)
-                    .padding(.bottom, 20)
-                }
+                stepContent
+                    .frame(maxHeight: .infinity)
+                    .padding(.bottom, 68)
+            }
 
-                Spacer(minLength: 0)
-
-                // ─── Bottom bar ────────────────────
+            NonDraggableContainer {
                 bottomBar
                     .padding(.horizontal, 36)
-                    .padding(.bottom, 28)
+                    .padding(.vertical, 12)
             }
+            .frame(height: 64)
+            .background(bgDark.opacity(0.97))
         }
         .frame(width: 580, height: 600)
         .preferredColorScheme(.dark)
@@ -137,18 +109,45 @@ struct SetupWizardView: View {
         }
     }
 
+    @ViewBuilder
+    private var stepContent: some View {
+        if currentStep == 0 {
+            NonDraggableContainer {
+                welcomeStep
+                    .padding(.horizontal, 36)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            }
+        } else {
+            ScrollView(showsIndicators: false) {
+                NonDraggableContainer {
+                    Group {
+                        switch currentStep {
+                        case 1: permissionsStep
+                        case 2: engineStep
+                        case 3: apiKeyStep
+                        case 4: readyStep
+                        default: EmptyView()
+                        }
+                    }
+                    .padding(.horizontal, 36)
+                    .padding(.bottom, 78)
+                }
+            }
+        }
+    }
+
     // ═══════════════════════════════════════════════
     // MARK: – Header
     // ═══════════════════════════════════════════════
 
     private var header: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             ZStack {
                 // Outer ring glow
                 Circle()
                     .stroke(LinearGradient(colors: [accentGold, accentPink], startPoint: .top, endPoint: .bottom).opacity(0.3), lineWidth: 2)
-                    .frame(width: 68, height: 68)
-                    .blur(radius: 4)
+                    .frame(width: 56, height: 56)
+                    .blur(radius: 3)
 
                 Circle()
                     .fill(
@@ -158,19 +157,19 @@ struct SetupWizardView: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 60, height: 60)
+                    .frame(width: 50, height: 50)
 
                 Image(systemName: stepIcon)
-                    .font(.system(size: 26, weight: .medium))
+                    .font(.system(size: 22, weight: .medium))
                     .foregroundStyle(accentPink)
             }
 
             Text(stepTitle)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(textPrimary)
 
             Text(stepSubtitle)
-                .font(.system(size: 13))
+                .font(.system(size: 12))
                 .foregroundStyle(textSecondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
@@ -257,14 +256,20 @@ struct SetupWizardView: View {
     // ═══════════════════════════════════════════════
 
     private var welcomeStep: some View {
-        VStack(spacing: 12) {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10)
+            ],
+            spacing: 10
+        ) {
             featureCard(icon: "mic.fill", color: .red,
-                        title: L.tr("⌥+Space to record", "⌥+Space для записи"),
+                        title: L.tr("\(appState.settings.hotkeyConfig.displayString) to record", "\(appState.settings.hotkeyConfig.displayString) для записи"),
                         desc: L.tr("Hold, Toggle, or Push-to-Talk — pick your style", "Удержание, toggle или push-to-talk — выберите свой режим"))
             featureCard(icon: "waveform", color: accentPink,
                         title: L.tr("AI transcription", "AI-транскрибация"),
                         desc: L.tr("Cloud (OpenAI) or Local (whisper.cpp with GPU/NPU)", "Облако (OpenAI) или локально (whisper.cpp с GPU/NPU)"))
-            featureCard(icon: "sparkles", color: .purple,
+            featureCard(icon: "sparkles", color: SW.accent,
                         title: L.tr("Smart post-processing", "Умная постобработка"),
                         desc: L.tr("Dictation · Email · Code · Notes — or create your own", "Dictation · Email · Code · Notes — или создайте свой режим"))
             featureCard(icon: "keyboard", color: .orange,
@@ -274,30 +279,34 @@ struct SetupWizardView: View {
     }
 
     private func featureCard(icon: String, color: Color, title: String, desc: String) -> some View {
-        HStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 9)
                     .fill(color.opacity(0.12))
-                    .frame(width: 40, height: 40)
+                    .frame(width: 36, height: 36)
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(color)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(textPrimary)
+                    .lineLimit(1)
                 Text(desc)
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundStyle(textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
         }
-        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 116, alignment: .topLeading)
+        .padding(13)
         .background(bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(borderSubtle, lineWidth: 1)
         )
     }
@@ -968,10 +977,14 @@ struct SetupWizardView: View {
                 Text(L.tr("SHORTCUTS", "ГОРЯЧИЕ КЛАВИШИ"))
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(textSecondary)
-                HStack(spacing: 24) {
-                    shortcutBadge(key: "⌥ Space", label: "Record")
-                    shortcutBadge(key: "Esc", label: "Cancel")
-                }
+                shortcutBadge(
+                    key: appState.settings.hotkeyConfig.displayString,
+                    label: appState.settings.recordingMode.localizedTitle
+                )
+                Text(appState.settings.recordingMode.localizedDescription(hotkey: appState.settings.hotkeyConfig.displayString))
+                    .font(.system(size: 11))
+                    .foregroundStyle(textSecondary)
+                    .multilineTextAlignment(.center)
             }
             .padding(16)
             .background(bgCard)
@@ -1037,76 +1050,73 @@ struct SetupWizardView: View {
     }
 
     private var bottomBar: some View {
-        HStack {
-            // Back
-            if currentStep > 0 {
-                Button {
-                    withAnimation(.spring(response: 0.35)) { currentStep -= 1 }
+        ZStack {
+            Text("\(currentStep + 1)/\(totalSteps)")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(textSecondary)
+
+            HStack {
+                if currentStep > 0 {
+                    Button {
+                        withAnimation(.spring(response: 0.35)) { currentStep -= 1 }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left").font(.system(size: 10, weight: .bold))
                         Text(L.tr("Back", "Назад")).font(.system(size: 13))
                     }
                     .foregroundStyle(textSecondary)
-                }
-                .buttonStyle(.plain)
-            }
-
-            Spacer()
-
-            // Step counter
-            Text("\(currentStep + 1)/\(totalSteps)")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(textSecondary)
-
-            Spacer()
-
-            // Next / Finish
-            if currentStep < totalSteps - 1 {
-                Button {
-                    refreshStatus() // Refresh status before moving
-                    withAnimation(.spring(response: 0.35)) { currentStep += 1 }
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(currentStep == 0 ? L.tr("Get Started", "Начать") : L.tr("Next", "Далее"))
-                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
                     }
-                    .font(.system(size: 13, weight: .semibold))
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 10)
-                    .background(
-                        LinearGradient(
-                            colors: [accentGold, accentPink],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .foregroundStyle(.black)
-                    .clipShape(Capsule())
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-            } else {
-                Button {
-                    finishSetup()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
-                        Text(L.tr("Launch", "Запустить"))
+
+                Spacer()
+
+                if currentStep < totalSteps - 1 {
+                    Button {
+                        refreshStatus()
+                        withAnimation(.spring(response: 0.35)) { currentStep += 1 }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(currentStep == 0 ? L.tr("Get Started", "Начать") : L.tr("Next", "Далее"))
+                            Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 10)
+                        .background(
+                            LinearGradient(
+                                colors: [accentGold, accentPink],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
                     }
-                    .font(.system(size: 13, weight: .semibold))
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 10)
-                    .background(
-                        LinearGradient(
-                            colors: [.green, .green.opacity(0.7)],
-                            startPoint: .leading,
-                            endPoint: .trailing
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        finishSetup()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
+                            Text(L.tr("Launch", "Запустить"))
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 10)
+                        .background(
+                            LinearGradient(
+                                colors: [.green, .green.opacity(0.7)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
                         )
-                    )
-                    .foregroundStyle(.black)
-                    .clipShape(Capsule())
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }

@@ -97,10 +97,17 @@ extension RecordingMode {
     }
 
     var localizedDescription: String {
+        localizedDescription(hotkey: HotkeyConfig().displayString)
+    }
+
+    func localizedDescription(hotkey: String) -> String {
         switch self {
-        case .hold: return L.tr("Hold ⌥+Space to record, release to transcribe", "Удерживайте ⌥+Space для записи, отпустите для транскрибации")
-        case .toggle: return L.tr("Press ⌥+Space to start, press again to stop", "Нажмите ⌥+Space для старта, нажмите ещё раз для остановки")
-        case .pushToTalk: return L.tr("Hold ⌥+Space (300ms+) to record, release to transcribe", "Удерживайте ⌥+Space (300 мс+) для записи, отпустите для транскрибации")
+        case .hold:
+            return L.tr("Hold \(hotkey) to record, release to transcribe", "Удерживайте \(hotkey) для записи, отпустите для транскрибации")
+        case .toggle:
+            return L.tr("Press \(hotkey) to start, press again to stop", "Нажмите \(hotkey) для старта, нажмите ещё раз для остановки")
+        case .pushToTalk:
+            return L.tr("Hold \(hotkey) for push-to-talk", "Удерживайте \(hotkey) для push-to-talk")
         }
     }
 }

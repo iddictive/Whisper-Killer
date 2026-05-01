@@ -1,6 +1,7 @@
 #!/bin/bash
+set -e
 
-# Whisper Free Deploy Script (Version 2.2)
+# Whisper Free Deploy Script (Version 3.0)
 # Move to the project root (parent of scripts/)
 cd "$(dirname "$0")/.."
 echo "📂 Project root: $(pwd)"
@@ -24,9 +25,8 @@ function resolve_signing_identity() {
 }
 
 # 1. Versioning
-COMMIT_COUNT=$(git rev-list --count HEAD)
-VERSION="2.0.$COMMIT_COUNT"
-echo "🔢 Version: $VERSION (commits: $COMMIT_COUNT)"
+VERSION="${WHISPERKILLER_VERSION:-3.0}"
+echo "🔢 Version: $VERSION"
 
 # Update Info.plist before build
 function update_plist() {
@@ -92,22 +92,43 @@ if [ $? -eq 0 ]; then
 
     ENTITLEMENTS="Sources/WhisperFree/Resources/WhisperKiller.entitlements"
     echo "🔑 Signing $BUNDLE_NAME with entitlements..."
+    rm -rf "$BUNDLE_NAME/Contents/_CodeSignature"
+    dot_clean -m "$BUNDLE_NAME" 2>/dev/null || true
+    find "$BUNDLE_NAME" -name '._*' -delete
+    find "$BUNDLE_NAME" -print0 | xargs -0 xattr -c 2>/dev/null || true
     SIGNING_IDENTITY=$(resolve_signing_identity)
     if [ -n "$SIGNING_IDENTITY" ]; then
         echo "✅ Using signing identity: $SIGNING_IDENTITY"
-        codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$BUNDLE_NAME"
+        SIGN_COMMAND=(codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$BUNDLE_NAME")
     else
         echo "⚠️  Developer ID Application identity not found. Falling back to ad-hoc signing."
         echo "⚠️  Ad-hoc signed builds may cause macOS to treat each install as a new app and ask for permissions again."
-        codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "-" "$BUNDLE_NAME"
+        SIGN_COMMAND=(codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "-" "$BUNDLE_NAME")
     fi
+
+    if ! "${SIGN_COMMAND[@]}"; then
+        echo "⚠️  First signing pass failed after xattr cleanup. Retrying once..."
+        rm -rf "$BUNDLE_NAME/Contents/_CodeSignature"
+        dot_clean -m "$BUNDLE_NAME" 2>/dev/null || true
+        find "$BUNDLE_NAME" -name '._*' -delete
+        find "$BUNDLE_NAME" -print0 | xargs -0 xattr -c 2>/dev/null || true
+        "${SIGN_COMMAND[@]}"
+    fi
+
+    dot_clean -m "$BUNDLE_NAME" 2>/dev/null || true
+    find "$BUNDLE_NAME" -name '._*' -delete
+    find "$BUNDLE_NAME" -print0 | xargs -0 xattr -c 2>/dev/null || true
+    codesign --verify --deep --strict "$BUNDLE_NAME"
 
     # 5. Build a classic drag-to-Applications DMG for releases
     echo "💿 Creating drag-to-Applications DMG..."
     mkdir -p "$DIST_DIR"
     DMG_ROOT="$(mktemp -d)"
     DMG_PATH="$DIST_DIR/$APP_NAME-$VERSION.dmg"
-    cp -R "$BUNDLE_NAME" "$DMG_ROOT/"
+    ditto --norsrc --noextattr "$BUNDLE_NAME" "$DMG_ROOT/$BUNDLE_NAME"
+    dot_clean -m "$DMG_ROOT/$BUNDLE_NAME" 2>/dev/null || true
+    find "$DMG_ROOT/$BUNDLE_NAME" -name '._*' -delete
+    find "$DMG_ROOT/$BUNDLE_NAME" -print0 | xargs -0 xattr -c 2>/dev/null || true
     ln -s /Applications "$DMG_ROOT/Applications"
     rm -f "$DMG_PATH"
     hdiutil create \

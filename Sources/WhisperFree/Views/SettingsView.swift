@@ -8,7 +8,7 @@ struct SettingsView: View {
     @ObservedObject private var updater = GitHubUpdater.shared
     @ObservedObject private var dependencyInstaller = DependencyInstaller.shared
     @State private var selectedTab: String? = "app"
-    
+
     // Custom Mode State
     @State private var editingModeID: String?
     @State private var newModeName = ""
@@ -19,7 +19,7 @@ struct SettingsView: View {
     @State private var newModeIcon = "sparkles"
     @State private var isGeneratingExample = false
     @State private var modeEditorMessage: String?
-    
+
     // API Testing State
     @State private var apiValidationState: OpenAIAPIKeyValidationState = .idle
     @State private var isRunningNetworkDiagnostics = false
@@ -117,12 +117,16 @@ struct SettingsView: View {
         isRunningNetworkDiagnostics || apiValidationState == .checking
     }
 
+    private var recordingHotkeyText: String {
+        appState.settings.hotkeyConfig.displayString
+    }
+
     var body: some View {
         ZStack {
             // Unified glass background for the whole window
             VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
                 .ignoresSafeArea()
-            
+
             HStack(spacing: 0) {
                 // Custom Sidebar
                 VStack(spacing: 0) {
@@ -147,22 +151,22 @@ struct SettingsView: View {
                     .listStyle(.sidebar)
                     .scrollContentBackground(.hidden)
                     .frame(width: 230)
-                    
+
                     Spacer()
                 }
                 .padding(.top, 8)
-                
+
                 Divider()
                     .opacity(0.1) // Subtler divider
-                
+
                 // Detail Content
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 32) { // More air between sections
+                    VStack(alignment: .leading, spacing: 20) {
                         if let tab = selectedTab {
                             if !appState.isHotkeyTrusted && tab != "info" {
                                 permissionBanner
                             }
-                            
+
                             switch tab {
                             case "app": appSection
                             case "capture":
@@ -182,10 +186,10 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    .padding(32) // More air around content
+                    .padding(24)
                 }
                 .scrollContentBackground(.hidden)
-                .background(Color.black.opacity(0.01)) // Helps with hit testing while remaining transparent
+                .background(SW.contentBackground.opacity(0.12))
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -231,27 +235,28 @@ struct SettingsView: View {
         HStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.title3)
-                .foregroundStyle(.orange)
-            
+                .foregroundStyle(SW.warning)
+
             VStack(alignment: .leading, spacing: 4) {
-                Text(L.tr("Accessibility Permission Required", "Нужен доступ к Accessibility"))
-                    .font(.headline)
-                Text(L.tr("Global hotkeys won't work without this permission.", "Без этого разрешения глобальные хоткеи работать не будут."))
-                    .font(.subheadline)
+                Text(L.tr("Accessibility required", "Нужен Accessibility"))
+                    .font(SW.titleFont)
+                Text(L.tr("Enable it for global hotkeys.", "Включите доступ для глобальных хоткеев."))
+                    .font(SW.compactFont)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
-            
+
             Button(L.tr("Grant Access…", "Выдать доступ…")) {
                 appState.requestAccessibilityPermission()
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.regular)
         }
-        .padding(20)
-        .background(Color.primary.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(14)
+        .background(SW.warning.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous).strokeBorder(SW.warning.opacity(0.22), lineWidth: 1))
     }
 
     // MARK: - Sections
@@ -259,7 +264,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var appSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            
+
             VStack(spacing: 0) {
                 HStack {
                     Text(L.tr("Preferred Language", "Предпочитаемый язык"))
@@ -276,9 +281,9 @@ struct SettingsView: View {
                 .onChange(of: appState.settings.language) { _, _ in
                     appState.saveSettings()
                 }
-                
+
                 Divider().padding(.horizontal)
-                
+
                 Toggle(L.tr("Monochrome menu bar icon", "Монохромная иконка в menu bar"), isOn: $appState.settings.useMonochromeMenuIcon)
                     .padding()
                     .onChange(of: appState.settings.useMonochromeMenuIcon) { _, _ in
@@ -288,25 +293,25 @@ struct SettingsView: View {
             .background(Color.primary.opacity(0.03))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        
+
         VStack(alignment: .leading, spacing: 16) {
             Text(L.tr("Software Updates", "Обновления"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            
+
             VStack(spacing: 0) {
                 Toggle(L.tr("Automatically check for updates", "Автоматически проверять обновления"), isOn: $appState.settings.automaticallyChecksForUpdates)
                     .padding()
-                
+
                 Divider().padding(.horizontal)
-                
+
                 Toggle(L.tr("Automatically download updates", "Автоматически загружать обновления"), isOn: $appState.settings.automaticallyDownloadsUpdates)
                     .disabled(!appState.settings.automaticallyChecksForUpdates)
                     .padding()
-                
+
                 if updater.updateAvailable || updater.isDownloading || updater.error != nil {
                     Divider().padding(.horizontal)
-                    
+
                     VStack(alignment: .leading, spacing: 12) {
                         if let error = updater.error {
                             Text(error)
@@ -318,7 +323,7 @@ struct SettingsView: View {
                                     }
                                 }
                         }
-                        
+
                         if updater.isDownloading {
                             VStack(alignment: .leading, spacing: 4) {
                                 ProgressView(value: updater.downloadProgress)
@@ -363,17 +368,18 @@ struct SettingsView: View {
     @ViewBuilder
     private var captureSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            
+
             VStack(alignment: .leading, spacing: 12) {
-                Picker(L.tr("Capture Style", "Режим записи"), selection: $appState.settings.recordingMode) {
-                    ForEach(RecordingMode.allCases, id: \.self) { mode in
-                        Label(mode.localizedTitle, systemImage: mode.icon).tag(mode)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(RecordingMode.allCases, id: \.self) { mode in
+                            recordingModeCard(mode)
+                        }
                     }
+                    .padding(.horizontal, 1)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                
-                Text(appState.settings.recordingMode.localizedDescription)
+
+                Text(appState.settings.recordingMode.localizedDescription(hotkey: recordingHotkeyText))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
@@ -382,36 +388,36 @@ struct SettingsView: View {
             .background(Color.primary.opacity(0.03))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        
+
         VStack(alignment: .leading, spacing: 16) {
             Text(L.tr("Global Recording Shortcut", "Глобальная горячая клавиша"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            
+
             HotkeyRecorderView(config: $appState.settings.hotkeyConfig)
                 .padding()
                 .background(Color.primary.opacity(0.03))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        
+
         VStack(alignment: .leading, spacing: 16) {
             Text(L.tr("Automation & Interface", "Автоматизация и интерфейс"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            
+
             VStack(spacing: 0) {
                 Toggle(L.tr("Auto-type into active app", "Автопечать в активное приложение"), isOn: $appState.settings.autoTypeResult)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
-                
+
                 Divider().padding(.horizontal)
-                
+
                 Toggle(L.tr("Auto-Enter automatically", "Автоматически нажимать Enter"), isOn: $appState.settings.experimentalAutoEnter)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
-                
+
                 Divider().padding(.horizontal)
-                
+
                 VStack(alignment: .leading, spacing: 8) {
                     Picker(L.tr("Insertion Method", "Метод вставки"), selection: $appState.settings.insertionMethod) {
                         ForEach(InsertionMethod.allCases, id: \.self) { method in
@@ -420,16 +426,16 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
-                    
+
                     Text(appState.settings.insertionMethod.localizedDescription)
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)
                 }
                 .padding()
-                
+
                 Divider().padding(.horizontal)
-                
+
                 Toggle(L.tr("Show floating recording pill", "Показывать плавающий индикатор записи"), isOn: $appState.settings.showOverlay)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
@@ -530,10 +536,46 @@ struct SettingsView: View {
         }
     }
 
+    private func recordingModeCard(_ mode: RecordingMode) -> some View {
+        let selected = appState.settings.recordingMode == mode
+
+        return Button {
+            appState.settings.recordingMode = mode
+            appState.saveSettings()
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 7) {
+                    Image(systemName: mode.icon)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(mode.localizedTitle)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+
+                Text(mode.localizedDescription(hotkey: recordingHotkeyText))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(width: 164, height: 74, alignment: .topLeading)
+            .padding(10)
+            .background(selected ? SW.accent.opacity(0.10) : Color.primary.opacity(0.035))
+            .foregroundStyle(selected ? SW.accent : .primary)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(selected ? SW.accent.opacity(0.35) : Color.primary.opacity(0.06), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     @ViewBuilder
     private var engineSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            
+
             VStack(alignment: .leading, spacing: 16) {
                 Picker(L.tr("Model Source", "Источник модели"), selection: $appState.settings.engineType) {
                     ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
@@ -542,9 +584,9 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
-                
+
                 Divider().padding(.horizontal)
-                
+
                 VStack(alignment: .leading, spacing: 12) {
                     Text(
                         appState.settings.engineType == .cloud
@@ -673,7 +715,7 @@ struct SettingsView: View {
             Text(L.tr("API Refinement", "AI-обработка"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            
+
             AIConfigView(settings: $appState.settings, onSave: { appState.saveSettings() })
                 .padding()
                 .background(Color.primary.opacity(0.03))
@@ -779,7 +821,7 @@ struct SettingsView: View {
                 let isDictation = mode.name == TranscriptionMode.dictation.name
                 let isDisabledByEngine = isDictation && appState.settings.engineType == .local
                 let isLocked = !appState.settings.isModeEnabled(mode)
-                
+
                 if !isDisabledByEngine {
                     Section {
                         ModeCard(
@@ -809,7 +851,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            
+
             CustomModeEditorCard(
                 isEditing: isEditingCustomMode,
                 modeName: $newModeName,
@@ -832,25 +874,25 @@ struct SettingsView: View {
     @ViewBuilder
     private var infoSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            
+
             let logs = appState.settings.usageLogs
             let totalTokens = logs.reduce(0) { $0 + $1.totalTokens }
             let totalCost = logs.reduce(0.0) { $0 + $1.estimatedCost }
-            
+
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 40) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L.tr("Total Tokens", "Всего токенов")).font(.caption).foregroundStyle(.secondary)
                         Text("\(totalTokens)").font(.title2).bold().foregroundStyle(SW.accent)
                     }
-                    
+
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L.tr("Est. Cost", "Оценка стоимости")).font(.caption).foregroundStyle(.secondary)
                         Text("$\(String(format: "%.4f", totalCost))").font(.title2).bold().foregroundStyle(Color.accentColor)
                     }
-                    
+
                     Spacer()
-                    
+
                     Button(L.tr("Reset Logs", "Сбросить логи")) {
                         appState.settings.usageLogs.removeAll()
                         appState.saveSettings()
@@ -858,10 +900,10 @@ struct SettingsView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
-                
+
                 if !logs.isEmpty {
                     Divider()
-                    
+
                     DisclosureGroup {
                         VStack(spacing: 8) {
                             ForEach(logs.reversed().prefix(20)) { log in
@@ -895,12 +937,12 @@ struct SettingsView: View {
             .background(Color.primary.opacity(0.03))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        
+
         VStack(alignment: .leading, spacing: 16) {
             Text(L.tr("About Whisper Killer", "О Whisper Killer"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            
+
             VStack(spacing: 24) {
                 ZStack {
                     Circle()
@@ -910,18 +952,18 @@ struct SettingsView: View {
                         .foregroundStyle(LinearGradient(colors: [SW.accent, SW.accentBlue], startPoint: .top, endPoint: .bottom))
                 }
                 .frame(width: 80, height: 80)
-                
+
                 VStack(spacing: 8) {
                     Text("Whisper Killer").font(.system(size: 28, weight: .bold))
                     Text(appVersionText).font(.subheadline).foregroundStyle(.secondary)
                 }
-                
+
                 Text(L.tr("Hyper-fast voice to text for macOS.", "Очень быстрая голосовая транскрибация для macOS."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                
+
                 HStack(spacing: 24) {
-                    Link("GitHub", destination: URL(string: "https://github.com/iddictive/Whisper-Free")!)
+                    Link("GitHub", destination: URL(string: "https://github.com/iddictive/Whisper-Killer")!)
                     Link("iddictive", destination: URL(string: "https://github.com/iddictive")!)
                 }
                 .font(.caption)
@@ -1193,16 +1235,16 @@ struct AIConfigView: View {
             Text(L.tr("AI refinement and diarization use the global OpenAI key from the Engine & API section.", "AI-обработка и диаризация используют глобальный OpenAI key из раздела «Движок и API»."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            
+
             if shouldShowDiarizationControls {
                 Divider()
-                
+
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle(L.tr("Speaker Diarization (AI-powered)", "Диаризация спикеров (AI)"), isOn: $settings.enableSpeakerDiarization)
-                        .onChange(of: settings.enableSpeakerDiarization) { _, _ in 
-                            onSave() 
+                        .onChange(of: settings.enableSpeakerDiarization) { _, _ in
+                            onSave()
                         }
-                    
+
                     Text(L.tr("Uses AI to identify and split different speakers in the transcription. Best for interviews and meetings.", "Использует AI для определения и разделения разных спикеров в транскрипции. Лучше всего подходит для интервью и встреч."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1433,23 +1475,23 @@ struct ModeCard: View {
                         Image(systemName: mode.icon)
                             .font(.title3)
                             .foregroundStyle(isSelected ? SW.accent : (isEnabled ? .primary : .secondary))
-                        
+
                         Text(mode.localizedName)
                             .font(.headline)
                             .foregroundStyle(isSelected ? SW.accent : (isEnabled ? .primary : .secondary))
-                        
+
                         if !isEnabled {
                             Image(systemName: "lock.fill")
                                 .font(.caption2)
                                 .foregroundStyle(.orange)
                         }
                     }
-                    
+
                     Text(mode.localizedDescription)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
-                    
+
                     if !isEnabled {
                         Text(L.tr("Requires API Key & AI Refinement Enabled", "Нужен API key и включённая AI-обработка"))
                             .font(.system(size: 10, weight: .bold))
@@ -1457,9 +1499,9 @@ struct ModeCard: View {
                             .padding(.top, 4)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 VStack(alignment: .trailing, spacing: 12) {
                     let binding = Binding<Bool>(
                         get: { isSelected },
@@ -1469,7 +1511,7 @@ struct ModeCard: View {
                         .toggleStyle(.switch)
                         .labelsHidden()
                         .disabled(!isEnabled)
-                    
+
                     if let onEdit = onEdit {
                         Button(action: onEdit) {
                             Image(systemName: "pencil")
@@ -1488,7 +1530,7 @@ struct ModeCard: View {
                 }
             }
             .opacity(isEnabled ? 1.0 : 0.6)
-            
+
             VStack(alignment: .leading, spacing: 12) {
                 ExampleBox(title: L.tr("Input:", "Вход:"), text: mode.exampleInput, icon: "mic")
                 ExampleBox(title: L.tr("Output:", "Выход:"), text: mode.exampleOutput, icon: "sparkles", isOutput: true)

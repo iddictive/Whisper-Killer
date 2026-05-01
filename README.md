@@ -14,7 +14,9 @@
 
 ### WhisperFree
 
-Open-source macOS menu bar app for voice dictation, file transcription, and AI cleanup.
+Open-source macOS menu bar app for voice dictation, file transcription, summaries, and AI cleanup.
+
+Current release: **3.0**.
 
 No subscription is required. If you use cloud transcription or cloud AI cleanup, usage is billed to your own OpenAI account.
 
@@ -22,7 +24,7 @@ The repository is named **WhisperFree**. In the current builds, the macOS app bu
 
 ### What the app can do right now
 
-- **Menu bar dictation** with a global shortcut. Default shortcut: `⌥ Space`.
+- **Menu bar dictation** with a configurable global shortcut. Default shortcut: `⌥ Space`.
 - **Three recording styles**: Hold to Record, Toggle, and Push to Talk.
 - **Two transcription engines**:
   - Local via `whisper.cpp`
@@ -45,7 +47,7 @@ The repository is named **WhisperFree**. In the current builds, the macOS app bu
   - audio and video file support
   - per-file start/end range
   - progress states
-  - cloud cost estimate
+  - cloud-only cost estimates tied to the actual run
   - cancel/remove/clear flow
 - **Auto summary for imported files** with sections for topics, speaker threads, decisions, action items, and open questions.
 - **History window** with:
@@ -55,7 +57,7 @@ The repository is named **WhisperFree**. In the current builds, the macOS app bu
   - playback of saved recordings when available
   - Finder reveal for stored audio
   - usage stats such as total words, average WPM, and estimated time saved
-- **Live Translator** is planned for a future release and is currently hidden in the app UI.
+- **Live Translator** for microphone and system audio translation.
 - **Model management inside the app** for local Whisper models:
   - Tiny
   - Base
@@ -64,7 +66,16 @@ The repository is named **WhisperFree**. In the current builds, the macOS app bu
   - Large v3 Turbo
   - Large v3
 - **Setup wizard** for first launch, permissions, engine choice, and dependency guidance.
+- **Accessibility helper panel** for dragging the app into macOS Privacy & Security.
 - **GitHub release updater** built into the app.
+
+### 3.0 highlights
+
+- Native macOS UI sweep across menu bar, file transcription, history, settings, onboarding, and overlays.
+- Cloud/local file transcription preserves engine, model, language, and cost provenance for completed jobs.
+- Local transcription uses explicit language/auto-language settings and sanitizes common ASR filler artifacts.
+- Long summaries are chunked before final synthesis.
+- Recording enters the active state only after Accessibility and Microphone permissions are valid and the audio engine starts.
 
 ### Engines and dependencies
 
@@ -117,7 +128,7 @@ The repository is named **WhisperFree**. In the current builds, the macOS app bu
 
 ### Installation
 
-1. Download the latest `.dmg` from [Releases](https://github.com/iddictive/Whisper-Free/releases).
+1. Download the latest `.dmg` from [Releases](https://github.com/iddictive/Whisper-Killer/releases).
 2. Move the app to `Applications`.
 3. Launch it and complete the setup wizard.
 4. Grant `Accessibility` and `Microphone` access when prompted.
@@ -129,8 +140,8 @@ The repository is named **WhisperFree**. In the current builds, the macOS app bu
 ### Build from source
 
 ```bash
-git clone https://github.com/iddictive/Whisper-Free.git
-cd Whisper-Free
+git clone https://github.com/iddictive/Whisper-Killer.git
+cd Whisper-Killer
 make install
 ```
 
@@ -149,7 +160,9 @@ make verify   # verify release build
 
 ### WhisperFree
 
-Open-source приложение для macOS в menu bar: диктовка голосом, транскрибация файлов и AI-обработка текста.
+Open-source приложение для macOS в menu bar: диктовка голосом, транскрибация файлов, саммари и AI-обработка текста.
+
+Текущий релиз: **3.0**.
 
 Подписка не нужна. Если использовать облачную транскрибацию или облачную AI-обработку, расходы идут только по вашему OpenAI-аккаунту.
 
@@ -157,7 +170,7 @@ Open-source приложение для macOS в menu bar: диктовка го
 
 ### Что приложение умеет сейчас
 
-- **Диктовка из menu bar** по глобальной горячей клавише. По умолчанию: `⌥ Space`.
+- **Диктовка из menu bar** по настраиваемой глобальной горячей клавише. По умолчанию: `⌥ Space`.
 - **Три режима записи**:
   - удержание клавиши
   - toggle-режим
@@ -183,7 +196,7 @@ Open-source приложение для macOS в menu bar: диктовка го
   - поддержка аудио и видео файлов
   - выбор нужного временного диапазона внутри файла
   - статусы прогресса
-  - оценка стоимости для облачного режима
+  - cloud-only оценка стоимости, привязанная к фактическому прогону
   - отмена, удаление и очистка очереди
 - **Автосводка для импортированных файлов** с блоками: темы, линии спикеров, решения, действия и открытые вопросы.
 - **Окно истории** с возможностями:
@@ -193,7 +206,7 @@ Open-source приложение для macOS в menu bar: диктовка го
   - проигрывание сохранённых записей, если аудио доступно
   - открытие исходного аудио в Finder
   - статистика: слова, средний WPM, оценка сэкономленного времени
-- **Live Translator** запланирован на одну из следующих версий и сейчас скрыт в интерфейсе приложения.
+- **Live Translator** для перевода с микрофона и системного аудио.
 - **Управление локальными Whisper-моделями прямо в приложении**:
   - Tiny
   - Base
@@ -202,7 +215,16 @@ Open-source приложение для macOS в menu bar: диктовка го
   - Large v3 Turbo
   - Large v3
 - **Мастер первого запуска** для разрешений, выбора движка и зависимостей.
+- **Accessibility helper panel** для перетаскивания приложения в macOS Privacy & Security.
 - **Встроенная проверка обновлений** через GitHub Releases.
+
+### Что нового в 3.0
+
+- Нативный macOS UI sweep для menu bar, file transcription, history, settings, onboarding и overlays.
+- Cloud/local транскрибация файлов сохраняет engine/model/language/cost provenance у завершенных задач.
+- Локальная транскрибация использует явный язык/auto-language и чистит типовые ASR-заглушки.
+- Длинные саммари режутся на чанки перед финальным синтезом.
+- Запись переходит в активное состояние только после валидных Accessibility/Microphone прав и успешного старта аудио-движка.
 
 ### Движки и зависимости
 
@@ -255,7 +277,7 @@ Open-source приложение для macOS в menu bar: диктовка го
 
 ### Установка
 
-1. Скачайте актуальный `.dmg` со страницы [Releases](https://github.com/iddictive/Whisper-Free/releases).
+1. Скачайте актуальный `.dmg` со страницы [Releases](https://github.com/iddictive/Whisper-Killer/releases).
 2. Переместите приложение в `Applications`.
 3. Запустите приложение и пройдите мастер первого запуска.
 4. Выдайте доступ к `Accessibility` и `Microphone`.
@@ -267,8 +289,8 @@ Open-source приложение для macOS в menu bar: диктовка го
 ### Сборка из исходников
 
 ```bash
-git clone https://github.com/iddictive/Whisper-Free.git
-cd Whisper-Free
+git clone https://github.com/iddictive/Whisper-Killer.git
+cd Whisper-Killer
 make install
 ```
 

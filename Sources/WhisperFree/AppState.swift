@@ -257,13 +257,40 @@ final class AppState: ObservableObject {
             reloadHotkeyManager()
             return
         }
+        resetStaleAccessibilityEntries()
         // Not trusted — AXIsProcessTrustedWithOptions(prompt: true) shows the native
         // system dialog with "Deny" / "Open System Settings" buttons.
-        // Do NOT manually open System Settings — that causes duplicate windows.
+        AppDelegate.shared?.showAccessibilityDragHelper()
         let trusted = hotkeyManager.checkTrust(prompt: true)
         self.isHotkeyTrusted = trusted
         if trusted {
+            AppDelegate.shared?.hideAccessibilityDragHelper()
             reloadHotkeyManager()
+        }
+    }
+
+    private func resetStaleAccessibilityEntries() {
+        let bundleIDs = [
+            "com.whisperkiller.app",
+            "com.whisperfree.app",
+            "com.whisperflow.app",
+            "WhisperFree",
+            "WhisperFlow"
+        ]
+
+        for bundleID in bundleIDs {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            process.arguments = ["reset", "Accessibility", bundleID]
+            process.standardOutput = Pipe()
+            process.standardError = Pipe()
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                print("Accessibility reset failed for \(bundleID): \(error)")
+            }
         }
     }
 
@@ -283,6 +310,7 @@ final class AppState: ObservableObject {
                     self.isHotkeyTrusted = trusted
                     if trusted {
                         // Automatically start manager if it was blocked before
+                        AppDelegate.shared?.hideAccessibilityDragHelper()
                         self.reloadHotkeyManager()
                     }
                 }
@@ -408,9 +436,43 @@ final class AppState: ObservableObject {
             return false
         }
 
-        if requiresMicrophone && isMicrophoneDenied {
-            showError("Microphone access denied. Please enable it in System Settings → Privacy & Security.")
-            return false
+        if requiresMicrophone {
+            guard hotkeyManager.isTrusted else {
+                isHotkeyTrusted = false
+                AppDelegate.shared?.showAccessibilityDragHelper()
+                showError("Enable Accessibility in System Settings, then start recording again.")
+                return false
+            }
+
+            switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .authorized:
+                isMicrophoneGranted = true
+                isMicrophoneDenied = false
+            case .notDetermined:
+                isMicrophoneGranted = false
+                isMicrophoneDenied = false
+                AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                    DispatchQueue.main.async {
+                        self?.isMicrophoneGranted = granted
+                        self?.isMicrophoneDenied = !granted
+                        if !granted {
+                            self?.showError("Enable Microphone in System Settings, then start recording again.")
+                        }
+                    }
+                }
+                showError("Allow microphone access, then start recording again.")
+                return false
+            case .denied, .restricted:
+                isMicrophoneGranted = false
+                isMicrophoneDenied = true
+                showError("Enable Microphone in System Settings, then start recording again.")
+                return false
+            @unknown default:
+                isMicrophoneGranted = false
+                isMicrophoneDenied = true
+                showError("Enable Microphone in System Settings, then start recording again.")
+                return false
+            }
         }
 
         return true
@@ -418,14 +480,36 @@ final class AppState: ObservableObject {
 
     func startRecording() {
         guard state == .idle else { return }
-        guard validateTranscriptionPrerequisites(requiresMicrophone: true) else { return }
+        guard validateTranscriptionPrerequisites(requiresMicrophone: true) else {
+            resetFailedRecordingStart(keepErrorOverlay: true)
+            return
+        }
         cancelPendingStopTask()
 
         lastError = nil
+
+        guard recorder.startRecording(inputDeviceID: settings.selectedInputDeviceID) else {
+            let message = recorder.error ?? "Could not start recording. Check microphone access and try again."
+            resetFailedRecordingStart()
+            showError(message)
+            return
+        }
+
         state = .recording
         showOverlayWindow = true
+    }
 
-        recorder.startRecording(inputDeviceID: settings.selectedInputDeviceID)
+    private func resetFailedRecordingStart(keepErrorOverlay: Bool = false) {
+        cancelPendingStopTask()
+        _ = recorder.stopRecording()
+        recorder.stopMonitoring()
+        recorder.cleanup()
+        state = .idle
+        processingStage = .none
+        keyDownTime = nil
+        if !keepErrorOverlay {
+            showOverlayWindow = false
+        }
     }
 
 

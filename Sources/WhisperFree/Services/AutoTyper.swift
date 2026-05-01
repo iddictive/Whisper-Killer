@@ -33,6 +33,7 @@ final class AutoTyper {
 
         keyDown?.post(tap: .cgAnnotatedSessionEventTap)
         keyUp?.post(tap: .cgAnnotatedSessionEventTap)
+        releaseModifiers()
     }
 
     /// Directly "types" text into the focused application without using the clipboard
@@ -63,6 +64,7 @@ final class AutoTyper {
             keyDown?.post(tap: .cgAnnotatedSessionEventTap)
             keyUp?.post(tap: .cgAnnotatedSessionEventTap)
         }
+        releaseModifiers()
     }
 
     /// Emergency release of all major modifier keys
@@ -94,6 +96,6 @@ final class AutoTyper {
         
         keyDown?.post(tap: .cgAnnotatedSessionEventTap)
         keyUp?.post(tap: .cgAnnotatedSessionEventTap)
+        releaseModifiers()
     }
 }
-
