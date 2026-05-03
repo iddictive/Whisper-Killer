@@ -13,6 +13,8 @@ struct LiveTranslatorSettingsView: View {
     
     @State private var localModels: [String] = []
     @State private var isLoadingModels = false
+    @State private var isOllamaRunning: Bool?
+    @State private var modelLoadError: String?
     
     // Check if Ollama exists
     @State private var isOllamaInstalled: Bool = {
@@ -211,74 +213,28 @@ struct LiveTranslatorSettingsView: View {
                                     .onReceive(installer.$ollamaStatus) { status in
                                         if status == "Installed Successfully" {
                                             isOllamaInstalled = true
+                                            refreshModels()
                                         }
                                     }
                                 } else {
                                     // Ollama is installed -> Show model selector
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Text("Ollama Model")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        
-                                        HStack {
-                                            if isLoadingModels {
-                                                ProgressView().controlSize(.small)
-                                                Text("Fetching models...").font(.caption2)
-                                            } else if localModels.isEmpty {
-                                                Text("No models found. Enter a name to pull.")
-                                                    .font(.caption2).foregroundStyle(.secondary)
-                                            } else {
-                                                Picker("", selection: $appState.settings.liveTranslatorLocalModel) {
-                                                    Text("Select a model...").tag("")
-                                                    ForEach(localModels, id: \.self) { model in
-                                                        HStack {
-                                                            Text(model)
-                                                            if appState.settings.liveTranslatorLocalModel == model {
-                                                                Image(systemName: "checkmark").font(.caption2)
-                                                            }
-                                                        }.tag(model)
-                                                    }
-                                                }
-                                                .pickerStyle(.menu)
-                                                .frame(width: 250)
-                                                .onChange(of: appState.settings.liveTranslatorLocalModel) { _, _ in 
-                                                    appState.saveSettings()
-                                                    notifyLiveTranslatorSettingsChanged()
-                                                }
-                                            }
-                                            
-                                            Spacer()
-                                            
-                                            Button { 
-                                                refreshModels()
-                                            } label: {
-                                                Image(systemName: "arrow.clockwise")
-                                                    .font(.system(size: 10))
-                                            }
-                                            .buttonStyle(.plain)
-                                            .help("Refresh model list from Ollama")
+                                    OllamaModelSelector(
+                                        selectedModel: $appState.settings.liveTranslatorLocalModel,
+                                        localModels: localModels,
+                                        isLoadingModels: isLoadingModels,
+                                        isOllamaRunning: isOllamaRunning,
+                                        modelLoadError: modelLoadError,
+                                        pullStatus: pullStatus,
+                                        isPulling: isPulling,
+                                        onRefresh: refreshModels,
+                                        onDownload: {
+                                            pullModel(name: appState.settings.liveTranslatorLocalModel)
+                                        },
+                                        onModelChange: {
+                                            appState.saveSettings()
+                                            notifyLiveTranslatorSettingsChanged()
                                         }
-
-                                        HStack {
-                                            TextField("Custom model name (e.g. qwen2.5:3b)", text: $appState.settings.liveTranslatorLocalModel)
-                                                .textFieldStyle(.roundedBorder)
-                                                .onChange(of: appState.settings.liveTranslatorLocalModel) { _, _ in
-                                                    appState.saveSettings()
-                                                    notifyLiveTranslatorSettingsChanged()
-                                                }
-                                            
-                                            Button(isPulling ? "Pulling..." : "Download") {
-                                                pullModel(name: appState.settings.liveTranslatorLocalModel)
-                                            }
-                                            .disabled(isPulling || appState.settings.liveTranslatorLocalModel.isEmpty || localModels.contains(appState.settings.liveTranslatorLocalModel))
-                                        }
-                                        
-                                        if let status = pullStatus {
-                                            Text(status)
-                                                .font(.caption2)
-                                                .foregroundStyle(status.contains("Failed") ? .red : .accentColor)
-                                        }
-                                    }
+                                    )
                                 }
                             }
                         } else {
@@ -291,9 +247,28 @@ struct LiveTranslatorSettingsView: View {
                     .padding(8)
                 }
                 
-                // 3. Target Language
+                // 3. Languages
                 GroupBox {
                     VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Text("Spoken Language")
+                                .font(.headline)
+                            Spacer()
+                            Picker("", selection: $appState.settings.liveTranslatorSourceLanguage) {
+                                ForEach(AppSettings.supportedLanguages, id: \.code) { lang in
+                                    Text(lang.name).tag(lang.code)
+                                }
+                            }
+                            .frame(width: 150)
+                            .onChange(of: appState.settings.liveTranslatorSourceLanguage) { _, _ in
+                                appState.settings.liveTranslatorSourceLanguage = AppSettings.normalizedLiveTranslatorSourceLanguageCode(appState.settings.liveTranslatorSourceLanguage)
+                                appState.saveSettings()
+                                notifyLiveTranslatorSettingsChanged()
+                            }
+                        }
+
+                        Divider()
+
                         HStack {
                             Text("Target Language")
                                 .font(.headline)
@@ -325,8 +300,18 @@ struct LiveTranslatorSettingsView: View {
                 appState.settings.liveTranslatorTargetLanguage = normalizedLanguage
                 appState.saveSettings()
             }
+            let normalizedSourceLanguage = AppSettings.normalizedLiveTranslatorSourceLanguageCode(appState.settings.liveTranslatorSourceLanguage)
+            if normalizedSourceLanguage != appState.settings.liveTranslatorSourceLanguage {
+                appState.settings.liveTranslatorSourceLanguage = normalizedSourceLanguage
+                appState.saveSettings()
+            }
             if isOllamaInstalled {
                 refreshModels()
+            } else {
+                isOllamaRunning = nil
+                localModels = []
+                modelLoadError = nil
+                pullStatus = nil
             }
         }
     }
@@ -346,24 +331,31 @@ struct LiveTranslatorSettingsView: View {
     }
     
     private func pullModel(name: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+
         let engine = LocalTranslationEngine()
         isPulling = true
         pullStatus = "Checking Ollama..."
         
-        Task {
+        Task { @MainActor in
             if await !engine.isRunning() {
+                isOllamaRunning = false
+                modelLoadError = "Start Ollama to select or download local models."
                 pullStatus = "Failed: Ollama isn't running."
                 isPulling = false
                 return
             }
+            isOllamaRunning = true
+            modelLoadError = nil
             pullStatus = "Starting download..."
             do {
-                try await engine.pullModel(name: name) { status in
+                try await engine.pullModel(name: trimmedName) { status in
                     DispatchQueue.main.async {
                         self.pullStatus = status
                     }
                 }
-                pullStatus = "Downloaded '\(name)' successfully!"
+                pullStatus = "Downloaded '\(trimmedName)' successfully."
                 refreshModels()
             } catch {
                 pullStatus = "Failed: \(error.localizedDescription)"
@@ -374,20 +366,194 @@ struct LiveTranslatorSettingsView: View {
 
     private func refreshModels() {
         isLoadingModels = true
+        modelLoadError = nil
+        if !isPulling {
+            pullStatus = nil
+        }
+
         Task {
             let engine = LocalTranslationEngine()
+            if await !engine.isRunning() {
+                await MainActor.run {
+                    self.localModels = []
+                    self.isOllamaRunning = false
+                    self.modelLoadError = "Start Ollama to select or download local models."
+                    self.isLoadingModels = false
+                }
+                return
+            }
+
             do {
                 let models = try await engine.getLocalModels()
                 await MainActor.run {
                     self.localModels = models
+                    self.isOllamaRunning = true
+                    self.modelLoadError = models.isEmpty ? "No local models found. Enter a model name to download one." : nil
                     self.isLoadingModels = false
                 }
             } catch {
                 print("❌ Failed to fetch Ollama models: \(error)")
                 await MainActor.run {
+                    self.localModels = []
+                    self.isOllamaRunning = false
+                    self.modelLoadError = "Can't reach Ollama. Start the app and refresh."
                     self.isLoadingModels = false
                 }
             }
         }
+    }
+}
+
+private struct OllamaModelSelector: View {
+    @Binding var selectedModel: String
+
+    let localModels: [String]
+    let isLoadingModels: Bool
+    let isOllamaRunning: Bool?
+    let modelLoadError: String?
+    let pullStatus: String?
+    let isPulling: Bool
+    let onRefresh: () -> Void
+    let onDownload: () -> Void
+    let onModelChange: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+
+            if let modelLoadError {
+                unavailableMessage(modelLoadError)
+            }
+
+            HStack(spacing: 10) {
+                modelPicker
+                modelTextField
+                downloadButton
+            }
+
+            if let pullStatus {
+                Text(pullStatus)
+                    .font(SW.compactFont)
+                    .foregroundStyle(pullStatusColor)
+            }
+        }
+        .onChange(of: selectedModel) { _, _ in
+            onModelChange()
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text("Ollama Model")
+                .font(SW.labelFont)
+                .foregroundStyle(SW.secondaryText)
+
+            SWStatusBadge(title: ollamaStatusTitle, icon: ollamaStatusIcon, color: ollamaStatusColor)
+
+            if isLoadingModels {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            Spacer()
+
+            Button(action: onRefresh) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .disabled(isLoadingModels)
+            .help("Refresh model list from Ollama")
+        }
+    }
+
+    private func unavailableMessage(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(SW.warning)
+            Text(message)
+                .font(SW.compactFont)
+                .foregroundStyle(SW.secondaryText)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(SW.warning.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+    }
+
+    private var modelPicker: some View {
+        Picker("", selection: $selectedModel) {
+            if !selectedModel.isEmpty, !localModels.contains(selectedModel) {
+                Text("Current: \(selectedModel)")
+                    .tag(selectedModel)
+            }
+
+            if localModels.isEmpty {
+                Text("No local models").tag("")
+            } else {
+                Text("Select a model").tag("")
+                ForEach(localModels, id: \.self) { model in
+                    Text(model).tag(model)
+                }
+            }
+        }
+        .pickerStyle(.menu)
+        .frame(width: 250)
+        .disabled(isLoadingModels || isOllamaRunning != true || localModels.isEmpty)
+    }
+
+    private var modelTextField: some View {
+        TextField("Model name, e.g. qwen2.5:3b", text: $selectedModel)
+            .textFieldStyle(.roundedBorder)
+            .disabled(isOllamaRunning != true || isPulling)
+    }
+
+    private var downloadButton: some View {
+        Button(action: onDownload) {
+            HStack(spacing: 6) {
+                if isPulling {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text(isPulling ? "Pulling" : "Download")
+            }
+        }
+        .disabled(!canDownloadLocalModel)
+    }
+
+    private var trimmedSelectedModel: String {
+        selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canDownloadLocalModel: Bool {
+        isOllamaRunning == true &&
+        !isPulling &&
+        !trimmedSelectedModel.isEmpty &&
+        !localModels.contains(trimmedSelectedModel)
+    }
+
+    private var ollamaStatusTitle: String {
+        if isLoadingModels { return "Checking" }
+        switch isOllamaRunning {
+        case true: return "Running"
+        case false: return "Offline"
+        case nil: return "Unknown"
+        }
+    }
+
+    private var ollamaStatusIcon: String {
+        if isLoadingModels { return "arrow.triangle.2.circlepath" }
+        return isOllamaRunning == true ? "checkmark.circle.fill" : "xmark.circle.fill"
+    }
+
+    private var ollamaStatusColor: Color {
+        if isLoadingModels { return SW.secondaryText }
+        return isOllamaRunning == true ? SW.success : SW.danger
+    }
+
+    private var pullStatusColor: Color {
+        guard let pullStatus else { return SW.secondaryText }
+        return pullStatus.hasPrefix("Failed") ? SW.danger : SW.accent
     }
 }

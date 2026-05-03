@@ -39,6 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         AppDelegate.shared = self
         print("🚀 applicationDidFinishLaunching...")
 
+        configureApplicationIcon()
+
         // Ensure app can run without dock icon but with menu bar
         NSApp.setActivationPolicy(.accessory)
 
@@ -72,6 +74,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             showSetupWizard()
         }
         print("✨ Launch sequence complete")
+    }
+
+    private func configureApplicationIcon() {
+        let iconURLs = [
+            Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+            Bundle.main.url(forResource: "AppIcon", withExtension: "icns", subdirectory: "Resources"),
+            Bundle.module.url(forResource: "AppIcon", withExtension: "icns", subdirectory: "Resources"),
+            Bundle.module.resourceURL?.appendingPathComponent("Resources/AppIcon.icns")
+        ].compactMap { $0 }
+
+        guard let iconURL = iconURLs.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+              let icon = NSImage(contentsOf: iconURL)
+        else { return }
+
+        NSApp.applicationIconImage = icon
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -123,6 +140,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 // MARK: - Window Controllers
 
 @MainActor
+private func applyAppWindowIcon(_ window: NSWindow) {
+    window.miniwindowImage = NSApp.applicationIconImage
+}
+
+@MainActor
 final class SetupWizardWindowController: NSObject {
     private var window: NSWindow?
 
@@ -154,6 +176,7 @@ final class SetupWizardWindowController: NSObject {
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         window.backgroundColor = .clear
+        applyAppWindowIcon(window)
 
         self.window = window
         window.makeKeyAndOrderFront(nil)
@@ -195,6 +218,7 @@ final class SettingsWindowController: NSObject {
         window.isReleasedWhenClosed = false
         window.backgroundColor = .clear
         window.isOpaque = false
+        applyAppWindowIcon(window)
 
         self.window = window
         window.makeKeyAndOrderFront(nil)
@@ -230,6 +254,7 @@ final class HistoryWindowController: NSObject {
         window.isReleasedWhenClosed = false
         window.backgroundColor = .clear
         window.isOpaque = false
+        applyAppWindowIcon(window)
 
         self.window = window
         window.makeKeyAndOrderFront(nil)
@@ -265,6 +290,7 @@ final class FileTranscriptionWindowController: NSObject {
         window.isReleasedWhenClosed = false
         window.backgroundColor = .clear
         window.isOpaque = false
+        applyAppWindowIcon(window)
 
         self.window = window
         window.makeKeyAndOrderFront(nil)
@@ -276,6 +302,12 @@ final class FileTranscriptionWindowController: NSObject {
 final class AccessibilityDragHelperWindowController: NSObject {
     private var panel: NSPanel?
     private var repositionTimer: Timer?
+
+    private struct AnchorWindow {
+        let frame: NSRect
+        let visibleFrame: NSRect
+        let visibleArea: CGFloat
+    }
 
     func show() {
         if let panel {
@@ -325,11 +357,12 @@ final class AccessibilityDragHelperWindowController: NSObject {
     }
 
     private func position(_ panel: NSPanel) {
-        let targetFrame = systemSettingsWindowFrame() ?? appWindowFrame(excluding: panel)
+        let target = systemSettingsWindowAnchor() ?? appWindowAnchor(excluding: panel)
         let size = panel.frame.size
 
-        if let targetFrame {
-            let screenFrame = visibleFrame(containing: targetFrame)
+        if let target {
+            let targetFrame = target.frame
+            let screenFrame = target.visibleFrame
             let rightX = targetFrame.maxX + 16
             let leftX = targetFrame.minX - size.width - 16
             let x: CGFloat
@@ -352,25 +385,18 @@ final class AccessibilityDragHelperWindowController: NSObject {
         }
     }
 
-    private func appWindowFrame(excluding panel: NSPanel) -> NSRect? {
+    private func appWindowAnchor(excluding panel: NSPanel) -> AnchorWindow? {
         NSApp.windows
-            .filter { $0.isVisible && $0 !== panel && !$0.frame.isEmpty }
-            .sorted { $0.frame.maxX > $1.frame.maxX }
-            .first?
-            .frame
-    }
-
-    private func visibleFrame(containing rect: NSRect) -> NSRect {
-        let midpoint = NSPoint(x: rect.midX, y: rect.midY)
-        if let screen = NSScreen.screens.first(where: { $0.frame.contains(midpoint) }) {
-            return screen.visibleFrame
-        }
-
-        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(rect) }) {
-            return screen.visibleFrame
-        }
-
-        return NSScreen.main?.visibleFrame ?? .zero
+            .compactMap { window -> AnchorWindow? in
+                guard window.isVisible, window !== panel, !window.frame.isEmpty else { return nil }
+                return usableAnchor(
+                    from: window.frame,
+                    minimumVisibleSize: NSSize(width: 220, height: 160),
+                    minimumVisibleRatio: 0.25
+                )
+            }
+            .sorted { $0.visibleArea > $1.visibleArea }
+            .first
     }
 
     private func startRepositioning() {
@@ -386,7 +412,7 @@ final class AccessibilityDragHelperWindowController: NSObject {
                 self.position(panel)
                 ticks += 1
 
-                if ticks >= 24 || self.systemSettingsWindowFrame() != nil {
+                if ticks >= 24 || self.systemSettingsWindowAnchor() != nil {
                     timer.invalidate()
                     self.repositionTimer = nil
                 }
@@ -394,22 +420,54 @@ final class AccessibilityDragHelperWindowController: NSObject {
         }
     }
 
-    private func systemSettingsWindowFrame() -> NSRect? {
+    private func systemSettingsWindowAnchor() -> AnchorWindow? {
         guard let windowInfo = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return nil
         }
 
-        for window in windowInfo {
+        let candidates = windowInfo.compactMap { window -> AnchorWindow? in
             guard let owner = window[kCGWindowOwnerName as String] as? String,
                   owner == "System Settings" || owner == "System Preferences",
+                  (window[kCGWindowLayer as String] as? Int ?? 0) == 0,
                   let bounds = window[kCGWindowBounds as String] as? [String: Any],
                   let cgRect = CGRect(dictionaryRepresentation: bounds as CFDictionary)
-            else { continue }
+            else { return nil }
 
-            return appKitRect(fromWindowServerRect: cgRect)
+            return usableAnchor(
+                from: appKitRect(fromWindowServerRect: cgRect),
+                minimumVisibleSize: NSSize(width: 300, height: 220),
+                minimumVisibleRatio: 0.35
+            )
         }
 
-        return nil
+        return candidates.sorted { $0.visibleArea > $1.visibleArea }.first
+    }
+
+    private func usableAnchor(from rect: NSRect, minimumVisibleSize: NSSize, minimumVisibleRatio: CGFloat) -> AnchorWindow? {
+        guard rect.width > 0, rect.height > 0 else { return nil }
+
+        let visibleMatches = NSScreen.screens.compactMap { screen -> (frame: NSRect, area: CGFloat)? in
+            let visible = rect.intersection(screen.visibleFrame)
+            guard !visible.isNull, visible.width > 0, visible.height > 0 else { return nil }
+            return (screen.visibleFrame, visible.width * visible.height)
+        }
+
+        guard let best = visibleMatches.max(by: { $0.area < $1.area }) else {
+            return nil
+        }
+
+        let visibleRect = rect.intersection(best.frame)
+        let fullArea = max(rect.width * rect.height, 1)
+        let visibleRatio = best.area / fullArea
+
+        guard visibleRect.width >= minimumVisibleSize.width,
+              visibleRect.height >= minimumVisibleSize.height,
+              visibleRatio >= minimumVisibleRatio
+        else {
+            return nil
+        }
+
+        return AnchorWindow(frame: rect, visibleFrame: best.frame, visibleArea: best.area)
     }
 
     private func appKitRect(fromWindowServerRect rect: CGRect) -> NSRect {
