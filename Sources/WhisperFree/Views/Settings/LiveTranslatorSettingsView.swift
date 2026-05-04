@@ -536,9 +536,9 @@ private struct OllamaModelSelector: View {
     private var ollamaStatusTitle: String {
         if isLoadingModels { return "Checking" }
         switch isOllamaRunning {
-        case true: return "Running"
-        case false: return "Offline"
-        case nil: return "Unknown"
+        case .some(true): return "Running"
+        case .some(false): return "Offline"
+        case .none: return "Unknown"
         }
     }
 
