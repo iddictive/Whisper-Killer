@@ -55,6 +55,11 @@ jobs:
           cp Sources/WhisperFree/Resources/Info.plist WhisperKiller.app/Contents/
           /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable WhisperKiller" "WhisperKiller.app/Contents/Info.plist"
 
+          if [ -d Sources/WhisperFree/Resources/Profanity ]; then
+            mkdir -p WhisperKiller.app/Contents/Resources/Resources
+            ditto --norsrc --noextattr Sources/WhisperFree/Resources/Profanity WhisperKiller.app/Contents/Resources/Resources/Profanity
+          fi
+
           if [ -f Sources/WhisperFree/Resources/AppIcon.icns ]; then
             cp Sources/WhisperFree/Resources/AppIcon.icns WhisperKiller.app/Contents/Resources/
           fi

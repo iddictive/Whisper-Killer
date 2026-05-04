@@ -17,8 +17,8 @@ let package = Package(
             dependencies: [
             ],
             path: "Sources/WhisperFree",
-            resources: [
-                .copy("Resources")
+            exclude: [
+                "Resources"
             ]
         )
     ]

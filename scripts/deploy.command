@@ -10,6 +10,7 @@ APP_NAME="WhisperKiller"
 BUNDLE_NAME="WhisperKiller.app"
 INFO_PLIST="Sources/WhisperFree/Resources/Info.plist"
 ICON_FILE="Sources/WhisperFree/Resources/AppIcon.icns"
+PROFANITY_RESOURCE_DIR="Sources/WhisperFree/Resources/Profanity"
 BUILD_PATH=".build/apple/Products/Release/$APP_NAME"
 DIST_DIR="dist"
 
@@ -75,6 +76,10 @@ if [ $? -eq 0 ]; then
     cp "$ACTUAL_BINARY" "$BUNDLE_NAME/Contents/MacOS/$APP_NAME"
     chmod +x "$BUNDLE_NAME/Contents/MacOS/$APP_NAME"
     cp "$INFO_PLIST" "$BUNDLE_NAME/Contents/Info.plist"
+    if [ -d "$PROFANITY_RESOURCE_DIR" ]; then
+        mkdir -p "$BUNDLE_NAME/Contents/Resources/Resources"
+        ditto --norsrc --noextattr "$PROFANITY_RESOURCE_DIR" "$BUNDLE_NAME/Contents/Resources/Resources/Profanity"
+    fi
     if [ -f "$ICON_FILE" ]; then
         cp "$ICON_FILE" "$BUNDLE_NAME/Contents/Resources/AppIcon.icns"
     fi

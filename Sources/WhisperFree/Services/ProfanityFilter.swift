@@ -173,10 +173,10 @@ enum ProfanityFilter {
 
     private static func loadBundledTerms(named name: String) -> [String] {
         let candidateURLs: [URL?] = [
-            Bundle.module.url(forResource: name, withExtension: "txt", subdirectory: "Resources/Profanity"),
-            Bundle.module.resourceURL?.appendingPathComponent("Resources/Profanity/\(name).txt"),
             Bundle.main.url(forResource: name, withExtension: "txt", subdirectory: "Resources/Profanity"),
-            Bundle.main.resourceURL?.appendingPathComponent("Resources/Profanity/\(name).txt")
+            Bundle.main.resourceURL?.appendingPathComponent("Resources/Profanity/\(name).txt"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appendingPathComponent("Sources/WhisperFree/Resources/Profanity/\(name).txt")
         ]
 
         for candidateURL in candidateURLs {

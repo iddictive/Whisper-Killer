@@ -13,9 +13,9 @@
 	<key>CFBundleName</key>
 	<string>WhisperKiller</string>
 	<key>CFBundleShortVersionString</key>
-	<string>3.6</string>
+	<string>3.7</string>
 	<key>CFBundleVersion</key>
-	<string>3.6</string>
+	<string>3.7</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>

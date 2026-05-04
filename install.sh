@@ -11,6 +11,7 @@ cd "$(dirname "$0")"
 echo "🚀 Starting Rapid Build & Install..."
 
 INFO_PLIST="Sources/WhisperFree/Resources/Info.plist"
+PROFANITY_RESOURCE_DIR="Sources/WhisperFree/Resources/Profanity"
 source "scripts/version.sh"
 VERSION="$(resolve_whisperkiller_version "$INFO_PLIST")"
 echo "🔢 Version: $VERSION"
@@ -29,6 +30,10 @@ if [ -d "$APP_BUNDLE" ]; then
     mkdir -p "$APP_BUNDLE/Contents/Resources"
     cp "$BINARY_SOURCE" "$APP_BUNDLE/Contents/MacOS/WhisperKiller"
     cp "$INFO_PLIST" "$APP_BUNDLE/Contents/Info.plist"
+    if [ -d "$PROFANITY_RESOURCE_DIR" ]; then
+        mkdir -p "$APP_BUNDLE/Contents/Resources/Resources"
+        ditto --norsrc --noextattr "$PROFANITY_RESOURCE_DIR" "$APP_BUNDLE/Contents/Resources/Resources/Profanity"
+    fi
     if [ -f "Sources/WhisperFree/Resources/AppIcon.icns" ]; then
         cp "Sources/WhisperFree/Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
     fi

@@ -80,8 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         let iconURLs = [
             Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
             Bundle.main.url(forResource: "AppIcon", withExtension: "icns", subdirectory: "Resources"),
-            Bundle.module.url(forResource: "AppIcon", withExtension: "icns", subdirectory: "Resources"),
-            Bundle.module.resourceURL?.appendingPathComponent("Resources/AppIcon.icns")
+            Bundle.main.resourceURL?.appendingPathComponent("Resources/AppIcon.icns")
         ].compactMap { $0 }
 
         guard let iconURL = iconURLs.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
