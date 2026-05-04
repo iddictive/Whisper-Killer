@@ -61,9 +61,17 @@ struct TextEditorCustom: View {
 }
 
 struct WindowHeaderUnderlay: View {
+    var height: CGFloat = 0
+
     var body: some View {
-        Color.clear
-            .frame(height: 0)
+        VisualEffectView(material: .sidebar, blendingMode: .withinWindow)
+            .frame(height: height)
+            .overlay(alignment: .bottom) {
+                if height > 0 {
+                    Divider()
+                        .opacity(0.08)
+                }
+            }
             .accessibilityHidden(true)
     }
 }

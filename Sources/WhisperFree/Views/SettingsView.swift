@@ -121,6 +121,8 @@ struct SettingsView: View {
         appState.settings.hotkeyConfig.displayString
     }
 
+    private let toolbarUnderlayHeight: CGFloat = 30
+
     var body: some View {
         ZStack {
             // Unified glass background for the whole window
@@ -193,7 +195,7 @@ struct SettingsView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            WindowHeaderUnderlay()
+            WindowHeaderUnderlay(height: toolbarUnderlayHeight)
         }
         .onAppear {
             dependencyInstaller.refreshHomebrewStatus()

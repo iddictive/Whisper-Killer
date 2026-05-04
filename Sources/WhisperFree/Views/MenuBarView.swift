@@ -378,12 +378,16 @@ struct MenuBarView: View {
     }
 
     private var modeToolbar: some View {
-        HStack(spacing: 8) {
+        let activeModeName = appState.settings.isModeEnabled(appState.settings.selectedMode)
+            ? appState.settings.selectedModeName
+            : TranscriptionMode.raw.name
+
+        return HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(appState.settings.allModes) { mode in
                         let isEnabled = appState.settings.isModeEnabled(mode)
-                        let isSelected = appState.settings.selectedModeName == mode.name
+                        let isSelected = activeModeName == mode.name
 
                         Button {
                             guard isEnabled else { return }
@@ -409,6 +413,7 @@ struct MenuBarView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(!isEnabled)
+                        .help(modeHelpText(for: mode, isEnabled: isEnabled))
                     }
                 }
             }
@@ -420,6 +425,22 @@ struct MenuBarView: View {
                 color: appState.state == .idle ? SW.secondaryText : SW.accent
             )
         }
+    }
+
+    private func modeHelpText(for mode: TranscriptionMode, isEnabled: Bool) -> String {
+        if isEnabled {
+            return mode.localizedDescription
+        }
+
+        if !appState.settings.hasOpenAIAPIKey {
+            return L.tr("Add an OpenAI API key to unlock AI modes.", "Добавьте OpenAI API key, чтобы открыть AI-режимы.")
+        }
+
+        if !appState.settings.enablePostProcessing {
+            return L.tr("Enable AI Refinement to unlock this mode.", "Включите AI-обработку, чтобы открыть этот режим.")
+        }
+
+        return L.tr("This mode is unavailable.", "Этот режим недоступен.")
     }
 
     private var recordingStateTitle: String {

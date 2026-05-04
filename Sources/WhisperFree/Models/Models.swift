@@ -575,6 +575,7 @@ struct AppSettings: Codable {
     // Live Translator
     var liveTranslatorEnabled: Bool = false
     var liveTranslatorTargetLanguage: String = "ru"
+    var liveTranslatorSourceLanguage: String = "auto"
     var liveTranslatorEngine: LiveTranslationEngine = .cloud
     var liveTranslatorLocalModel: String = "qwen2.5:3b"
     var liveTranslatorInputDeviceID: String? = nil
@@ -590,7 +591,7 @@ struct AppSettings: Codable {
              enablePostProcessing, useMonochromeMenuIcon, usageLogs,
              experimentalAutoEnter, enableSpeakerDiarization, customProfanityDictionaries, selectedInputDeviceID,
              lifetimeWords, lifetimeDuration, audioRetentionPolicy,
-             liveTranslatorEnabled, liveTranslatorTargetLanguage, liveTranslatorEngine, liveTranslatorLocalModel,
+             liveTranslatorEnabled, liveTranslatorTargetLanguage, liveTranslatorSourceLanguage, liveTranslatorEngine, liveTranslatorLocalModel,
              liveTranslatorInputDeviceID, liveTranslatorHotkeyConfig, useScreenCaptureKit, liveTranslatorCompactMode
     }
 
@@ -627,6 +628,7 @@ struct AppSettings: Codable {
         audioRetentionPolicy = try container.decodeIfPresent(AudioRetentionPolicy.self, forKey: .audioRetentionPolicy) ?? .thirtyDays
         liveTranslatorEnabled = try container.decodeIfPresent(Bool.self, forKey: .liveTranslatorEnabled) ?? false
         liveTranslatorTargetLanguage = try container.decodeIfPresent(String.self, forKey: .liveTranslatorTargetLanguage) ?? "ru"
+        liveTranslatorSourceLanguage = try container.decodeIfPresent(String.self, forKey: .liveTranslatorSourceLanguage) ?? "auto"
         liveTranslatorEngine = try container.decodeIfPresent(LiveTranslationEngine.self, forKey: .liveTranslatorEngine) ?? .cloud
         liveTranslatorLocalModel = try container.decodeIfPresent(String.self, forKey: .liveTranslatorLocalModel) ?? "qwen2.5:3b"
         liveTranslatorInputDeviceID = try container.decodeIfPresent(String.self, forKey: .liveTranslatorInputDeviceID)
