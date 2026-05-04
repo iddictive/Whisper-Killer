@@ -132,8 +132,6 @@ struct SettingsView: View {
         appState.settings.hotkeyConfig.displayString
     }
 
-    private let toolbarUnderlayHeight: CGFloat = 30
-
     var body: some View {
         ZStack {
             // Unified glass background for the whole window
@@ -205,13 +203,11 @@ struct SettingsView: View {
                 .background(SW.contentBackground.opacity(0.12))
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            WindowHeaderUnderlay(height: toolbarUnderlayHeight)
-        }
         .onAppear {
             dependencyInstaller.refreshHomebrewStatus()
             modelManager.refreshDownloadedModels()
         }
+        .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(columnTitle)
