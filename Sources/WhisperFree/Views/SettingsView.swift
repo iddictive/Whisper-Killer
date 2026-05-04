@@ -44,6 +44,17 @@ struct SettingsView: View {
         }
     }
 
+    private var updateVersionText: String {
+        guard let latest = updater.latestVersion, !latest.isEmpty else {
+            return appVersionText
+        }
+
+        return L.tr(
+            "Installed \(updater.currentVersion) / Latest \(latest)",
+            "Установлена \(updater.currentVersion) / Последняя \(latest)"
+        )
+    }
+
     private var isEditingCustomMode: Bool {
         editingModeID != nil
     }
@@ -957,7 +968,7 @@ struct SettingsView: View {
 
                 VStack(spacing: 8) {
                     Text("Whisper Killer").font(.system(size: 28, weight: .bold))
-                    Text(appVersionText).font(.subheadline).foregroundStyle(.secondary)
+                    Text(updateVersionText).font(.subheadline).foregroundStyle(.secondary)
                 }
 
                 Text(L.tr("Hyper-fast voice to text for macOS.", "Очень быстрая голосовая транскрибация для macOS."))

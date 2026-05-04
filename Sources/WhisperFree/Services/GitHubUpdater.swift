@@ -5,7 +5,7 @@ import Combine
 class GitHubUpdater: ObservableObject {
     static let shared = GitHubUpdater()
     private let repo = "iddictive/Whisper-Killer"
-    private let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.0"
+    let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.0"
 
     @Published var isChecking = false
     @Published var updateAvailable = false
@@ -49,6 +49,8 @@ class GitHubUpdater: ObservableObject {
 
                         let latest = tagName.replacingOccurrences(of: "v", with: "")
                         self?.latestVersion = latest
+                        self?.updateAvailable = false
+                        self?.downloadUrl = nil
 
                         let defaults = UserDefaults.standard
                         let automaticallyDownloadsUpdates = defaults.bool(forKey: "automaticallyDownloadsUpdates")
@@ -147,22 +149,109 @@ class GitHubUpdater: ObservableObject {
         let appPath = "/Applications/WhisperKiller.app"
         let mountPath = "/tmp/whisperfree_update"
         let stagedAppPath = "/tmp/WhisperKiller.updated.app"
+        let backupAppPath = "/tmp/WhisperKiller.previous.app"
+        let logPath = "/tmp/WhisperKillerUpdate.log"
+        let expectedVersion = latestVersion ?? ""
         let script = """
-        set -e
+        set -eu
+        logPath="\(logPath)"
+        appPath="\(appPath)"
+        mountPath="\(mountPath)"
+        stagedAppPath="\(stagedAppPath)"
+        backupAppPath="\(backupAppPath)"
+        dmgPath="\(dmgPath)"
+        expectedVersion="\(expectedVersion)"
+        executableName="WhisperKiller"
+        needsRollback=0
+
+        exec >> "$logPath" 2>&1
+
+        log() {
+            printf '%s %s\\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
+        }
+
+        rollback() {
+            log "Rolling back to previous app"
+            pkill -x "$executableName" 2>/dev/null || true
+            rm -rf "$appPath"
+            if [ -d "$backupAppPath" ]; then
+                ditto "$backupAppPath" "$appPath"
+                open "$appPath"
+                log "Rollback complete"
+            else
+                log "Rollback skipped: backup missing"
+            fi
+        }
+
+        finish() {
+            status=$?
+            if [ "$status" -ne 0 ] && [ "$needsRollback" = "1" ]; then
+                rollback
+            fi
+            hdiutil detach "$mountPath" -quiet 2>/dev/null || true
+            rm -rf "$mountPath" "$stagedAppPath"
+            exit "$status"
+        }
+        trap finish EXIT
+
+        log "Starting update install"
         while kill -0 \(pid) 2>/dev/null; do sleep 0.1; done
-        for id in com.whisperfree.app com.whisperflow.app WhisperFree WhisperFlow; do
-            tccutil reset Accessibility "$id" 2>/dev/null || true
-            tccutil reset Microphone "$id" 2>/dev/null || true
+
+        rm -rf "$mountPath" "$stagedAppPath"
+        mkdir -p "$mountPath"
+        hdiutil attach "$dmgPath" -mountpoint "$mountPath" -nobrowse -quiet
+
+        sourceAppPath="$mountPath/WhisperKiller.app"
+        if [ ! -x "$sourceAppPath/Contents/MacOS/$executableName" ]; then
+            log "Staged app is missing executable"
+            exit 1
+        fi
+
+        ditto "$sourceAppPath" "$stagedAppPath"
+        xattr -rc "$stagedAppPath" || true
+        codesign --verify --deep --strict "$stagedAppPath"
+
+        stagedVersion="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$stagedAppPath/Contents/Info.plist" 2>/dev/null || true)"
+        if [ -z "$stagedVersion" ]; then
+            log "Staged app version is missing"
+            exit 1
+        fi
+        if [ -n "$expectedVersion" ] && [ "$stagedVersion" != "$expectedVersion" ]; then
+            log "Staged app version $stagedVersion does not match expected $expectedVersion"
+            exit 1
+        fi
+
+        rm -rf "$backupAppPath"
+        if [ -d "$appPath" ]; then
+            ditto "$appPath" "$backupAppPath"
+            needsRollback=1
+        fi
+
+        rm -rf "$appPath"
+        ditto "$stagedAppPath" "$appPath"
+        log "Installed version $stagedVersion"
+
+        open "$appPath"
+        smokePassed=0
+        for _ in {1..30}; do
+            sleep 0.5
+            if pgrep -x "$executableName" >/dev/null; then
+                sleep 3
+                if pgrep -x "$executableName" >/dev/null; then
+                    smokePassed=1
+                    break
+                fi
+            fi
         done
-        rm -rf "\(mountPath)" "\(stagedAppPath)"
-        mkdir -p "\(mountPath)"
-        hdiutil attach "\(dmgPath)" -mountpoint "\(mountPath)" -nobrowse -quiet
-        ditto "\(mountPath)/WhisperKiller.app" "\(stagedAppPath)"
-        hdiutil detach "\(mountPath)" -quiet || true
-        xattr -rc "\(stagedAppPath)" || true
-        rm -rf "\(appPath)"
-        mv "\(stagedAppPath)" "\(appPath)"
-        open "\(appPath)"
+
+        if [ "$smokePassed" != "1" ]; then
+            log "Smoke launch failed"
+            exit 1
+        fi
+
+        needsRollback=0
+        rm -rf "$backupAppPath"
+        log "Update install succeeded"
         """
 
         do {
