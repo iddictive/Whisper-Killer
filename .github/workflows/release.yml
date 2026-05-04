@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
 
 jobs:
   build:
@@ -28,48 +26,67 @@ jobs:
       - name: Calculate Version
         id: versioning
         run: |
-          COMMIT_COUNT=$(git rev-list --count HEAD)
-          APP_VERSION="2.0.$COMMIT_COUNT"
+          source scripts/version.sh
+          APP_VERSION="$(next_release_version Sources/WhisperFree/Resources/Info.plist)"
           echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
           echo "VERSION=$APP_VERSION" >> $GITHUB_OUTPUT
+          WHISPERKILLER_VERSION="$APP_VERSION" resolve_whisperkiller_version Sources/WhisperFree/Resources/Info.plist
 
       - name: Build App
         run: |
           swift build -c release
           mkdir -p WhisperKiller.app/Contents/MacOS
           mkdir -p WhisperKiller.app/Contents/Resources
-          
+
           # Find the binary dynamically
           echo "🔍 Looking for binary: WhisperKiller in .build/..."
           ACTUAL_BINARY=$(find .build -name "WhisperKiller" -type f -not -path "*.dSYM*" 2>/dev/null | grep -i "/release/" | head -n 1)
-          
+
           if [ -z "$ACTUAL_BINARY" ]; then
             echo "❌ Binary not found!"
             find .build -name "WhisperKiller" -type f 2>/dev/null
             exit 1
           fi
           echo "Found binary at: $ACTUAL_BINARY"
-          
+
           cp "$ACTUAL_BINARY" WhisperKiller.app/Contents/MacOS/
           chmod +x WhisperKiller.app/Contents/MacOS/WhisperKiller
-          
+
           cp Sources/WhisperFree/Resources/Info.plist WhisperKiller.app/Contents/
-          
-          # Inject metadata into Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ env.APP_VERSION }}" "WhisperKiller.app/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ env.APP_VERSION }}" "WhisperKiller.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable WhisperKiller" "WhisperKiller.app/Contents/Info.plist"
-          
+
           if [ -f Sources/WhisperFree/Resources/AppIcon.icns ]; then
             cp Sources/WhisperFree/Resources/AppIcon.icns WhisperKiller.app/Contents/Resources/
           fi
-          
+
           # Ad-hoc sign after all files are in place
-          codesign --force --deep --sign - WhisperKiller.app
+          rm -rf WhisperKiller.app/Contents/_CodeSignature
+          dot_clean -m WhisperKiller.app 2>/dev/null || true
+          find WhisperKiller.app -name '._*' -delete
+          find WhisperKiller.app -print0 | xargs -0 xattr -c 2>/dev/null || true
+          codesign --force --deep --sign - WhisperKiller.app || {
+            echo "First signing pass failed after xattr cleanup. Retrying once..."
+            rm -rf WhisperKiller.app/Contents/_CodeSignature
+            dot_clean -m WhisperKiller.app 2>/dev/null || true
+            find WhisperKiller.app -name '._*' -delete
+            find WhisperKiller.app -print0 | xargs -0 xattr -c 2>/dev/null || true
+            codesign --force --deep --sign - WhisperKiller.app
+          }
+          dot_clean -m WhisperKiller.app 2>/dev/null || true
+          find WhisperKiller.app -name '._*' -delete
+          find WhisperKiller.app -print0 | xargs -0 xattr -c 2>/dev/null || true
+          codesign --verify --deep --strict WhisperKiller.app
 
       - name: Create DMG
         run: |
-          hdiutil create -volname "WhisperKiller" -srcfolder "WhisperKiller.app" -ov -format UDZO "WhisperKiller.dmg"
+          DMG_ROOT="$(mktemp -d)"
+          ditto --norsrc --noextattr "WhisperKiller.app" "$DMG_ROOT/WhisperKiller.app"
+          dot_clean -m "$DMG_ROOT/WhisperKiller.app" 2>/dev/null || true
+          find "$DMG_ROOT/WhisperKiller.app" -name '._*' -delete
+          find "$DMG_ROOT/WhisperKiller.app" -print0 | xargs -0 xattr -c 2>/dev/null || true
+          ln -s /Applications "$DMG_ROOT/Applications"
+          hdiutil create -volname "WhisperKiller" -srcfolder "$DMG_ROOT" -ov -format UDZO "WhisperKiller-${{ env.APP_VERSION }}.dmg"
+          rm -rf "$DMG_ROOT"
 
       - name: Release
         uses: softprops/action-gh-release@v1
@@ -77,7 +94,7 @@ jobs:
           tag_name: v${{ env.APP_VERSION }}
           name: WhisperKiller v${{ env.APP_VERSION }}
           files: |
-            WhisperKiller.dmg
+            WhisperKiller-${{ env.APP_VERSION }}.dmg
           draft: false
           prerelease: false
         env:
