@@ -1084,6 +1084,7 @@ final class AppState: ObservableObject {
 
     private func startRussianMicrophoneTranslator() {
         settings.useScreenCaptureKit = false
+        settings.liveTranslatorSourceLanguage = "ru"
         settings.liveTranslatorTargetLanguage = "Russian"
         saveSettings()
         NotificationCenter.default.post(name: NSNotification.Name("LiveTranslatorSettingsChanged"), object: nil)

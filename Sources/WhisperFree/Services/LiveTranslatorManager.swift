@@ -21,6 +21,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     private var translationTask: Task<Void, Never>?
     private var process: Process?
     private var outputPipe: Pipe?
+    private var errorPipe: Pipe?
     
     private let localEngine = LocalTranslationEngine()
     private var rawStreamBuffer: String = ""
@@ -84,6 +85,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         
         let currentSettings = Storage.shared.loadSettings()
         let targetLanguage = AppSettings.normalizedLiveTranslatorTargetLanguage(currentSettings.liveTranslatorTargetLanguage)
+        let sourceLanguage = AppSettings.normalizedLiveTranslatorSourceLanguageCode(currentSettings.liveTranslatorSourceLanguage)
         let engineChoice = currentSettings.liveTranslatorEngine
         let localModel = currentSettings.liveTranslatorLocalModel
         
@@ -91,6 +93,10 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         let modelSize = currentSettings.localModelSize
         guard let modelURL = AppState.shared.modelManager.findModelPath(for: modelSize) else {
             failToStart(with: "Whisper model '\(modelSize.rawValue)' not found. Please download it in Engine settings.")
+            return
+        }
+        if modelSize.forcesEnglishDecoding && sourceLanguage != "en" {
+            failToStart(with: "The selected Whisper model only supports English. Choose a multilingual local model for Live Translator.")
             return
         }
         let modelPath = modelURL.path
@@ -126,12 +132,14 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             "--length", "10000",
             "--keep", "200",
             "-vth", "0.6",
+            "-l", sourceLanguage,
             "-c", "\(deviceID)"
         ]
         
         outputPipe = Pipe()
+        errorPipe = Pipe()
         process?.standardOutput = outputPipe
-        process?.standardError = outputPipe // Capture stderr for better debugging if it fails
+        process?.standardError = errorPipe
         
         // 4. Read Output
         outputPipe?.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -140,9 +148,15 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             
             if let output = String(data: data, encoding: .utf8) {
                 Task { @MainActor in
-                    self.processOutput(output, targetLanguage: targetLanguage, engine: engineChoice, localModel: localModel)
+                    self.processOutput(output, targetLanguage: targetLanguage, sourceLanguage: sourceLanguage, engine: engineChoice, localModel: localModel)
                 }
             }
+        }
+
+        errorPipe?.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
+            print("whisper_debug: stream stderr: \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
         }
         
         do {
@@ -212,6 +226,8 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         process = nil
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         outputPipe = nil
+        errorPipe?.fileHandleForReading.readabilityHandler = nil
+        errorPipe = nil
         
         transcriptionTask?.cancel()
         transcriptionTask = nil
@@ -240,7 +256,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         }
     }
     
-    private func processOutput(_ text: String, targetLanguage: String, engine: LiveTranslationEngine, localModel: String) {
+    private func processOutput(_ text: String, targetLanguage: String, sourceLanguage: String, engine: LiveTranslationEngine, localModel: String) {
         rawStreamBuffer += text
         
         // 1. Prevent buffer from growing indefinitely (Memory safety)
@@ -264,7 +280,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         let recentLines = Array(finalLines.suffix(3))
         
         let cleanedLines = recentLines.map { cleanLine($0) }.filter { !$0.isEmpty }
-        let fullText = cleanedLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let fullText = canonicalLiveText(from: cleanedLines)
         
         // 2. Artifact/Silence filtering (Whisper often hallucinates during silence)
         guard !fullText.isEmpty else { return }
@@ -273,9 +289,9 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         if fullText == originalText { return }
         
         resetSilenceTimer()
-        originalText = fullText
+        originalText = mergedWithLatestSegment(fullText) ?? fullText
         
-        triggerTranslation(targetLanguage: targetLanguage, engine: engine, localModel: localModel)
+        triggerTranslation(targetLanguage: targetLanguage, sourceLanguage: sourceLanguage, engine: engine, localModel: localModel)
     }
 
     private func handleProcessTermination(_ terminatedProcess: Process) {
@@ -286,6 +302,8 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
 
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         outputPipe = nil
+        errorPipe?.fileHandleForReading.readabilityHandler = nil
+        errorPipe = nil
         process = nil
 
         if isStoppingProcess || !isRunning {
@@ -339,6 +357,57 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         let regex = try! NSRegularExpression(pattern: "\u{001B}\\[[0-9;]*[a-zA-Z]", options: .caseInsensitive)
         let range = NSRange(location: 0, length: text.utf16.count)
         var cleaned = regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
+
+        let metadataPatterns = [
+            #"init:[^\n]*"#,
+            #"samples\s+per\s+frame:[^\n]*"#,
+            #"main:[^\n]*"#,
+            #"whisper_print_progress_callback:\s*progress\s*=\s*\d+%"#,
+            #"whisper_print_timings:[^\n]*"#,
+            #"whisper_full_with_state:[^\n]*"#,
+            #"whisper_(?:init|model_load|backend_init)[^\n]*"#,
+            #"ggml_[^\n]*"#,
+            #"system_info:[^\n]*"#
+        ]
+
+        for pattern in metadataPatterns {
+            cleaned = cleaned.replacingOccurrences(
+                of: pattern,
+                with: "",
+                options: .regularExpression
+            )
+        }
+
+        let hallucinationPatterns = [
+            #"(?i)\bDimaTorzok\b"#,
+            #"(?i)\bsubtitles?\s+by[^\n.!?]*[.!?]?"#,
+            #"(?i)\btranslated\s+by[^\n.!?]*[.!?]?"#,
+            #"(?i)\bedited\s+by[^\n.!?]*[.!?]?"#,
+            #"(?i)\bto\s+be\s+continued[^\n.!?]*[.!?]?"#,
+            #"(?i)thank\s+you\s+for\s+watching[^\n.!?]*[.!?]?"#,
+            #"(?i)субтитры\s+(?:сделал|сделала|сделали|создал|создала|создали|создавал|подготовил|подготовила|подготовили)[^\n.!?]*[.!?]?"#,
+            #"(?i)перев[её]л[^\n.!?]*[.!?]?"#,
+            #"(?i)отредактировал[^\n.!?]*[.!?]?"#,
+            #"(?i)продолжение\s+следует[^\n.!?]*[.!?]?"#,
+            #"(?i)подпишитесь\s+на\s+канал[^\n.!?]*[.!?]?"#
+        ]
+
+        for pattern in hallucinationPatterns {
+            cleaned = cleaned.replacingOccurrences(
+                of: pattern,
+                with: "",
+                options: .regularExpression
+            )
+        }
+
+        let normalizedAfterHallucinationCleanup = cleaned
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+
+        if normalizedAfterHallucinationCleanup == "тревожная музыка" ||
+            normalizedAfterHallucinationCleanup == "music" {
+            return ""
+        }
         
         // Remove timestamps e.g. [00:00:00.000 --> 00:00:02.000]
         let timestampRegex = try! NSRegularExpression(pattern: "\\[[0-9:.]* --> [0-9:.]*\\]", options: .caseInsensitive)
@@ -358,7 +427,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    private func triggerTranslation(targetLanguage: String, engine: LiveTranslationEngine, localModel: String) {
+    private func triggerTranslation(targetLanguage: String, sourceLanguage: String, engine: LiveTranslationEngine, localModel: String) {
         translationDebounceTimer?.cancel()
         
         let textToTranslate = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -368,11 +437,11 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             .delay(for: .milliseconds(500), scheduler: RunLoop.main) // Reduced from 800ms for better responsiveness
             .sink { [weak self] in
                 guard let self = self else { return }
-                self.performTranslation(text: textToTranslate, targetLanguage: targetLanguage, engine: engine, localModel: localModel)
+                self.performTranslation(text: textToTranslate, targetLanguage: targetLanguage, sourceLanguage: sourceLanguage, engine: engine, localModel: localModel)
             }
     }
     
-    private func performTranslation(text: String, targetLanguage: String, engine: LiveTranslationEngine, localModel: String) {
+    private func performTranslation(text: String, targetLanguage: String, sourceLanguage: String, engine: LiveTranslationEngine, localModel: String) {
         lastSentText = text
         statusMessage = "Translating..."
         
@@ -381,7 +450,9 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             do {
                 let translationResult: String
                 
-                if engine == .local {
+                if AppSettings.liveTranslatorSourceMatchesTarget(sourceLanguageCode: sourceLanguage, targetLanguage: targetLanguage) {
+                    translationResult = text
+                } else if engine == .local {
                     translationResult = try await self.localEngine.translate(text: text, targetLanguage: targetLanguage, model: localModel)
                 } else {
                     let settings = Storage.shared.loadSettings()
@@ -444,9 +515,10 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
                 return
             }
 
-            if original.hasPrefix(lastSegment.originalText) || lastSegment.originalText.hasPrefix(original) {
-                transcriptSegments[lastIndex].originalText = original
-                transcriptSegments[lastIndex].translatedText = translated
+            if let mergedOriginal = mergeOverlappingText(previous: lastSegment.originalText, incoming: original) {
+                let mergedTranslated = mergeOverlappingText(previous: lastSegment.translatedText, incoming: translated) ?? translated
+                transcriptSegments[lastIndex].originalText = mergedOriginal
+                transcriptSegments[lastIndex].translatedText = mergedTranslated
                 return
             }
         }
@@ -458,6 +530,133 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
                 translatedText: translated
             )
         )
+    }
+
+    private func canonicalLiveText(from lines: [String]) -> String {
+        lines.reduce("") { current, line in
+            guard !current.isEmpty else { return line }
+            return mergeOverlappingText(previous: current, incoming: line) ?? "\(current) \(line)"
+        }
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func mergedWithLatestSegment(_ text: String) -> String? {
+        guard let latest = transcriptSegments.last else { return nil }
+        return mergeOverlappingText(previous: latest.originalText, incoming: text)
+    }
+
+    private func mergeOverlappingText(previous: String, incoming: String) -> String? {
+        let previous = previous.trimmingCharacters(in: .whitespacesAndNewlines)
+        let incoming = incoming.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !previous.isEmpty, !incoming.isEmpty else { return nil }
+        if previous == incoming { return previous }
+
+        let previousNormalized = normalizedSpeechText(previous)
+        let incomingNormalized = normalizedSpeechText(incoming)
+
+        guard !previousNormalized.isEmpty, !incomingNormalized.isEmpty else { return nil }
+        if previousNormalized == incomingNormalized { return previous.count >= incoming.count ? previous : incoming }
+        if incomingNormalized.hasPrefix(previousNormalized) { return incoming }
+        if previousNormalized.hasPrefix(incomingNormalized) { return previous }
+        if incomingNormalized.contains(previousNormalized) { return incoming }
+        if previousNormalized.contains(incomingNormalized) { return previous }
+
+        let previousWords = normalizedSpeechWords(previous)
+        let incomingWords = normalizedSpeechWords(incoming)
+        let overlap = longestWordOverlap(left: previousWords, right: incomingWords)
+        if overlap >= 3 {
+            let incomingOriginalWords = incoming.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            let remainder = incomingOriginalWords.dropFirst(overlap).joined(separator: " ")
+            guard !remainder.isEmpty else { return previous }
+
+            return "\(previous) \(remainder)"
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        if let fuzzyMerge = mergeByCommonPhrase(previous: previous, incoming: incoming, previousWords: previousWords, incomingWords: incomingWords) {
+            return fuzzyMerge
+        }
+
+        return nil
+    }
+
+    private func longestWordOverlap(left: [String], right: [String]) -> Int {
+        guard !left.isEmpty, !right.isEmpty else { return 0 }
+
+        let maxCandidate = min(left.count, right.count)
+        for count in stride(from: maxCandidate, through: 1, by: -1) {
+            if Array(left.suffix(count)) == Array(right.prefix(count)) {
+                return count
+            }
+        }
+
+        return 0
+    }
+
+    private func normalizedSpeechText(_ text: String) -> String {
+        normalizedSpeechWords(text).joined(separator: " ")
+    }
+
+    private func mergeByCommonPhrase(previous: String, incoming: String, previousWords: [String], incomingWords: [String]) -> String? {
+        guard let match = longestCommonPhrase(left: previousWords, right: incomingWords), match.count >= 3 else {
+            return nil
+        }
+
+        let previousOriginalWords = previous.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let incomingOriginalWords = incoming.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+
+        if match.rightStart == 0 {
+            let remainder = incomingOriginalWords.dropFirst(match.count).joined(separator: " ")
+            guard !remainder.isEmpty else { return previous }
+            return "\(previous) \(remainder)"
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        if match.leftStart == 0 && incomingOriginalWords.count > previousOriginalWords.count {
+            return incoming
+        }
+
+        let remainder = incomingOriginalWords.dropFirst(match.rightStart + match.count).joined(separator: " ")
+        guard !remainder.isEmpty else { return previous }
+
+        return "\(previous) \(remainder)"
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func longestCommonPhrase(left: [String], right: [String]) -> (leftStart: Int, rightStart: Int, count: Int)? {
+        guard !left.isEmpty, !right.isEmpty else { return nil }
+
+        var best: (leftStart: Int, rightStart: Int, count: Int)?
+        for leftStart in left.indices {
+            for rightStart in right.indices {
+                var count = 0
+                while leftStart + count < left.count,
+                      rightStart + count < right.count,
+                      left[leftStart + count] == right[rightStart + count] {
+                    count += 1
+                }
+
+                if count > (best?.count ?? 0) {
+                    best = (leftStart, rightStart, count)
+                }
+            }
+        }
+
+        return best
+    }
+
+    private func normalizedSpeechWords(_ text: String) -> [String] {
+        text
+            .lowercased()
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { token in
+                token.filter { $0.isLetter || $0.isNumber }
+            }
+            .filter { !$0.isEmpty }
     }
 
     // MARK: - SCK Audio Logic
@@ -543,17 +742,19 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             
             // Now transcribe
             let modelSize = Storage.shared.loadSettings().localModelSize
+            let settings = Storage.shared.loadSettings()
+            let sourceLanguage = AppSettings.normalizedLiveTranslatorSourceLanguageCode(settings.liveTranslatorSourceLanguage)
             let whisper = LocalWhisper(modelSize: modelSize)
             
             print("🎙️ SCK: Transcribing \(audioToProcess.count) bytes...")
-            let text = try await whisper.transcribe(audioURL: tempURL, language: "auto", timeRange: nil, onProgress: nil)
+            let text = try await whisper.transcribe(audioURL: tempURL, language: sourceLanguage, timeRange: nil, onProgress: nil)
             
             if !text.isEmpty {
                 await MainActor.run {
                     self.originalText = text
-                    let settings = Storage.shared.loadSettings()
                     self.triggerTranslation(
                         targetLanguage: AppSettings.normalizedLiveTranslatorTargetLanguage(settings.liveTranslatorTargetLanguage),
+                        sourceLanguage: sourceLanguage,
                         engine: settings.liveTranslatorEngine,
                         localModel: settings.liveTranslatorLocalModel
                     )

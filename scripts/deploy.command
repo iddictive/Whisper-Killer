@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Whisper Free Deploy Script (Version 3.0)
+# Whisper Free Deploy Script
 # Move to the project root (parent of scripts/)
 cd "$(dirname "$0")/.."
 echo "📂 Project root: $(pwd)"
@@ -25,20 +25,9 @@ function resolve_signing_identity() {
 }
 
 # 1. Versioning
-VERSION="${WHISPERKILLER_VERSION:-3.0}"
+source "scripts/version.sh"
+VERSION="$(resolve_whisperkiller_version "$INFO_PLIST")"
 echo "🔢 Version: $VERSION"
-
-# Update Info.plist before build
-function update_plist() {
-    local key=$1
-    local value=$2
-    /usr/libexec/PlistBuddy -c "Set :$key $value" "$INFO_PLIST" 2>/dev/null || \
-    /usr/libexec/PlistBuddy -c "Add :$key string $value" "$INFO_PLIST"
-}
-
-update_plist "CFBundleVersion" "$VERSION"
-update_plist "CFBundleShortVersionString" "$VERSION"
-update_plist "CFBundleExecutable" "$APP_NAME"
 
 echo "🚀 Starting deployment v$VERSION..."
 
@@ -51,7 +40,7 @@ sleep 1
 
 # 3. Build release
 echo "📦 Building release version $VERSION..."
-swift build -c release --arch arm64
+bash scripts/swift_build_with_progress.sh swift build -c release --arch arm64
 
 if [ $? -eq 0 ]; then
     echo "✅ Build successful!"

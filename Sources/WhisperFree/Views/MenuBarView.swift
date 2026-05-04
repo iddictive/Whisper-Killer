@@ -378,57 +378,61 @@ struct MenuBarView: View {
     }
 
     private var modeToolbar: some View {
-        HStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(appState.settings.allModes) { mode in
-                        let isEnabled = appState.settings.isModeEnabled(mode)
-                        let isSelected = appState.settings.selectedModeName == mode.name
+        let activeModeName = appState.settings.isModeEnabled(appState.settings.selectedMode)
+            ? appState.settings.selectedModeName
+            : TranscriptionMode.raw.name
 
-                        Button {
-                            guard isEnabled else { return }
-                            appState.settings.selectedModeName = mode.name
-                            appState.saveSettings()
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: isEnabled ? mode.icon : "lock.fill")
-                                    .font(.system(size: 10, weight: .semibold))
-                                Text(mode.localizedName)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .lineLimit(1)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(isSelected ? SW.accent.opacity(0.14) : SW.rowBackground)
-                            .foregroundStyle(isSelected ? SW.accent : (isEnabled ? SW.primaryText : SW.secondaryText))
-                            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous)
-                                    .strokeBorder(isSelected ? SW.accent.opacity(0.32) : SW.border, lineWidth: 1)
-                            )
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(appState.settings.allModes) { mode in
+                    let isEnabled = appState.settings.isModeEnabled(mode)
+                    let isSelected = activeModeName == mode.name
+
+                    Button {
+                        guard isEnabled else { return }
+                        appState.settings.selectedModeName = mode.name
+                        appState.saveSettings()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: isEnabled ? mode.icon : "lock.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(mode.localizedName)
+                                .font(.system(size: 11, weight: .semibold))
+                                .lineLimit(1)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(!isEnabled)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(isSelected ? SW.accent.opacity(0.14) : SW.rowBackground)
+                        .foregroundStyle(isSelected ? SW.accent : (isEnabled ? SW.primaryText : SW.secondaryText))
+                        .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous)
+                                .strokeBorder(isSelected ? SW.accent.opacity(0.32) : SW.border, lineWidth: 1)
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .disabled(!isEnabled)
+                    .help(modeHelpText(for: mode, isEnabled: isEnabled))
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            SWStatusBadge(
-                title: recordingStateTitle,
-                icon: appState.state == .idle ? "checkmark.circle" : "waveform",
-                color: appState.state == .idle ? SW.secondaryText : SW.accent
-            )
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var recordingStateTitle: String {
-        switch appState.state {
-        case .idle: return L.tr("Ready", "Готово")
-        case .recording: return L.tr("Recording", "Запись")
-        case .processing: return L.tr("Processing", "Обработка")
-        case .typing: return L.tr("Typing", "Печать")
+    private func modeHelpText(for mode: TranscriptionMode, isEnabled: Bool) -> String {
+        if isEnabled {
+            return mode.localizedDescription
         }
+
+        if !appState.settings.hasOpenAIAPIKey {
+            return L.tr("Add an OpenAI API key to unlock AI modes.", "Добавьте OpenAI API key, чтобы открыть AI-режимы.")
+        }
+
+        if !appState.settings.enablePostProcessing {
+            return L.tr("Enable AI Refinement to unlock this mode.", "Включите AI-обработку, чтобы открыть этот режим.")
+        }
+
+        return L.tr("This mode is unavailable.", "Этот режим недоступен.")
     }
 
     private var inputDeviceMenu: some View {

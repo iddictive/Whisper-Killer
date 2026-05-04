@@ -45,7 +45,7 @@ final class HotkeyManager {
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
-            options: .listenOnly,
+            options: .defaultTap,
             eventsOfInterest: eventMask,
             callback: { proxy, type, event, refcon -> Unmanaged<CGEvent>? in
                 guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
@@ -86,6 +86,7 @@ final class HotkeyManager {
         }
 
         let pass = Unmanaged.passUnretained(event)
+        let consume: Unmanaged<CGEvent>? = nil
 
         // ── STATE A: No hotkey held ──────────────────────────────────
         if !isKeyDown {
@@ -94,10 +95,10 @@ final class HotkeyManager {
             let kc = Int(event.getIntegerValueField(.keyboardEventKeycode))
             guard kc == config.keyCode && checkModifiers(event.flags) else { return pass }
 
-            // Hotkey pressed!
+            // Consume the configured hotkey so held keys like Space do not auto-repeat into the foreground app.
             isKeyDown = true
             DispatchQueue.main.async { [weak self] in self?.onKeyDown?() }
-            return pass
+            return consume
         }
 
         // ── STATE B: Hotkey IS held (recording) ─────────────────────
@@ -120,7 +121,7 @@ final class HotkeyManager {
             if kc == config.keyCode {
                 isKeyDown = false
                 DispatchQueue.main.async { [weak self] in self?.onKeyUp?() }
-                return pass
+                return consume
             }
             return pass
         }
@@ -128,7 +129,7 @@ final class HotkeyManager {
         if type == .keyDown {
             let kc = Int(event.getIntegerValueField(.keyboardEventKeycode))
             if kc == config.keyCode {
-                return pass
+                return consume
             }
             return pass
         }
