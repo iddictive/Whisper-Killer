@@ -72,6 +72,8 @@ struct TranscriptionRunProvenance: Equatable {
         switch engineType {
         case .local:
             return TranscriptionEngineType.local.localizedShortTitle
+        case .gigaAM:
+            return TranscriptionEngineType.gigaAM.localizedShortTitle
         case .cloud:
             return cloudModel?.localizedTitle ?? TranscriptionEngineType.cloud.localizedShortTitle
         }
@@ -197,11 +199,11 @@ final class QueueItem: ObservableObject, Identifiable {
                 ) { p, _ in
                     Task { @MainActor in
                         self.progress = p
-                        let isLocal = runSettings.engineType == .local
+                        let isLocalRuntime = runSettings.engineType != .cloud
 
-                        if p < (isLocal ? 0.15 : 0.10) {
+                        if p < (isLocalRuntime ? 0.15 : 0.10) {
                             self.status = .extracting
-                        } else if !isLocal && p < 0.30 {
+                        } else if !isLocalRuntime && p < 0.30 {
                             self.status = .uploading
                         } else {
                             self.status = .transcribing

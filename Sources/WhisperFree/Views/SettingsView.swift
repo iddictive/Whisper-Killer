@@ -598,9 +598,7 @@ struct SettingsView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text(
-                        appState.settings.engineType == .cloud
-                            ? L.tr("Cloud transcription uses OpenAI speech-to-text models. New GPT-4o Transcribe variants are available here alongside Whisper-1.", "Облачная транскрибация использует speech-to-text модели OpenAI. Здесь доступны новые варианты GPT-4o Transcribe вместе с Whisper-1.")
-                            : L.tr("Local models run entirely on your Mac. They are private and work offline. Larger models are more accurate but use more memory.", "Локальные модели работают полностью на вашем Mac. Они приватные и доступны офлайн. Более крупные модели точнее, но требуют больше памяти.")
+                        engineDescription
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -713,6 +711,11 @@ struct SettingsView: View {
                             }
                         }
                     }
+
+                    if appState.settings.engineType == .gigaAM {
+                        gigaAMExperimentCard
+                            .padding(.horizontal)
+                    }
                 }
             }
             .padding(.vertical)
@@ -778,6 +781,43 @@ struct SettingsView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 12)
+    }
+
+    private var engineDescription: String {
+        switch appState.settings.engineType {
+        case .cloud:
+            return L.tr("Cloud transcription uses OpenAI speech-to-text models. New GPT-4o Transcribe variants are available here alongside Whisper-1.", "Облачная транскрибация использует speech-to-text модели OpenAI. Здесь доступны новые варианты GPT-4o Transcribe вместе с Whisper-1.")
+        case .local:
+            return L.tr("Local models run entirely on your Mac. They are private and work offline. Larger models are more accurate but use more memory.", "Локальные модели работают полностью на вашем Mac. Они приватные и доступны офлайн. Более крупные модели точнее, но требуют больше памяти.")
+        case .gigaAM:
+            return L.tr("Experimental Russian ASR runs locally through Python with ai-sage/GigaAM-v3.", "Экспериментальная русская ASR-модель работает локально через Python и ai-sage/GigaAM-v3.")
+        }
+    }
+
+    private var gigaAMExperimentCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: TranscriptionEngineType.gigaAM.icon)
+                    .foregroundStyle(SW.accent)
+                Text(L.tr("Russian ASR experiment", "Эксперимент для русского ASR"))
+                    .font(.system(size: 13, weight: .semibold))
+            }
+
+            Text(L.tr("Best for Russian comparison runs. First launch downloads the model cache.", "Для сравнения качества на русском. Первый запуск скачает кэш модели."))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            Text(GigaAMTranscriber.setupCommand)
+                .font(.system(size: 10, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .padding(12)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var homebrewStatusRow: some View {

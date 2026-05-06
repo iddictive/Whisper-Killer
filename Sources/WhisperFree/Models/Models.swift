@@ -300,11 +300,13 @@ enum LiveTranslationEngine: String, Codable, CaseIterable {
 enum TranscriptionEngineType: String, Codable, CaseIterable {
     case cloud = "Cloud (OpenAI)"
     case local = "Local (whisper.cpp)"
+    case gigaAM = "Experimental GigaAM Russian"
 
     var icon: String {
         switch self {
         case .cloud: return "cloud"
         case .local: return "desktopcomputer"
+        case .gigaAM: return "waveform.badge.magnifyingglass"
         }
     }
 }

@@ -229,9 +229,18 @@ struct FileTranscriptionView: View {
                     Label(L.tr("Cloud (OpenAI)", "Облако (OpenAI)"), systemImage: "cloud.fill")
                 }
                 .disabled(appState.settings.apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                Button {
+                    appState.settings.engineType = .gigaAM
+                    appState.settings.language = "ru"
+                    appState.saveSettings()
+                    updateVisibleCosts()
+                } label: {
+                    Label(L.tr("GigaAM Russian", "GigaAM русский"), systemImage: TranscriptionEngineType.gigaAM.icon)
+                }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: appState.settings.engineType == .cloud ? "cloud.fill" : "cpu")
+                    Image(systemName: appState.settings.engineType.fileTranscriptionIcon)
                     Text(appState.settings.engineType.localizedShortTitle)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 8))
@@ -707,7 +716,7 @@ struct QueueCardView: View {
         if let provenance = item.runProvenance {
             SWStatusBadge(
                 title: provenance.displayName,
-                icon: provenance.engineType == .cloud ? "cloud.fill" : "cpu",
+                icon: provenance.engineType.fileTranscriptionIcon,
                 color: SW.secondaryText
             )
         }
@@ -988,5 +997,15 @@ struct QueueCardView: View {
         let m = Int(seconds) / 60
         let s = Int(seconds) % 60
         return String(format: "%d:%02d", m, s)
+    }
+}
+
+private extension TranscriptionEngineType {
+    var fileTranscriptionIcon: String {
+        switch self {
+        case .cloud: return "cloud.fill"
+        case .local: return "cpu"
+        case .gigaAM: return icon
+        }
     }
 }

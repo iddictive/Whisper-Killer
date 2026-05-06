@@ -86,6 +86,9 @@ struct MenuBarView: View {
                         let isActive = appState.settings.engineType == type
                         Button {
                             appState.settings.engineType = type
+                            if type == .gigaAM {
+                                appState.settings.language = "ru"
+                            }
                             appState.saveSettings()
                         } label: {
                             HStack(spacing: 3) {

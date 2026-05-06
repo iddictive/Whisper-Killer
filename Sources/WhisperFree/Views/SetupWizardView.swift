@@ -529,13 +529,16 @@ struct SetupWizardView: View {
             HStack(spacing: 10) {
                 enginePill(type: .cloud, icon: "cloud.fill", label: "Cloud")
                 enginePill(type: .local, icon: "desktopcomputer", label: "Local")
+                enginePill(type: .gigaAM, icon: TranscriptionEngineType.gigaAM.icon, label: "GigaAM")
             }
 
             // Engine details
             if selectedEngine == .cloud {
                 cloudEngineCard
-            } else {
+            } else if selectedEngine == .local {
                 localEngineCard
+            } else {
+                gigaAMEngineCard
             }
         }
     }
@@ -597,6 +600,30 @@ struct SetupWizardView: View {
             ForEach(LocalModelSize.allCases, id: \.self) { size in
                 modelRow(size)
             }
+        }
+        .padding(16)
+        .background(bgCard)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
+    }
+
+    private var gigaAMEngineCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: TranscriptionEngineType.gigaAM.icon).foregroundStyle(Color.accentColor).font(.system(size: 11))
+                Text(L.tr("Russian · Local · Experimental", "Русский · Локально · Эксперимент"))
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(textSecondary)
+            }
+
+            tagRow(items: [
+                ("text.bubble", "GigaAM-v3", Color.accentColor),
+                ("terminal", "Python 3", .orange),
+                ("arrow.down.circle", "Downloads model cache", .orange),
+            ])
+
+            Text(L.tr("Russian-focused recognition for comparison runs.", "Распознавание под русский для сравнительных прогонов."))
+                .font(.system(size: 11))
+                .foregroundStyle(textSecondary)
         }
         .padding(16)
         .background(bgCard)
@@ -841,10 +868,10 @@ struct SetupWizardView: View {
 
     private var apiKeyStep: some View {
         VStack(spacing: 16) {
-            if selectedEngine == .local {
+            if selectedEngine != .cloud {
                 HStack(spacing: 10) {
                     Image(systemName: "info.circle.fill").foregroundStyle(accentGold)
-                    Text(L.tr("Optional for local engine. Only needed for AI post-processing modes.", "Необязательно для локального движка. Нужно только для AI-режимов постобработки."))
+                    Text(L.tr("Optional for local engines. Only needed for AI post-processing modes.", "Необязательно для локальных движков. Нужно только для AI-режимов постобработки."))
                         .font(.system(size: 12)).foregroundStyle(textSecondary)
                 }
                 .padding(14)
@@ -943,7 +970,7 @@ struct SetupWizardView: View {
                 readyRow("\(L.tr("Engine", "Движок")): \(selectedEngine.localizedTitle)", ok: true)
                 if selectedEngine == .cloud {
                     readyRow(L.tr("API Key", "API Key"), ok: !apiKey.isEmpty)
-                } else {
+                } else if selectedEngine == .local {
                     readyRow("whisper-cpp", ok: whisperInstalled)
                     if modelManager.isModelDownloaded(selectedModel) {
                         readyRow("\(L.tr("Model", "Модель")): \(selectedModel.rawValue)", ok: true)
@@ -965,6 +992,9 @@ struct SetupWizardView: View {
                     } else {
                         readyRow("\(L.tr("Model", "Модель")): \(selectedModel.rawValue)", ok: false)
                     }
+                } else {
+                    readyRow("Python 3", ok: GigaAMTranscriber.findPythonBinary() != nil)
+                    readyRow("GigaAM-v3", ok: true)
                 }
             }
             .padding(16)

@@ -135,6 +135,7 @@ extension TranscriptionEngineType {
         switch self {
         case .cloud: return L.tr("Cloud (OpenAI)", "Облако (OpenAI)")
         case .local: return L.tr("Local (whisper.cpp)", "Локально (whisper.cpp)")
+        case .gigaAM: return L.tr("GigaAM Russian", "GigaAM русский")
         }
     }
 
@@ -142,6 +143,7 @@ extension TranscriptionEngineType {
         switch self {
         case .cloud: return L.tr("Cloud", "Облако")
         case .local: return L.tr("Local", "Локально")
+        case .gigaAM: return "GigaAM"
         }
     }
 }

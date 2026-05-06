@@ -436,6 +436,11 @@ final class AppState: ObservableObject {
             return false
         }
 
+        if settings.engineType == .gigaAM && GigaAMTranscriber.findPythonBinary() == nil {
+            showError("Python 3 not found. Install Python 3, then install the GigaAM packages in Settings → Engine & API.")
+            return false
+        }
+
         if requiresMicrophone {
             guard hotkeyManager.isTrusted else {
                 isHotkeyTrusted = false
