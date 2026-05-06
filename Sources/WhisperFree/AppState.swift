@@ -845,15 +845,10 @@ final class AppState: ObservableObject {
                 processedText = ProfanityFilter.apply(to: processedText, settings: settings)
                 try Task.checkCancellation()
 
-                // 4. Store result (no auto-clipboard — user copies manually from tray)
-
-                // 5. Hide overlay BEFORE insertion to return focus to target app
-                showOverlayWindow = false
-
-                // 6. Insert Result
+                // 4. Insert Result
                 if settings.autoTypeResult {
                     state = .typing
-                    // Small delay to let system handle window closing and focus return
+                    // Small delay to let the target app settle before insertion.
                     try await Task.sleep(nanoseconds: 50_000_000)
                     try Task.checkCancellation()
                     AutoTyper.insert(text: processedText, method: settings.insertionMethod)
@@ -863,7 +858,7 @@ final class AppState: ObservableObject {
                     }
                 }
 
-                // 7. Save to history & usage logs
+                // 5. Save to history & usage logs
                 // 6. Update Stats
                 let wordCount = processedText.split { $0.isWhitespace || $0.isPunctuation }.count
                 settings.lifetimeWords += wordCount
@@ -907,6 +902,7 @@ final class AppState: ObservableObject {
 
                 state = .idle
                 processingStage = .none
+                showOverlayWindow = false
                 recorder.cleanup()
 
 
