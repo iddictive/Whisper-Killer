@@ -28,6 +28,8 @@ final class DependencyInstaller: ObservableObject {
     @Published var homebrewStatus: String = ""
     @Published var isInstallingWhisperCpp = false
     @Published var whisperCppStatus: String = ""
+    @Published var isInstallingGigaAM = false
+    @Published var gigaAMStatus: String = ""
     
     private init() {}
 
@@ -39,6 +41,10 @@ final class DependencyInstaller: ObservableObject {
 
     var isWhisperCppInstalled: Bool {
         LocalWhisper.findWhisperBinary() != nil
+    }
+
+    var isGigaAMEnvironmentInstalled: Bool {
+        FileManager.default.isExecutableFile(atPath: GigaAMTranscriber.virtualEnvironmentPythonPath)
     }
 
     func installHomebrew() {
@@ -100,6 +106,45 @@ final class DependencyInstaller: ObservableObject {
         }
     }
 
+    func installGigaAMDependencies() {
+        guard !isInstallingGigaAM else { return }
+
+        guard let python = GigaAMTranscriber.findBasePythonBinary() else {
+            gigaAMStatus = "Python 3.10-3.13 is required."
+            return
+        }
+
+        isInstallingGigaAM = true
+        gigaAMStatus = "Installing GigaAM runtime..."
+
+        Task(priority: .userInitiated) {
+            let result = await Task.detached(priority: .userInitiated) {
+                Self.runGigaAMInstall(basePythonPath: python)
+            }.value
+
+            self.isInstallingGigaAM = false
+
+            switch result {
+            case .success:
+                self.gigaAMStatus = "GigaAM runtime installed."
+            case .failure(let error):
+                self.gigaAMStatus = error.localizedDescription
+            }
+        }
+    }
+
+    func refreshGigaAMStatus() {
+        if isGigaAMEnvironmentInstalled {
+            gigaAMStatus = "GigaAM runtime detected."
+        } else if GigaAMTranscriber.findBasePythonBinary() == nil {
+            gigaAMStatus = "Python 3.10-3.13 is required."
+        } else if isInstallingGigaAM {
+            gigaAMStatus = "Installing GigaAM runtime..."
+        } else {
+            gigaAMStatus = ""
+        }
+    }
+
     nonisolated private static func runBrewInstallWhisperCpp() -> Result<Void, DependencyError> {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
@@ -114,6 +159,59 @@ final class DependencyInstaller: ObservableObject {
 
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("whisper_cpp_install_\(UUID().uuidString).log")
+        _ = FileManager.default.createFile(atPath: outputURL.path, contents: nil)
+        guard let outputHandle = try? FileHandle(forWritingTo: outputURL) else {
+            return .failure(.installationFailed("Could not create install log."))
+        }
+        defer {
+            try? outputHandle.close()
+            try? FileManager.default.removeItem(at: outputURL)
+        }
+
+        process.standardOutput = outputHandle
+        process.standardError = outputHandle
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                let output = (try? String(contentsOf: outputURL, encoding: .utf8))?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let message = installFailureMessage(from: output, status: process.terminationStatus)
+                return .failure(.installationFailed(message))
+            }
+
+            return .success(())
+        } catch {
+            return .failure(.installationFailed(error.localizedDescription))
+        }
+    }
+
+    nonisolated private static func runGigaAMInstall(basePythonPath: String) -> Result<Void, DependencyError> {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+
+        let venvPythonPath = GigaAMTranscriber.virtualEnvironmentPythonPath
+        let venvDirectory = URL(fileURLWithPath: venvPythonPath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .path
+        let installRoot = URL(fileURLWithPath: venvDirectory)
+            .deletingLastPathComponent()
+            .path
+
+        process.arguments = [
+            "-lc",
+            """
+            mkdir -p "\(installRoot)"
+            "\(basePythonPath)" -m venv "\(venvDirectory)"
+            "\(venvPythonPath)" -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org torch torchaudio transformers 'huggingface-hub<1.0' pyannote-audio torchcodec hydra-core omegaconf sentencepiece
+            """
+        ]
+
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gigaam_install_\(UUID().uuidString).log")
         _ = FileManager.default.createFile(atPath: outputURL.path, contents: nil)
         guard let outputHandle = try? FileHandle(forWritingTo: outputURL) else {
             return .failure(.installationFailed("Could not create install log."))

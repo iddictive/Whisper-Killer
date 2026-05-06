@@ -795,7 +795,10 @@ struct SettingsView: View {
     }
 
     private var gigaAMExperimentCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let isInstalled = dependencyInstaller.isGigaAMEnvironmentInstalled
+        let hasPython = GigaAMTranscriber.findBasePythonBinary() != nil
+
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: TranscriptionEngineType.gigaAM.icon)
                     .foregroundStyle(SW.accent)
@@ -807,13 +810,63 @@ struct SettingsView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
-            Text(GigaAMTranscriber.setupCommand)
-                .font(.system(size: 10, design: .monospaced))
-                .textSelection(.enabled)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.05))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            HStack(spacing: 10) {
+                Image(systemName: isInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(isInstalled ? Color.accentColor : .orange)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isInstalled ? L.tr("GigaAM runtime detected", "GigaAM runtime найден") : L.tr("GigaAM runtime not found", "GigaAM runtime не найден"))
+                        .font(.system(size: 13, weight: .semibold))
+
+                    if dependencyInstaller.isInstallingGigaAM {
+                        Text(L.tr("Installing Python runtime and model packages...", "Устанавливаю Python runtime и пакеты модели..."))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    } else if !hasPython {
+                        Text(L.tr("Python 3.10-3.13 required", "Нужен Python 3.10-3.13"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    } else if !dependencyInstaller.gigaAMStatus.isEmpty {
+                        Text(dependencyInstaller.gigaAMStatus)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                    } else {
+                        Text(L.tr("Installs into an isolated app venv.", "Ставит зависимости в отдельный venv приложения."))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                if dependencyInstaller.isInstallingGigaAM {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if isInstalled {
+                    Button(L.tr("Refresh", "Обновить")) {
+                        dependencyInstaller.refreshGigaAMStatus()
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button(L.tr("Install", "Установить")) {
+                        dependencyInstaller.installGigaAMDependencies()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!hasPython)
+                }
+            }
+
+            DisclosureGroup(L.tr("Manual command", "Команда вручную")) {
+                Text(GigaAMTranscriber.setupCommand)
+                    .font(.system(size: 10, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.05))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .font(.system(size: 11))
         }
         .padding(12)
         .background(Color.primary.opacity(0.035))

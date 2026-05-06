@@ -116,8 +116,15 @@ final class GigaAMTranscriber: TranscriptionEngine, @unchecked Sendable {
     }
 
     static func findPythonBinary() -> String? {
+        if FileManager.default.isExecutableFile(atPath: virtualEnvironmentPythonPath) {
+            return virtualEnvironmentPythonPath
+        }
+
+        return findBasePythonBinary()
+    }
+
+    static func findBasePythonBinary() -> String? {
         let possiblePaths = [
-            Self.virtualEnvironmentPython.path,
             "/usr/local/bin/python3.12",
             "/opt/homebrew/bin/python3.12",
             "/usr/local/bin/python3.11",
@@ -151,7 +158,11 @@ final class GigaAMTranscriber: TranscriptionEngine, @unchecked Sendable {
         return nil
     }
 
-    static let setupCommand = "python3.12 -m venv ~/Library/Application\\ Support/WhisperKiller/GigaAM/venv && ~/Library/Application\\ Support/WhisperKiller/GigaAM/venv/bin/python -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org torch torchaudio transformers 'huggingface-hub<1.0' pyannote-audio torchcodec hydra-core omegaconf sentencepiece"
+    static let setupCommand = "mkdir -p ~/Library/Application\\ Support/WhisperKiller/GigaAM && python3.12 -m venv ~/Library/Application\\ Support/WhisperKiller/GigaAM/venv && ~/Library/Application\\ Support/WhisperKiller/GigaAM/venv/bin/python -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org torch torchaudio transformers 'huggingface-hub<1.0' pyannote-audio torchcodec hydra-core omegaconf sentencepiece"
+
+    static var virtualEnvironmentPythonPath: String {
+        virtualEnvironmentPython.path
+    }
 
     private static var virtualEnvironmentPython: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
@@ -187,7 +198,7 @@ import argparse
 import json
 import sys
 
-SETUP = "python3.12 -m venv ~/Library/Application\\ Support/WhisperKiller/GigaAM/venv && ~/Library/Application\\ Support/WhisperKiller/GigaAM/venv/bin/python -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org torch torchaudio transformers 'huggingface-hub<1.0' pyannote-audio torchcodec hydra-core omegaconf sentencepiece"
+SETUP = "mkdir -p ~/Library/Application\\ Support/WhisperKiller/GigaAM && python3.12 -m venv ~/Library/Application\\ Support/WhisperKiller/GigaAM/venv && ~/Library/Application\\ Support/WhisperKiller/GigaAM/venv/bin/python -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org torch torchaudio transformers 'huggingface-hub<1.0' pyannote-audio torchcodec hydra-core omegaconf sentencepiece"
 
 def fail(message, code=1):
     print(message, file=sys.stderr)
