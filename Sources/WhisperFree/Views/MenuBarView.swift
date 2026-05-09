@@ -422,11 +422,6 @@ struct MenuBarView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            SWStatusBadge(
-                title: recordingStateTitle,
-                icon: appState.state == .idle ? "checkmark.circle" : "waveform",
-                color: appState.state == .idle ? SW.secondaryText : SW.accent
-            )
         }
     }
 
@@ -444,15 +439,6 @@ struct MenuBarView: View {
         }
 
         return L.tr("This mode is unavailable.", "Этот режим недоступен.")
-    }
-
-    private var recordingStateTitle: String {
-        switch appState.state {
-        case .idle: return L.tr("Ready", "Готово")
-        case .recording: return L.tr("Recording", "Запись")
-        case .processing: return L.tr("Processing", "Обработка")
-        case .typing: return L.tr("Typing", "Печать")
-        }
     }
 
     private var inputDeviceMenu: some View {
