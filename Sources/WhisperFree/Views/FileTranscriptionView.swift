@@ -856,7 +856,7 @@ struct QueueCardView: View {
     @ViewBuilder
     private var resultRow: some View {
         if item.status == .done, let result = item.result {
-            DisclosureGroup(isExpanded: $item.isExpanded) {
+            ClickableDisclosure(isExpanded: $item.isExpanded) {
                 resultContent(result)
             } label: {
                 Text(L.tr("Show Result", "Показать результат"))

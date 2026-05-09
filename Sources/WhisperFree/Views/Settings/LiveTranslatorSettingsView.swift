@@ -16,6 +16,7 @@ struct LiveTranslatorSettingsView: View {
     @State private var isOllamaRunning: Bool?
     @State private var modelLoadError: String?
     @State private var showAdvanced = false
+    @State private var showLocalModel = false
     
     // Check if Ollama exists
     @State private var isOllamaInstalled: Bool = {
@@ -116,7 +117,7 @@ struct LiveTranslatorSettingsView: View {
                             if !isOllamaInstalled {
                                 ollamaInstaller
                             } else {
-                                DisclosureGroup("Local model") {
+                                ClickableDisclosure(isExpanded: $showLocalModel) {
                                     OllamaModelSelector(
                                         selectedModel: $appState.settings.liveTranslatorLocalModel,
                                         localModels: localModels,
@@ -135,6 +136,8 @@ struct LiveTranslatorSettingsView: View {
                                         }
                                     )
                                     .padding(.top, 8)
+                                } label: {
+                                    Text("Local model")
                                 }
                             }
                         }
@@ -142,7 +145,7 @@ struct LiveTranslatorSettingsView: View {
                     .padding(8)
                 }
 
-                DisclosureGroup(isExpanded: $showAdvanced) {
+                ClickableDisclosure(isExpanded: $showAdvanced) {
                     GroupBox {
                         VStack(alignment: .leading, spacing: 16) {
                             HStack {

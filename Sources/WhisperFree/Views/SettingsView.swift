@@ -28,6 +28,9 @@ struct SettingsView: View {
     @State private var showProfanityDictionaryImporter = false
     @State private var isProfanityDictionaryDropTarget = false
     @State private var profanityDictionaryMessage: String?
+    @State private var showProfanityDictionaries = false
+    @State private var showGigaAMManualCommand = false
+    @State private var showRecentActivityDetails = false
 
     private var appVersionText: String {
         let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -496,8 +499,10 @@ struct SettingsView: View {
                         appState.saveSettings()
                     }
 
-                DisclosureGroup(L.tr("Custom dictionaries", "Пользовательские словари")) {
+                ClickableDisclosure(isExpanded: $showProfanityDictionaries) {
                     profanityDictionaryManager
+                } label: {
+                    Text(L.tr("Custom dictionaries", "Пользовательские словари"))
                 }
                 .font(.subheadline)
             }
@@ -881,7 +886,7 @@ struct SettingsView: View {
                 }
             }
 
-            DisclosureGroup(L.tr("Manual command", "Команда вручную")) {
+            ClickableDisclosure(isExpanded: $showGigaAMManualCommand) {
                 Text(GigaAMTranscriber.setupCommand)
                     .font(.system(size: 10, design: .monospaced))
                     .textSelection(.enabled)
@@ -889,6 +894,8 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.primary.opacity(0.05))
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } label: {
+                Text(L.tr("Manual command", "Команда вручную"))
             }
             .font(.system(size: 11))
         }
@@ -1030,7 +1037,7 @@ struct SettingsView: View {
                 if !logs.isEmpty {
                     Divider()
 
-                    DisclosureGroup {
+                    ClickableDisclosure(isExpanded: $showRecentActivityDetails) {
                         VStack(spacing: 8) {
                             ForEach(logs.reversed().prefix(20)) { log in
                                 HStack {
