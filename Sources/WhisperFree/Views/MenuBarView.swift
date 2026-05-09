@@ -255,7 +255,6 @@ struct MenuBarView: View {
     private var headerControls: some View {
         HStack(spacing: 8) {
             inputDeviceMenu
-                .frame(maxWidth: 132)
                 .layoutPriority(1)
 
             sourceMenu
