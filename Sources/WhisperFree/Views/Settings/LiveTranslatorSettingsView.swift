@@ -15,6 +15,7 @@ struct LiveTranslatorSettingsView: View {
     @State private var isLoadingModels = false
     @State private var isOllamaRunning: Bool?
     @State private var modelLoadError: String?
+    @State private var showAdvanced = false
     
     // Check if Ollama exists
     @State private var isOllamaInstalled: Bool = {
@@ -32,9 +33,6 @@ struct LiveTranslatorSettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Live Translator")
                         .font(.title2.bold())
-                    Text("Translate speech to on-screen subtitles in real-time.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(appState.showLiveTranslatorOverlay ? L.tr("Stop Mic -> RU", "Стоп микрофон -> RU") : L.tr("Mic -> RU", "Микрофон -> RU")) {
@@ -54,200 +52,7 @@ struct LiveTranslatorSettingsView: View {
             
             if appState.settings.liveTranslatorEnabled {
                 
-                // 1. Hotkey & Audio Setup
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Triggers & Routing").font(.headline)
-                        
-                        Divider()
-                        
-                        HStack {
-                            Text("Global Hotkey")
-                            Spacer()
-                            Button(action: {
-                                isRecordingHotkey.toggle()
-                                if isRecordingHotkey {
-                                    modifierFlags = []
-                                }
-                            }) {
-                                Text(isRecordingHotkey ? hotkeyRecordingText : appState.settings.liveTranslatorHotkeyConfig.displayString)
-                                    .frame(minWidth: 100)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(isRecordingHotkey ? .orange : .none)
-                            .onExitCommand {
-                                isRecordingHotkey = false
-                            }
-                            .background(
-                                // Invisible view to catch keyboard events while recording
-                                Group {
-                                    if isRecordingHotkey {
-                                        KeyEventHandlingView(
-                                            isRecording: $isRecordingHotkey,
-                                            modifierFlags: $modifierFlags,
-                                            onCommit: { keyCode, useOption, useCommand, useControl, useShift in
-                                                let newConfig = HotkeyConfig(
-                                                    keyCode: keyCode,
-                                                    useOption: useOption,
-                                                    useCommand: useCommand,
-                                                    useControl: useControl,
-                                                    useShift: useShift
-                                                )
-                                                appState.settings.liveTranslatorHotkeyConfig = newConfig
-                                                appState.saveSettings()
-                                                appState.reloadHotkeyManager()
-                                                isRecordingHotkey = false
-                                            }
-                                        )
-                                        .frame(width: 0, height: 0)
-                                    }
-                                }
-                            )
-                        }
-                        
-                        Divider()
-                        
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Capture System Audio")
-                                Text("Grab sound directly from windows/apps (No drivers!)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Toggle("", isOn: $appState.settings.useScreenCaptureKit)
-                                .toggleStyle(.switch)
-                                .labelsHidden()
-                                .onChange(of: appState.settings.useScreenCaptureKit) { _, _ in
-                                    appState.saveSettings()
-                                    notifyLiveTranslatorSettingsChanged()
-                                }
-                        }
-                        
-                        Divider()
-                        
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Audio Input")
-                                Text("Independent from main dictation.")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            
-                            Picker("", selection: $appState.settings.liveTranslatorInputDeviceID) {
-                                Text("System Default").tag(String?.none)
-                                Divider()
-                                ForEach(appState.availableInputDevices, id: \.uniqueID) { device in
-                                    Text(device.localizedName).tag(String?.some(device.uniqueID))
-                                }
-                            }
-                            .frame(width: 250)
-                            .disabled(appState.settings.useScreenCaptureKit)
-                            .opacity(appState.settings.useScreenCaptureKit ? 0.5 : 1.0)
-                            .onChange(of: appState.settings.liveTranslatorInputDeviceID) { _, _ in
-                                appState.saveSettings()
-                                notifyLiveTranslatorSettingsChanged()
-                            }
-                        }
-                    }
-                    .padding(8)
-                }
-                
-                // 2. Translation Engine
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Translation Engine").font(.headline)
-                        
-                        Picker("", selection: $appState.settings.liveTranslatorEngine) {
-                            ForEach(LiveTranslationEngine.allCases, id: \.self) { engine in
-                                Text(engine.rawValue).tag(engine)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .onChange(of: appState.settings.liveTranslatorEngine) { _, _ in
-                            appState.saveSettings()
-                            notifyLiveTranslatorSettingsChanged()
-                        }
-                        
-                        Divider()
-                        
-                        if appState.settings.liveTranslatorEngine == .local {
-                            VStack(alignment: .leading, spacing: 12) {
-                                if !isOllamaInstalled {
-                                    // Big Ollama installer
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        HStack {
-                                            Image(systemName: "exclamationmark.triangle.fill")
-                                                .foregroundStyle(.orange)
-                                                .font(.title3)
-                                            VStack(alignment: .leading) {
-                                                Text("Ollama is required for local translation.")
-                                                    .font(.headline)
-                                                Text("We can download and install it for you securely.")
-                                                    .font(.subheadline)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                        }
-                                        
-                                        HStack {
-                                            Button(installer.isInstallingOllama ? "Installing..." : "Install Ollama") {
-                                                installer.installOllama()
-                                            }
-                                            .disabled(installer.isInstallingOllama)
-                                            .buttonStyle(.borderedProminent)
-                                            .tint(.blue)
-                                            
-                                            if installer.isInstallingOllama {
-                                                ProgressView(value: installer.ollamaProgress).frame(width: 100)
-                                            }
-                                            Text(installer.ollamaStatus)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    .padding()
-                                    .background(Color.orange.opacity(0.1))
-                                    .cornerRadius(8)
-                                    // Listen for changes
-                                    .onReceive(installer.$ollamaStatus) { status in
-                                        if status == "Installed Successfully" {
-                                            isOllamaInstalled = true
-                                            refreshModels()
-                                        }
-                                    }
-                                } else {
-                                    // Ollama is installed -> Show model selector
-                                    OllamaModelSelector(
-                                        selectedModel: $appState.settings.liveTranslatorLocalModel,
-                                        localModels: localModels,
-                                        isLoadingModels: isLoadingModels,
-                                        isOllamaRunning: isOllamaRunning,
-                                        modelLoadError: modelLoadError,
-                                        pullStatus: pullStatus,
-                                        isPulling: isPulling,
-                                        onRefresh: refreshModels,
-                                        onDownload: {
-                                            pullModel(name: appState.settings.liveTranslatorLocalModel)
-                                        },
-                                        onModelChange: {
-                                            appState.saveSettings()
-                                            notifyLiveTranslatorSettingsChanged()
-                                        }
-                                    )
-                                }
-                            }
-                        } else {
-                            Text("Uses the global Cloud Engine (OpenAI) specified in the 'Engine & API' tab.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 4)
-                        }
-                    }
-                    .padding(8)
-                }
-                
-                // 3. Languages
+                // 1. Languages
                 GroupBox {
                     VStack(alignment: .leading, spacing: 16) {
                         HStack {
@@ -289,6 +94,141 @@ struct LiveTranslatorSettingsView: View {
                     }
                     .padding(8)
                 }
+
+                // 2. Translation Engine
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Translation Engine").font(.headline)
+
+                        Picker("", selection: $appState.settings.liveTranslatorEngine) {
+                            ForEach(LiveTranslationEngine.allCases, id: \.self) { engine in
+                                Text(engine.rawValue).tag(engine)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: appState.settings.liveTranslatorEngine) { _, _ in
+                            appState.saveSettings()
+                            notifyLiveTranslatorSettingsChanged()
+                        }
+
+                        if appState.settings.liveTranslatorEngine == .local {
+                            Divider()
+                            if !isOllamaInstalled {
+                                ollamaInstaller
+                            } else {
+                                DisclosureGroup("Local model") {
+                                    OllamaModelSelector(
+                                        selectedModel: $appState.settings.liveTranslatorLocalModel,
+                                        localModels: localModels,
+                                        isLoadingModels: isLoadingModels,
+                                        isOllamaRunning: isOllamaRunning,
+                                        modelLoadError: modelLoadError,
+                                        pullStatus: pullStatus,
+                                        isPulling: isPulling,
+                                        onRefresh: refreshModels,
+                                        onDownload: {
+                                            pullModel(name: appState.settings.liveTranslatorLocalModel)
+                                        },
+                                        onModelChange: {
+                                            appState.saveSettings()
+                                            notifyLiveTranslatorSettingsChanged()
+                                        }
+                                    )
+                                    .padding(.top, 8)
+                                }
+                            }
+                        }
+                    }
+                    .padding(8)
+                }
+
+                DisclosureGroup(isExpanded: $showAdvanced) {
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                Text("Global Hotkey")
+                                Spacer()
+                                Button(action: {
+                                    isRecordingHotkey.toggle()
+                                    if isRecordingHotkey {
+                                        modifierFlags = []
+                                    }
+                                }) {
+                                    Text(isRecordingHotkey ? hotkeyRecordingText : appState.settings.liveTranslatorHotkeyConfig.displayString)
+                                        .frame(minWidth: 100)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(isRecordingHotkey ? .orange : .none)
+                                .onExitCommand {
+                                    isRecordingHotkey = false
+                                }
+                                .background(
+                                    Group {
+                                        if isRecordingHotkey {
+                                            KeyEventHandlingView(
+                                                isRecording: $isRecordingHotkey,
+                                                modifierFlags: $modifierFlags,
+                                                onCommit: { keyCode, useOption, useCommand, useControl, useShift in
+                                                    let newConfig = HotkeyConfig(
+                                                        keyCode: keyCode,
+                                                        useOption: useOption,
+                                                        useCommand: useCommand,
+                                                        useControl: useControl,
+                                                        useShift: useShift
+                                                    )
+                                                    appState.settings.liveTranslatorHotkeyConfig = newConfig
+                                                    appState.saveSettings()
+                                                    appState.reloadHotkeyManager()
+                                                    isRecordingHotkey = false
+                                                }
+                                            )
+                                            .frame(width: 0, height: 0)
+                                        }
+                                    }
+                                )
+                            }
+
+                            Divider()
+
+                            HStack {
+                                Text("Capture System Audio")
+                                Spacer()
+                                Toggle("", isOn: $appState.settings.useScreenCaptureKit)
+                                    .toggleStyle(.switch)
+                                    .labelsHidden()
+                                    .onChange(of: appState.settings.useScreenCaptureKit) { _, _ in
+                                        appState.saveSettings()
+                                        notifyLiveTranslatorSettingsChanged()
+                                    }
+                            }
+
+                            Divider()
+
+                            HStack {
+                                Text("Audio Input")
+                                Spacer()
+                                Picker("", selection: $appState.settings.liveTranslatorInputDeviceID) {
+                                    Text("System Default").tag(String?.none)
+                                    Divider()
+                                    ForEach(appState.availableInputDevices, id: \.uniqueID) { device in
+                                        Text(device.localizedName).tag(String?.some(device.uniqueID))
+                                    }
+                                }
+                                .frame(width: 250)
+                                .disabled(appState.settings.useScreenCaptureKit)
+                                .opacity(appState.settings.useScreenCaptureKit ? 0.5 : 1.0)
+                                .onChange(of: appState.settings.liveTranslatorInputDeviceID) { _, _ in
+                                    appState.saveSettings()
+                                    notifyLiveTranslatorSettingsChanged()
+                                }
+                            }
+                        }
+                        .padding(8)
+                    }
+                    .padding(.top, 8)
+                } label: {
+                    Text("Advanced")
+                }
             } else {
                 Spacer()
             }
@@ -312,6 +252,45 @@ struct LiveTranslatorSettingsView: View {
                 localModels = []
                 modelLoadError = nil
                 pullStatus = nil
+            }
+        }
+    }
+
+    private var ollamaInstaller: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.title3)
+                Text("Ollama is required for local translation.")
+                    .font(.headline)
+            }
+
+            HStack {
+                Button(installer.isInstallingOllama ? "Installing..." : "Install Ollama") {
+                    installer.installOllama()
+                }
+                .disabled(installer.isInstallingOllama)
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
+
+                if installer.isInstallingOllama {
+                    ProgressView(value: installer.ollamaProgress)
+                        .frame(width: 100)
+                }
+
+                Text(installer.ollamaStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(8)
+        .onReceive(installer.$ollamaStatus) { status in
+            if status == "Installed Successfully" {
+                isOllamaInstalled = true
+                refreshModels()
             }
         }
     }

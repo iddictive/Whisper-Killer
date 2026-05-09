@@ -485,10 +485,10 @@ struct SettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
 
-        VStack(alignment: .leading, spacing: 16) {
-            Text(L.tr("Output Text", "Текст результата"))
-                .font(.headline)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                Text(L.tr("Output Text", "Текст результата"))
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
                 Toggle(L.tr("Profanity filter", "Мат-фильтр"), isOn: $appState.settings.enableProfanityFilter)
@@ -496,85 +496,73 @@ struct SettingsView: View {
                         appState.saveSettings()
                     }
 
-                Text(L.tr("Removes standalone profane words from English and Russian transcripts.", "Удаляет отдельные матерные слова из русской и английской транскрибации."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 22)
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(L.tr("Custom dictionaries", "Пользовательские словари"))
-                            .font(.subheadline)
-                        Spacer()
-                        Button(L.tr("Add Files", "Добавить файлы")) {
-                            showProfanityDictionaryImporter = true
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-
-                    Text(L.tr("Supported: .txt, .csv, .json. Text and CSV files can contain one word or phrase per line. Commas and semicolons are also supported. Lines starting with # or // are ignored. JSON can be [\"word\", \"phrase\"] or {\"words\": [...]} .", "Поддерживаются .txt, .csv, .json. В текстовых и CSV-файлах можно писать по одному слову или фразе на строку. Запятые и точки с запятой тоже поддерживаются. Строки, начинающиеся с # или //, игнорируются. JSON может быть вида [\"слово\", \"фраза\"] или {\"words\": [...]} ."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    ExampleBox(
-                        title: L.tr("Example", "Пример"),
-                        text: "fuck\nshit\nбля\nсука\n# comment",
-                        icon: "doc.text"
-                    )
-
-                    profanityDictionaryDropZone
-
-                    if let profanityDictionaryMessage {
-                        Text(profanityDictionaryMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if appState.settings.customProfanityDictionaries.isEmpty {
-                        Text(L.tr("No custom dictionaries added yet.", "Пока нет добавленных словарей."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(appState.settings.customProfanityDictionaries) { dictionary in
-                                HStack(spacing: 12) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(dictionary.fileName)
-                                            .font(.system(size: 12, weight: .semibold))
-                                        Text(L.tr("\(dictionary.entryCount) entries", "\(dictionary.entryCount) слов"))
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    Spacer()
-
-                                    Button(role: .destructive) {
-                                        removeProfanityDictionary(dictionary)
-                                    } label: {
-                                        Image(systemName: "trash")
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                .padding(.vertical, 10)
-
-                                if dictionary.id != appState.settings.customProfanityDictionaries.last?.id {
-                                    Divider()
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .background(Color.primary.opacity(0.04))
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }
+                DisclosureGroup(L.tr("Custom dictionaries", "Пользовательские словари")) {
+                    profanityDictionaryManager
                 }
+                .font(.subheadline)
             }
             .padding()
             .background(Color.primary.opacity(0.03))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
+    }
+
+    private var profanityDictionaryManager: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(L.tr("\(appState.settings.customProfanityDictionaries.count) files", "\(appState.settings.customProfanityDictionaries.count) файлов"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(L.tr("Add Files", "Добавить файлы")) {
+                    showProfanityDictionaryImporter = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            profanityDictionaryDropZone
+
+            if let profanityDictionaryMessage {
+                Text(profanityDictionaryMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !appState.settings.customProfanityDictionaries.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(appState.settings.customProfanityDictionaries) { dictionary in
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(dictionary.fileName)
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text(L.tr("\(dictionary.entryCount) entries", "\(dictionary.entryCount) слов"))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            Button(role: .destructive) {
+                                removeProfanityDictionary(dictionary)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.vertical, 10)
+
+                        if dictionary.id != appState.settings.customProfanityDictionaries.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .background(Color.primary.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+        .padding(.top, 8)
     }
 
     private func recordingModeCard(_ mode: RecordingMode) -> some View {
@@ -629,13 +617,6 @@ struct SettingsView: View {
                 Divider().padding(.horizontal)
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(
-                        engineDescription
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal)
-
                     if appState.settings.engineType == .cloud {
                         VStack(alignment: .leading, spacing: 8) {
                             Picker(L.tr("Cloud model", "Облачная модель"), selection: $appState.settings.cloudTranscriptionModel) {
@@ -656,90 +637,34 @@ struct SettingsView: View {
                         .padding(.horizontal)
                     }
 
-                    OpenAIAPIKeySettingsCard(
-                        apiKey: $appState.settings.apiKey,
-                        validationState: apiValidationState,
-                        isValidating: isCheckingOpenAI,
-                        statusText: apiValidationText,
-                        statusColor: apiValidationColor,
-                        diagnosticText: networkDiagnosticText,
-                        onValidate: checkOpenAI,
-                        onChanged: handleAPIKeyChanged
-                    )
-                    .padding(.horizontal)
+                    if shouldShowOpenAIKeyCard {
+                        OpenAIAPIKeySettingsCard(
+                            apiKey: $appState.settings.apiKey,
+                            validationState: apiValidationState,
+                            isValidating: isCheckingOpenAI,
+                            statusText: apiValidationText,
+                            statusColor: apiValidationColor,
+                            diagnosticText: networkDiagnosticText,
+                            onValidate: checkOpenAI,
+                            onChanged: handleAPIKeyChanged
+                        )
+                        .padding(.horizontal)
+                    }
 
                     if appState.settings.engineType == .local {
                         VStack(spacing: 0) {
-                            homebrewStatusRow
-                            Divider().padding(.horizontal)
-                            whisperCppStatusRow
-                            Divider().padding(.horizontal)
+                            if !dependencyInstaller.isHomebrewInstalled {
+                                homebrewStatusRow
+                                Divider().padding(.horizontal)
+                            }
 
-                            ForEach(LocalModelSize.allCases, id: \.self) { size in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(size.rawValue)
-                                            .font(.system(size: 14, weight: .semibold))
-                                        Text(size.sizeDescription)
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
-                                        if size.forcesEnglishDecoding {
-                                            Text(L.tr("English-first model", "Модель в первую очередь для английского"))
-                                                .font(.system(size: 10, weight: .medium))
-                                                .foregroundStyle(.orange)
-                                        }
-                                    }
+                            if !dependencyInstaller.isWhisperCppInstalled {
+                                whisperCppStatusRow
+                                Divider().padding(.horizontal)
+                            }
 
-                                    Spacer()
-
-                                    if modelManager.isModelDownloaded(size) {
-                                        if appState.settings.localModelSize == size {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .foregroundStyle(Color.accentColor)
-                                                .font(.title3)
-                                        } else {
-                                            Button(L.tr("Use", "Использовать")) {
-                                                appState.settings.localModelSize = size
-                                                appState.saveSettings()
-                                            }
-                                            .buttonStyle(.bordered)
-                                        }
-
-                                        Button(role: .destructive) {
-                                            modelManager.deleteModel(size)
-                                        } label: {
-                                            Image(systemName: "trash")
-                                                .foregroundStyle(.red.opacity(0.7))
-                                        }
-                                        .buttonStyle(.plain)
-                                        .padding(.leading, 8)
-                                    } else if let state = modelManager.activeDownloads[size.rawValue] {
-                                        if state.error != nil {
-                                            Button(L.tr("Retry", "Повторить")) { modelManager.downloadModel(size) }
-                                                .buttonStyle(.plain).font(.caption2).foregroundStyle(SW.accent)
-                                        } else {
-                                            VStack(alignment: .trailing, spacing: 4) {
-                                                ProgressView(value: state.progress).frame(width: 80)
-                                                HStack(spacing: 4) {
-                                                    if state.speed > 0 {
-                                                        Text(formatSpeed(state.speed))
-                                                    }
-                                                    if let remaining = state.timeRemaining {
-                                                        Text("• \(formatDuration(remaining))")
-                                                    }
-                                                }
-                                                .font(.system(size: 9, design: .monospaced))
-                                                .foregroundStyle(.secondary)
-                                            }
-                                        }
-                                    } else {
-                                        Button(L.tr("Download", "Скачать")) { modelManager.downloadModel(size) }
-                                            .buttonStyle(.borderedProminent)
-                                    }
-                                }
-                                .padding(.horizontal)
-                                .padding(.vertical, 12)
-                                if size != LocalModelSize.allCases.last { Divider().padding(.horizontal) }
+                            if dependencyInstaller.isHomebrewInstalled && dependencyInstaller.isWhisperCppInstalled {
+                                localModelRows
                             }
                         }
                     }
@@ -764,6 +689,84 @@ struct SettingsView: View {
                 .padding()
                 .background(Color.primary.opacity(0.03))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    private var shouldShowOpenAIKeyCard: Bool {
+        appState.settings.engineType == .cloud ||
+        appState.settings.enablePostProcessing ||
+        appState.settings.enableSpeakerDiarization ||
+        appState.settings.hasOpenAIAPIKey
+    }
+
+    private var localModelRows: some View {
+        ForEach(LocalModelSize.allCases, id: \.self) { size in
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(size.rawValue)
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(size.sizeDescription)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    if size.forcesEnglishDecoding {
+                        Text(L.tr("English-first model", "Модель в первую очередь для английского"))
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.orange)
+                    }
+                }
+
+                Spacer()
+
+                if modelManager.isModelDownloaded(size) {
+                    if appState.settings.localModelSize == size {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.accentColor)
+                            .font(.title3)
+                    } else {
+                        Button(L.tr("Use", "Использовать")) {
+                            appState.settings.localModelSize = size
+                            appState.saveSettings()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Button(role: .destructive) {
+                        modelManager.deleteModel(size)
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 8)
+                } else if let state = modelManager.activeDownloads[size.rawValue] {
+                    if state.error != nil {
+                        Button(L.tr("Retry", "Повторить")) { modelManager.downloadModel(size) }
+                            .buttonStyle(.plain)
+                            .font(.caption2)
+                            .foregroundStyle(SW.accent)
+                    } else {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            ProgressView(value: state.progress).frame(width: 80)
+                            HStack(spacing: 4) {
+                                if state.speed > 0 {
+                                    Text(formatSpeed(state.speed))
+                                }
+                                if let remaining = state.timeRemaining {
+                                    Text("• \(formatDuration(remaining))")
+                                }
+                            }
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Button(L.tr("Download", "Скачать")) { modelManager.downloadModel(size) }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 12)
+            if size != LocalModelSize.allCases.last { Divider().padding(.horizontal) }
         }
     }
 
@@ -813,17 +816,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 12)
-    }
-
-    private var engineDescription: String {
-        switch appState.settings.engineType {
-        case .cloud:
-            return L.tr("Cloud transcription uses OpenAI speech-to-text models. New GPT-4o Transcribe variants are available here alongside Whisper-1.", "Облачная транскрибация использует speech-to-text модели OpenAI. Здесь доступны новые варианты GPT-4o Transcribe вместе с Whisper-1.")
-        case .local:
-            return L.tr("Local models run entirely on your Mac. They are private and work offline. Larger models are more accurate but use more memory.", "Локальные модели работают полностью на вашем Mac. Они приватные и доступны офлайн. Более крупные модели точнее, но требуют больше памяти.")
-        case .gigaAM:
-            return L.tr("Experimental Russian ASR runs locally through Python with ai-sage/GigaAM-v3.", "Экспериментальная русская ASR-модель работает локально через Python и ai-sage/GigaAM-v3.")
-        }
     }
 
     private var gigaAMExperimentCard: some View {
@@ -1358,17 +1350,7 @@ struct AIConfigView: View {
                         settings.selectedModeName = settings.validatedModeName(currentName: settings.selectedModeName)
                         onSave()
                     }
-                Text(L.tr("Applies formatting, custom prompts, and grammar fixes after transcription is complete.", "Применяет форматирование, пользовательские промпты и исправления грамматики после завершения транскрибации."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 22)
             }
-
-            Divider()
-
-            Text(L.tr("AI refinement and diarization use the global OpenAI key from the Engine & API section.", "AI-обработка и диаризация используют глобальный OpenAI key из раздела «Движок и API»."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
 
             if shouldShowDiarizationControls {
                 Divider()
@@ -1379,20 +1361,10 @@ struct AIConfigView: View {
                             onSave()
                         }
 
-                    Text(L.tr("Uses AI to identify and split different speakers in the transcription. Best for interviews and meetings.", "Использует AI для определения и разделения разных спикеров в транскрипции. Лучше всего подходит для интервью и встреч."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
                     if settings.enableSpeakerDiarization && !settings.canUseSpeakerDiarization {
                         Text(L.tr("Add an OpenAI API key to enable diarization.", "Добавьте OpenAI API key, чтобы включить диаризацию."))
                             .font(.caption)
                             .foregroundStyle(.orange)
-                    }
-
-                    if settings.enableSpeakerDiarization {
-                        Text(L.tr("When diarization is enabled, standard AI refinement is skipped to preserve speaker turns.", "Когда включена диаризация, стандартная AI-обработка пропускается, чтобы сохранить очередность спикеров."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -1457,9 +1429,6 @@ struct OpenAIAPIKeySettingsCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
-            Text(L.tr("Used for cloud transcription, AI refinement, diarization, and custom mode example runs.", "Используется для облачной транскрибации, AI-обработки, диаризации и тестового прогона custom mode."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
         .padding(16)
         .background(Color.primary.opacity(0.04))

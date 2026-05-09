@@ -49,29 +49,6 @@ struct FileTranscriptionView: View {
             
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 8) {
-                    if !queueItems.isEmpty {
-                        let totalCost = totalDisplayCost
-                        let doneCount = queueItems.filter { $0.status == .done }.count
-                        
-                        if totalCost > 0 {
-                            Text(L.tr("Est. $\(String(format: "%.3f", totalCost))", "Оценка $\(String(format: "%.3f", totalCost))"))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(SW.warning)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(SW.warning.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                        }
-                        
-                        Text(L.tr("\(doneCount)/\(queueItems.count) files", "\(doneCount)/\(queueItems.count) файлов"))
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(SW.accent.opacity(0.12))
-                            .foregroundStyle(SW.accent)
-                            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                    }
-                    
                     if !queueItems.isEmpty && !isProcessing {
                         Button(role: .destructive) {
                             for item in queueItems { item.cancel() }
@@ -296,7 +273,7 @@ struct FileTranscriptionView: View {
                 Image(systemName: "plus.circle")
                     .font(.system(size: 12))
                     .foregroundStyle(SW.secondaryText)
-                Text(L.tr("Drop more files or click to add", "Перетащите ещё файлы или нажмите, чтобы добавить"))
+                Text(L.tr("Drop or click to add", "Перетащите или нажмите"))
                     .font(.system(size: 11))
                     .foregroundStyle(SW.secondaryText)
             }
@@ -328,7 +305,12 @@ struct FileTranscriptionView: View {
                 }
 
                 if !queueItems.isEmpty {
+                    let doneCount = queueItems.filter { $0.status == .done }.count
                     let queuedCount = queueItems.filter { $0.status == .queued }.count
+                    Text("\(doneCount)/\(queueItems.count)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+
                     if queuedCount > 0 {
                         Button {
                             startAllQueued()
@@ -395,35 +377,21 @@ struct FileTranscriptionView: View {
                         .foregroundStyle(isDragging ? SW.accent : SW.tertiaryText)
                         .padding(.bottom, 2)
 
-                    Text(L.tr("Drop audio or video here", "Перетащите сюда аудио или видео"))
+                    Text(L.tr("Drop files or click to add", "Перетащите файлы или нажмите"))
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(SW.primaryText)
-
-                    Text(L.tr("MP3, WAV, M4A, MP4, MOV", "MP3, WAV, M4A, MP4, MOV"))
-                        .font(.system(size: 10))
-                        .foregroundStyle(SW.secondaryText)
                 }
             }
             .frame(height: 160)
             .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
                 handleDrop(providers)
             }
-
-            Button {
-                showFilePicker = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus.circle.fill")
-                    Text(L.tr("Add to Queue...", "Добавить в очередь..."))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
+        .onTapGesture {
+            showFilePicker = true
+        }
     }
 
     // MARK: - Error Overlay
@@ -791,13 +759,16 @@ struct QueueCardView: View {
     // MARK: - Row 3: Metrics
 
     private var metricsRow: some View {
-        HStack(spacing: 8) {
-            durationLabel
-            costLabel
-            speedLabel
-            errorLabel
-            Spacer()
-            percentLabel
+        Group {
+            if item.status != .queued || isError {
+                HStack(spacing: 8) {
+                    durationLabel
+                    costLabel
+                    speedLabel
+                    errorLabel
+                    Spacer()
+                }
+            }
         }
     }
 
@@ -848,18 +819,6 @@ struct QueueCardView: View {
         }
     }
 
-    @ViewBuilder
-    private var percentLabel: some View {
-        if item.status == .done {
-            Text("100%")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(SW.accent)
-        } else if item.progress > 0 && !isError && item.status != .cancelled {
-            Text(String(format: "%d%%", Int(item.progress * 100)))
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.secondary)
-        }
-    }
     @ViewBuilder
     private func trimSection(totalDuration: Double) -> some View {
         VStack(spacing: 8) {

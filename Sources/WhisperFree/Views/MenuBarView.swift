@@ -65,7 +65,6 @@ struct MenuBarView: View {
                 .buttonStyle(.plain)
             }
 
-            // ─── Header + Record ────────────────
             headerControls
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -75,98 +74,6 @@ struct MenuBarView: View {
             modeToolbar
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-
-            Divider()
-
-            // ─── Engine + Language ───────────────
-            HStack(spacing: 8) {
-                // Engine pill toggle
-                HStack(spacing: 0) {
-                    ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
-                        let isActive = appState.settings.engineType == type
-                        Button {
-                            appState.settings.engineType = type
-                            if type == .gigaAM {
-                                appState.settings.language = "ru"
-                            }
-                            appState.saveSettings()
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: type.icon)
-                                    .font(.system(size: 9))
-                                Text(type.localizedShortTitle)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .lineLimit(1)
-                            }
-                            .fixedSize()
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(isActive ? SW.accent.opacity(0.12) : Color.clear)
-                            .foregroundStyle(isActive ? .primary : .secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .background(SW.rowBackground)
-                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).strokeBorder(SW.border, lineWidth: 1))
-                .frame(height: 26)
-
-                Spacer()
-
-                // Language dropdown
-                Menu {
-                    ForEach(AppSettings.supportedLanguages, id: \.code) { lang in
-                        Button {
-                            appState.settings.language = lang.code
-                            appState.saveSettings()
-                        } label: {
-                            HStack {
-                                Text(L.languageName(code: lang.code, fallback: lang.name))
-                                if appState.settings.language == lang.code {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "globe")
-                            .font(.system(size: 9))
-                        Text({
-                            let current = AppSettings.supportedLanguages.first(where: { $0.code == appState.settings.language })
-                            return L.languageName(code: current?.code ?? "auto", fallback: current?.name ?? "Auto")
-                        }())
-                            .font(.system(size: 10, weight: .medium))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 7))
-                    }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .foregroundStyle(.primary.opacity(0.8))
-                    .background(SW.rowBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).strokeBorder(SW.border, lineWidth: 1))
-                    .frame(height: 26)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-
-                // Hotkey badge
-                Text(appState.settings.hotkeyConfig.displayString)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(SW.rowBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).strokeBorder(SW.border, lineWidth: 1))
-                    .frame(height: 26)
-                    .fixedSize()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-
 
             // ─── Last Transcription ─────────────
             if let lastText = appState.lastTranscription {
@@ -347,26 +254,11 @@ struct MenuBarView: View {
 
     private var headerControls: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16)
-
-                Text("WhisperKiller")
-                    .font(.system(size: 13, weight: .bold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-                    .allowsTightening(true)
-            }
-            .frame(minWidth: 112, alignment: .leading)
-            .layoutPriority(3)
-
             inputDeviceMenu
                 .frame(maxWidth: 132)
                 .layoutPriority(1)
 
-            Spacer(minLength: 4)
+            Spacer(minLength: 8)
 
             recordButton
 
