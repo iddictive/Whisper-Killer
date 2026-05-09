@@ -7,6 +7,7 @@ struct SettingsView: View {
     @ObservedObject var recorder: AudioRecorder
     @ObservedObject private var updater = GitHubUpdater.shared
     @ObservedObject private var dependencyInstaller = DependencyInstaller.shared
+    @ObservedObject private var launchAtLogin = LaunchAtLoginManager.shared
     @State private var selectedTab: String? = "app"
 
     // Custom Mode State
@@ -205,6 +206,7 @@ struct SettingsView: View {
         }
         .onAppear {
             dependencyInstaller.refreshHomebrewStatus()
+            launchAtLogin.refresh()
             modelManager.refreshDownloadedModels()
         }
         .toolbarBackground(.visible, for: .windowToolbar)
@@ -298,6 +300,36 @@ struct SettingsView: View {
                     .onChange(of: appState.settings.useMonochromeMenuIcon) { _, _ in
                         appState.saveSettings()
                     }
+
+                Divider().padding(.horizontal)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(
+                        L.tr("Launch at login", "Запускать при входе в систему"),
+                        isOn: Binding(
+                            get: { launchAtLogin.isEnabled },
+                            set: { launchAtLogin.setEnabled($0) }
+                        )
+                    )
+
+                    if let message = launchAtLogin.message {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            if launchAtLogin.requiresApproval {
+                                Button(L.tr("Open Settings", "Открыть настройки")) {
+                                    launchAtLogin.openLoginItemsSettings()
+                                }
+                                .buttonStyle(.link)
+                                .font(.caption)
+                            }
+                        }
+                        .padding(.leading, 22)
+                    }
+                }
+                .padding()
             }
             .background(Color.primary.opacity(0.03))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
