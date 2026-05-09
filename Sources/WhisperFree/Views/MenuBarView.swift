@@ -258,6 +258,9 @@ struct MenuBarView: View {
                 .frame(maxWidth: 132)
                 .layoutPriority(1)
 
+            sourceMenu
+                .layoutPriority(1)
+
             Spacer(minLength: 8)
 
             recordButton
@@ -331,6 +334,43 @@ struct MenuBarView: View {
         }
 
         return L.tr("This mode is unavailable.", "Этот режим недоступен.")
+    }
+
+    private var sourceMenu: some View {
+        Menu {
+            ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
+                Button {
+                    appState.settings.engineType = type
+                    if type == .gigaAM {
+                        appState.settings.language = "ru"
+                    }
+                    appState.saveSettings()
+                } label: {
+                    HStack {
+                        Label(type.localizedTitle, systemImage: type.icon)
+                        if appState.settings.engineType == type {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: appState.settings.engineType.icon)
+                    .font(.system(size: 8))
+                Text(appState.settings.engineType.localizedShortTitle)
+                    .font(.system(size: 10, weight: .medium))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 6))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(SW.rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 
     private var inputDeviceMenu: some View {
