@@ -24,6 +24,16 @@ enum DependencyError: Error, LocalizedError {
 @MainActor
 final class DependencyInstaller: ObservableObject {
     static let shared = DependencyInstaller()
+
+    private struct CommandFailure: Error {
+        let status: Int32
+        let output: String?
+    }
+
+    private struct HomebrewPermissionFailure {
+        let prefix: String
+        let message: String
+    }
     
     @Published var isInstallingOllama = false
     @Published var ollamaProgress: Double = 0.0
@@ -150,10 +160,52 @@ final class DependencyInstaller: ObservableObject {
     }
 
     nonisolated private static func runBrewInstallWhisperCpp() -> Result<Void, DependencyError> {
+        let brewPath = findHomebrewPath()
+        let firstAttempt = runBrewInstallWhisperCppOnce(brewPath: brewPath)
+
+        switch firstAttempt {
+        case .success:
+            return .success(())
+        case .failure(let failure):
+            guard let permissionFailure = homebrewPermissionFailure(from: failure.output, brewPath: brewPath) else {
+                return .failure(.installationFailed(
+                    installFailureMessage(
+                        from: failure.output,
+                        status: failure.status,
+                        commandDescription: "brew install whisper-cpp",
+                        detectHomebrewPermissionFailure: true,
+                        brewPath: brewPath
+                    )
+                ))
+            }
+
+            switch repairHomebrewPermissions(prefix: permissionFailure.prefix) {
+            case .success:
+                let retryAttempt = runBrewInstallWhisperCppOnce(brewPath: brewPath)
+                switch retryAttempt {
+                case .success:
+                    return .success(())
+                case .failure(let retryFailure):
+                    return .failure(.installationFailed(
+                        installFailureMessage(
+                            from: retryFailure.output,
+                            status: retryFailure.status,
+                            commandDescription: "brew install whisper-cpp after Homebrew permission repair",
+                            detectHomebrewPermissionFailure: true,
+                            brewPath: brewPath
+                        )
+                    ))
+                }
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+    }
+
+    nonisolated private static func runBrewInstallWhisperCppOnce(brewPath: String?) -> Result<Void, CommandFailure> {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
 
-        let brewPath = findHomebrewPath()
         process.arguments = [
             "-lc",
             """
@@ -165,7 +217,7 @@ final class DependencyInstaller: ObservableObject {
             .appendingPathComponent("whisper_cpp_install_\(UUID().uuidString).log")
         _ = FileManager.default.createFile(atPath: outputURL.path, contents: nil)
         guard let outputHandle = try? FileHandle(forWritingTo: outputURL) else {
-            return .failure(.installationFailed("Could not create install log."))
+            return .failure(CommandFailure(status: -1, output: "Could not create install log."))
         }
         defer {
             try? outputHandle.close()
@@ -182,18 +234,12 @@ final class DependencyInstaller: ObservableObject {
             guard process.terminationStatus == 0 else {
                 let output = (try? String(contentsOf: outputURL, encoding: .utf8))?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                let message = installFailureMessage(
-                    from: output,
-                    status: process.terminationStatus,
-                    commandDescription: "brew install whisper-cpp",
-                    detectHomebrewPermissionFailure: true
-                )
-                return .failure(.installationFailed(message))
+                return .failure(CommandFailure(status: process.terminationStatus, output: output))
             }
 
             return .success(())
         } catch {
-            return .failure(.installationFailed(error.localizedDescription))
+            return .failure(CommandFailure(status: -1, output: error.localizedDescription))
         }
     }
 
@@ -259,15 +305,16 @@ final class DependencyInstaller: ObservableObject {
         from output: String?,
         status: Int32,
         commandDescription: String,
-        detectHomebrewPermissionFailure: Bool
+        detectHomebrewPermissionFailure: Bool,
+        brewPath: String? = nil
     ) -> String {
         guard let output, !output.isEmpty else {
             return "\(commandDescription) exited with code \(status)."
         }
 
         if detectHomebrewPermissionFailure,
-           let message = homebrewPermissionFailureMessage(from: output) {
-            return message
+           let permissionFailure = homebrewPermissionFailure(from: output, brewPath: brewPath) {
+            return permissionFailure.message
         }
 
         let maxLength = 600
@@ -278,7 +325,9 @@ final class DependencyInstaller: ObservableObject {
         return String(output.suffix(maxLength))
     }
 
-    nonisolated private static func homebrewPermissionFailureMessage(from output: String) -> String? {
+    nonisolated private static func homebrewPermissionFailure(from output: String?, brewPath: String?) -> HomebrewPermissionFailure? {
+        guard let output, !output.isEmpty else { return nil }
+
         let normalized = output.lowercased()
         let isHomebrewPermissionFailure =
             normalized.contains("homebrew")
@@ -291,19 +340,99 @@ final class DependencyInstaller: ObservableObject {
 
         guard isHomebrewPermissionFailure else { return nil }
 
-        let prefix: String
-        if output.contains("/opt/homebrew") {
-            prefix = "/opt/homebrew"
-        } else if output.contains("/usr/local") {
-            prefix = "/usr/local"
-        } else {
-            prefix = "$(brew --prefix)"
+        guard let prefix = homebrewPrefix(from: output, brewPath: brewPath) else {
+            return nil
         }
 
-        return L.tr(
+        let message = L.tr(
             "Homebrew permissions need repair. Run in Terminal: sudo chown -R $(whoami) \(prefix) && chmod -R u+w \(prefix)",
             "Нужно исправить права Homebrew. В Terminal: sudo chown -R $(whoami) \(prefix) && chmod -R u+w \(prefix)"
         )
+
+        return HomebrewPermissionFailure(prefix: prefix, message: message)
+    }
+
+    nonisolated private static func homebrewPrefix(from output: String, brewPath: String?) -> String? {
+        if output.contains("/opt/homebrew") {
+            return "/opt/homebrew"
+        }
+
+        if output.contains("/usr/local") {
+            return "/usr/local"
+        }
+
+        guard let brewPath else { return nil }
+
+        return URL(fileURLWithPath: brewPath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .path
+    }
+
+    nonisolated private static func repairHomebrewPermissions(prefix: String) -> Result<Void, DependencyError> {
+        let userName = NSUserName()
+        guard !userName.isEmpty, userName != "root" else {
+            return .failure(.installationFailed(L.tr(
+                "Could not determine the current macOS user for Homebrew repair.",
+                "Не удалось определить текущего пользователя macOS для ремонта Homebrew."
+            )))
+        }
+
+        let repairCommand = """
+        set -e
+        /usr/sbin/chown -R \(shellQuoted(userName)) \(shellQuoted(prefix))
+        /bin/chmod -R u+w \(shellQuoted(prefix))
+        """
+        let script = """
+        do shell script "\(appleScriptEscaped(repairCommand))" with administrator privileges
+        """
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return .failure(.installationFailed(homebrewRepairFailureMessage(output: output)))
+            }
+
+            return .success(())
+        } catch {
+            return .failure(.installationFailed(error.localizedDescription))
+        }
+    }
+
+    nonisolated private static func homebrewRepairFailureMessage(output: String?) -> String {
+        let normalized = output?.lowercased() ?? ""
+        if normalized.contains("user canceled") || normalized.contains("(-128)") {
+            return L.tr(
+                "Homebrew repair was cancelled. Run the repair command manually, then install again.",
+                "Ремонт Homebrew отменён. Запустите команду исправления прав вручную и повторите установку."
+            )
+        }
+
+        guard let output, !output.isEmpty else {
+            return L.tr(
+                "Homebrew repair failed. Run the repair command manually, then install again.",
+                "Не удалось исправить права Homebrew. Запустите команду вручную и повторите установку."
+            )
+        }
+
+        return output
+    }
+
+    nonisolated private static func shellQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     nonisolated static func findHomebrewPath() -> String? {
