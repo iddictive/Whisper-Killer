@@ -60,6 +60,11 @@ final class GigaAMTranscriber: TranscriptionEngine, @unchecked Sendable {
                 let chunk = handle.availableData
                 guard !chunk.isEmpty else { return }
                 outputAccumulator.append(chunk)
+                if let text = String(data: chunk, encoding: .utf8) {
+                    for progress in Self.parseProgress(from: text) {
+                        onProgress?(0.12 + progress * 0.83, nil)
+                    }
+                }
             }
 
             errorPipe.fileHandleForReading.readabilityHandler = { handle in
@@ -189,6 +194,16 @@ final class GigaAMTranscriber: TranscriptionEngine, @unchecked Sendable {
         return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private static func parseProgress(from stdoutChunk: String) -> [Float] {
+        let marker = "__WHISPERFREE_GIGAAM_PROGRESS__"
+        return stdoutChunk.components(separatedBy: .newlines).compactMap { line in
+            guard line.hasPrefix(marker) else { return nil }
+            let payload = String(line.dropFirst(marker.count))
+            guard let value = Float(payload) else { return nil }
+            return min(max(value, 0), 1)
+        }
+    }
+
     private struct GigaAMResult: Decodable {
         let text: String
     }
@@ -196,13 +211,111 @@ final class GigaAMTranscriber: TranscriptionEngine, @unchecked Sendable {
     private static let pythonHelper = #"""
 import argparse
 import json
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
 
 SETUP = "mkdir -p ~/Library/Application\\ Support/WhisperKiller/GigaAM && python3.12 -m venv ~/Library/Application\\ Support/WhisperKiller/GigaAM/venv && ~/Library/Application\\ Support/WhisperKiller/GigaAM/venv/bin/python -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org torch torchaudio transformers 'huggingface-hub<1.0' pyannote-audio torchcodec hydra-core omegaconf sentencepiece"
+SHORT_LIMIT_SECONDS = 23.5
+CHUNK_SECONDS = 22.0
 
 def fail(message, code=1):
     print(message, file=sys.stderr)
     sys.exit(code)
+
+def require_binary(name):
+    path = shutil.which(name)
+    if path:
+        return path
+    fail(f"{name} not found. Install ffmpeg to use GigaAM transcription.", 70)
+
+def media_duration_seconds(audio_path):
+    ffprobe = require_binary("ffprobe")
+    completed = subprocess.run(
+        [
+            ffprobe,
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            audio_path,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        return float(completed.stdout.strip())
+    except ValueError as exc:
+        raise RuntimeError("Could not determine audio duration") from exc
+
+def emit_progress(value):
+    print("__WHISPERFREE_GIGAAM_PROGRESS__" + f"{max(0.0, min(1.0, value)):.4f}", flush=True)
+
+def normalize_text(value):
+    if isinstance(value, dict):
+        return str(value.get("text", value.get("transcription", "")))
+    if isinstance(value, (list, tuple)):
+        parts = []
+        for item in value:
+            if isinstance(item, dict):
+                parts.append(str(item.get("text", item.get("transcription", ""))))
+            else:
+                parts.append(str(item))
+        return " ".join(part for part in parts if part)
+    return str(value)
+
+def export_chunk(ffmpeg, audio_path, output_path, start, duration):
+    subprocess.run(
+        [
+            ffmpeg,
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-ss", f"{start:.3f}",
+            "-t", f"{duration:.3f}",
+            "-i", audio_path,
+            "-vn",
+            "-ac", "1",
+            "-ar", "16000",
+            "-acodec", "pcm_s16le",
+            output_path,
+        ],
+        check=True,
+    )
+
+def fixed_chunks(total_duration):
+    start = 0.0
+    while start < total_duration:
+        remaining = total_duration - start
+        if remaining <= SHORT_LIMIT_SECONDS:
+            end = total_duration
+        else:
+            end = min(start + CHUNK_SECONDS, total_duration)
+        yield start, end
+        start = end
+
+def transcribe_audio(model, audio_path):
+    duration = media_duration_seconds(audio_path)
+    if duration <= SHORT_LIMIT_SECONDS:
+        emit_progress(0.0)
+        text = normalize_text(model.transcribe(audio_path))
+        emit_progress(1.0)
+        return text
+
+    ffmpeg = require_binary("ffmpeg")
+    ranges = list(fixed_chunks(duration))
+    texts = []
+    with tempfile.TemporaryDirectory(prefix="whisperkiller_gigaam_chunks_") as tmpdir:
+        for index, (start, end) in enumerate(ranges):
+            chunk_path = os.path.join(tmpdir, f"chunk_{index:04d}.wav")
+            export_chunk(ffmpeg, audio_path, chunk_path, start, end - start)
+            text = normalize_text(model.transcribe(chunk_path)).strip()
+            if text:
+                texts.append(text)
+            emit_progress((index + 1) / len(ranges))
+    return "\n\n".join(texts)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--audio", required=True)
@@ -224,19 +337,15 @@ try:
         trust_remote_code=True,
     )
     model = model.float()
-    text = model.transcribe(args.audio)
+    text = transcribe_audio(model, args.audio)
 except ModuleNotFoundError as exc:
     fail(f"Missing Python package '{exc.name}'. Run: {SETUP}", 70)
+except subprocess.CalledProcessError as exc:
+    stderr = exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+    fail(stderr.strip() or str(exc), 1)
 except Exception as exc:
     fail(str(exc), 1)
 
-if isinstance(text, dict):
-    text = text.get("text", "")
-elif isinstance(text, (list, tuple)):
-    text = " ".join(str(item.get("text", item) if isinstance(item, dict) else item) for item in text)
-else:
-    text = str(text)
-
-print("__WHISPERFREE_GIGAAM_RESULT__" + json.dumps({"text": text}, ensure_ascii=False))
+print("__WHISPERFREE_GIGAAM_RESULT__" + json.dumps({"text": normalize_text(text)}, ensure_ascii=False))
 """#
 }
