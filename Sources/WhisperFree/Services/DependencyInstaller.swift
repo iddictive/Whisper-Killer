@@ -9,10 +9,14 @@ enum DependencyError: Error, LocalizedError {
     
     var errorDescription: String? {
         switch self {
-        case .downloadFailed: return "Failed to download the installation package."
-        case .extractionFailed: return "Failed to extract the downloaded files."
-        case .installationFailed(let reason): return "Installation failed: \(reason)"
-        case .scriptExecutionFailed: return "Failed to execute the required admin script."
+        case .downloadFailed:
+            return L.tr("Failed to download the installation package.", "Не удалось скачать установочный пакет.")
+        case .extractionFailed:
+            return L.tr("Failed to extract the downloaded files.", "Не удалось распаковать скачанные файлы.")
+        case .installationFailed(let reason):
+            return L.tr("Installation failed: \(reason)", "Не удалось установить: \(reason)")
+        case .scriptExecutionFailed:
+            return L.tr("Failed to execute the required admin script.", "Не удалось запустить системный скрипт установки.")
         }
     }
 }
@@ -178,7 +182,12 @@ final class DependencyInstaller: ObservableObject {
             guard process.terminationStatus == 0 else {
                 let output = (try? String(contentsOf: outputURL, encoding: .utf8))?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                let message = installFailureMessage(from: output, status: process.terminationStatus)
+                let message = installFailureMessage(
+                    from: output,
+                    status: process.terminationStatus,
+                    commandDescription: "brew install whisper-cpp",
+                    detectHomebrewPermissionFailure: true
+                )
                 return .failure(.installationFailed(message))
             }
 
@@ -231,7 +240,12 @@ final class DependencyInstaller: ObservableObject {
             guard process.terminationStatus == 0 else {
                 let output = (try? String(contentsOf: outputURL, encoding: .utf8))?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                let message = installFailureMessage(from: output, status: process.terminationStatus)
+                let message = installFailureMessage(
+                    from: output,
+                    status: process.terminationStatus,
+                    commandDescription: "GigaAM dependency install",
+                    detectHomebrewPermissionFailure: false
+                )
                 return .failure(.installationFailed(message))
             }
 
@@ -241,9 +255,19 @@ final class DependencyInstaller: ObservableObject {
         }
     }
 
-    nonisolated private static func installFailureMessage(from output: String?, status: Int32) -> String {
+    nonisolated private static func installFailureMessage(
+        from output: String?,
+        status: Int32,
+        commandDescription: String,
+        detectHomebrewPermissionFailure: Bool
+    ) -> String {
         guard let output, !output.isEmpty else {
-            return "brew install whisper-cpp exited with code \(status)."
+            return "\(commandDescription) exited with code \(status)."
+        }
+
+        if detectHomebrewPermissionFailure,
+           let message = homebrewPermissionFailureMessage(from: output) {
+            return message
         }
 
         let maxLength = 600
@@ -252,6 +276,34 @@ final class DependencyInstaller: ObservableObject {
         }
 
         return String(output.suffix(maxLength))
+    }
+
+    nonisolated private static func homebrewPermissionFailureMessage(from output: String) -> String? {
+        let normalized = output.lowercased()
+        let isHomebrewPermissionFailure =
+            normalized.contains("homebrew")
+            && (
+                normalized.contains("not writable")
+                || normalized.contains("you should change the ownership")
+                || normalized.contains("permission denied")
+                || normalized.contains("operation not permitted")
+            )
+
+        guard isHomebrewPermissionFailure else { return nil }
+
+        let prefix: String
+        if output.contains("/opt/homebrew") {
+            prefix = "/opt/homebrew"
+        } else if output.contains("/usr/local") {
+            prefix = "/usr/local"
+        } else {
+            prefix = "$(brew --prefix)"
+        }
+
+        return L.tr(
+            "Homebrew permissions need repair. Run in Terminal: sudo chown -R $(whoami) \(prefix) && chmod -R u+w \(prefix)",
+            "Нужно исправить права Homebrew. В Terminal: sudo chown -R $(whoami) \(prefix) && chmod -R u+w \(prefix)"
+        )
     }
 
     nonisolated static func findHomebrewPath() -> String? {
