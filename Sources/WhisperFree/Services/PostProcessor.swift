@@ -22,7 +22,33 @@ final class PostProcessor {
         guard !apiKey.isEmpty else { throw TranscriptionError.noAPIKey }
         guard !text.isEmpty else { return ProcessedResult(text: text, promptTokens: 0, completionTokens: 0, engine: engine) }
 
-        return try await openAIChat(systemPrompt: mode.systemPrompt, userText: text, temperature: 0.3, maxTokens: 2048)
+        let chunks = splitTextForProcessing(text)
+        guard chunks.count > 1 else {
+            return try await openAIChat(systemPrompt: mode.systemPrompt, userText: text, temperature: 0.3, maxTokens: 2048)
+        }
+
+        var processedChunks: [String] = []
+        var promptTokens = 0
+        var completionTokens = 0
+
+        for (index, chunk) in chunks.enumerated() {
+            let result = try await openAIChat(
+                systemPrompt: mode.systemPrompt,
+                userText: "Chunk \(index + 1) of \(chunks.count):\n\n\(chunk)",
+                temperature: 0.3,
+                maxTokens: 2048
+            )
+            processedChunks.append(result.text)
+            promptTokens += result.promptTokens
+            completionTokens += result.completionTokens
+        }
+
+        return ProcessedResult(
+            text: processedChunks.joined(separator: "\n\n"),
+            promptTokens: promptTokens,
+            completionTokens: completionTokens,
+            engine: engine
+        )
     }
 
     func diarize(text: String) async throws -> ProcessedResult {
@@ -39,7 +65,33 @@ final class PostProcessor {
         Output ONLY the diarized text. Do not add any introduction or conclusion. Keep the original words exactly as transcribed.
         """
 
-        return try await openAIChat(systemPrompt: systemPrompt, userText: text, temperature: 0.2, maxTokens: 4096)
+        let chunks = splitTextForProcessing(text)
+        guard chunks.count > 1 else {
+            return try await openAIChat(systemPrompt: systemPrompt, userText: text, temperature: 0.2, maxTokens: 4096)
+        }
+
+        var diarizedChunks: [String] = []
+        var promptTokens = 0
+        var completionTokens = 0
+
+        for (index, chunk) in chunks.enumerated() {
+            let result = try await openAIChat(
+                systemPrompt: systemPrompt,
+                userText: "Chunk \(index + 1) of \(chunks.count):\n\n\(chunk)",
+                temperature: 0.2,
+                maxTokens: 4096
+            )
+            diarizedChunks.append(result.text)
+            promptTokens += result.promptTokens
+            completionTokens += result.completionTokens
+        }
+
+        return ProcessedResult(
+            text: diarizedChunks.joined(separator: "\n\n"),
+            promptTokens: promptTokens,
+            completionTokens: completionTokens,
+            engine: .openai
+        )
     }
 
     func summarizeTranscript(text: String) async throws -> ProcessedResult {
@@ -162,6 +214,16 @@ final class PostProcessor {
     private func splitTextForFollowUp(_ text: String, maxCharacters: Int = 12_000) -> [String] {
         guard text.count > maxCharacters else { return [text] }
 
+        return splitText(text, maxCharacters: maxCharacters)
+    }
+
+    private func splitTextForProcessing(_ text: String, maxCharacters: Int = 6_000) -> [String] {
+        guard text.count > maxCharacters else { return [text] }
+
+        return splitText(text, maxCharacters: maxCharacters)
+    }
+
+    private func splitText(_ text: String, maxCharacters: Int) -> [String] {
         let words = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         var chunks: [String] = []
         var current = ""

@@ -8,8 +8,8 @@ final class CloudWhisper: TranscriptionEngine {
     private let apiKey: String
     private let model: CloudTranscriptionModel
     private let maxUploadBytes = 25 * 1024 * 1024 // OpenAI 25 MB limit
-    /// Maximum chunk duration in seconds for splitting large files (10 minutes)
-    private let maxChunkDuration: TimeInterval = 600
+    /// Keep request-sized chunks conservative so longer recordings do not depend on one large API pass.
+    private let maxChunkDuration: TimeInterval = 120
 
     init(apiKey: String, model: CloudTranscriptionModel) {
         self.apiKey = apiKey
@@ -146,7 +146,13 @@ final class CloudWhisper: TranscriptionEngine {
         if let lang = language, lang != "auto" {
             body.appendMultipart(boundary: boundary, name: "language", value: lang)
         }
-        body.appendMultipart(boundary: boundary, name: "response_format", value: "text")
+        switch model {
+        case .whisper1:
+            body.appendMultipart(boundary: boundary, name: "response_format", value: "text")
+        case .gpt4oMiniTranscribe, .gpt4oTranscribe:
+            body.appendMultipart(boundary: boundary, name: "response_format", value: "json")
+            body.appendMultipart(boundary: boundary, name: "chunking_strategy", value: "auto")
+        }
 
         let audioData = try Data(contentsOf: fileURL)
         let ext = fileURL.pathExtension.lowercased()
@@ -181,11 +187,19 @@ final class CloudWhisper: TranscriptionEngine {
             throw TranscriptionError.networkError("HTTP \(httpResponse.statusCode): \(errorText)")
         }
 
-        guard let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            throw TranscriptionError.invalidResponse
+        switch model {
+        case .whisper1:
+            guard let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                throw TranscriptionError.invalidResponse
+            }
+            return text
+        case .gpt4oMiniTranscribe, .gpt4oTranscribe:
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let text = json["text"] as? String else {
+                throw TranscriptionError.invalidResponse
+            }
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-
-        return text
     }
 
     private func openAIErrorMessage(from data: Data) -> String? {
