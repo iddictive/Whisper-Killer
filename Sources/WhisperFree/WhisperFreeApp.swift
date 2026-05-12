@@ -127,8 +127,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     @discardableResult
     func showFileTranscription(urls: [URL]) -> Bool {
-        showFileTranscription()
-        return AppState.shared.requestFileTranscription(urls: urls)
+        let didRequestTranscription = AppState.shared.requestFileTranscription(urls: urls)
+        if didRequestTranscription {
+            showFileTranscription()
+        }
+        return didRequestTranscription
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
