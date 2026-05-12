@@ -30,6 +30,7 @@ final class AppState: ObservableObject {
     @Published var history: [TranscriptionHistoryEntry] = []
     @Published var lastError: String?
     @Published var lastTranscription: String?
+    @Published var fileTranscriptionImportRequest: FileTranscriptionImportRequest?
 
     @Published var copiedFeedback = false
     @Published var availableInputDevices: [AVCaptureDevice] = []
@@ -218,6 +219,22 @@ final class AppState: ObservableObject {
         settings.normalizeBeforeSaving()
         Storage.shared.saveSettings(settings)
         hotkeyManager.config = settings.hotkeyConfig
+    }
+
+    func requestFileTranscription(urls: [URL]) -> Bool {
+        let supportedURLs = FileTranscriptionSupport.supportedURLs(from: urls)
+        guard !supportedURLs.isEmpty else {
+            showError(L.tr("No supported audio or video files selected.", "Не выбраны поддерживаемые аудио- или видеофайлы."))
+            return false
+        }
+
+        fileTranscriptionImportRequest = FileTranscriptionImportRequest(urls: supportedURLs)
+        return true
+    }
+
+    func consumeFileTranscriptionRequest(id: UUID) {
+        guard fileTranscriptionImportRequest?.id == id else { return }
+        fileTranscriptionImportRequest = nil
     }
 
     // MARK: - Hotkey Setup

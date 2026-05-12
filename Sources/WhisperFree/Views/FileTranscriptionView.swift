@@ -11,6 +11,7 @@ struct FileTranscriptionView: View {
 
     @State private var queueItems: [QueueItem] = []
     @State private var isProcessing = false
+    @State private var consumedImportRequestID: UUID?
 
     var body: some View {
         ZStack {
@@ -73,9 +74,15 @@ struct FileTranscriptionView: View {
         .onChange(of: appState.settings.engineType) { _, _ in
             updateVisibleCosts()
         }
+        .onChange(of: appState.fileTranscriptionImportRequest) { _, request in
+            consumeImportRequest(request)
+        }
+        .onAppear {
+            consumeImportRequest(appState.fileTranscriptionImportRequest)
+        }
         .fileImporter(
             isPresented: $showFilePicker,
-            allowedContentTypes: [.audio, .video, .movie, .quickTimeMovie, .mpeg4Movie, .wav, .mp3, .aiff],
+            allowedContentTypes: FileTranscriptionSupport.allowedContentTypes,
             allowsMultipleSelection: true
         ) { result in
             switch result {
@@ -443,7 +450,22 @@ struct FileTranscriptionView: View {
     // MARK: - Queue Logic
 
     private func addToQueue(_ urls: [URL]) {
-        for url in urls {
+        let supportedURLs = FileTranscriptionSupport.supportedURLs(from: urls)
+        let skippedCount = urls.count - supportedURLs.count
+
+        guard !supportedURLs.isEmpty else {
+            error = L.tr("No supported audio or video files selected.", "Не выбраны поддерживаемые аудио- или видеофайлы.")
+            return
+        }
+
+        if skippedCount > 0 {
+            error = L.tr(
+                "\(skippedCount) unsupported file(s) skipped.",
+                "\(skippedCount) \(L.russianPlural(skippedCount, one: "неподдерживаемый файл пропущен", few: "неподдерживаемых файла пропущены", many: "неподдерживаемых файлов пропущено"))."
+            )
+        }
+
+        for url in supportedURLs {
             let item = QueueItem(url: url)
             queueItems.append(item)
 
@@ -453,6 +475,13 @@ struct FileTranscriptionView: View {
             }
         }
         // processNextInQueue() removed to wait for user confirmation
+    }
+
+    private func consumeImportRequest(_ request: FileTranscriptionImportRequest?) {
+        guard let request, consumedImportRequestID != request.id else { return }
+        consumedImportRequestID = request.id
+        addToQueue(request.urls)
+        appState.consumeFileTranscriptionRequest(id: request.id)
     }
 
     private var totalDisplayCost: Double {

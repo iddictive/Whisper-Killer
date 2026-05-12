@@ -20,5 +20,50 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Whisper Free needs microphone access to record your voice for transcription.</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio and Video Files</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.audio</string>
+				<string>public.movie</string>
+				<string>public.video</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Transcribe with WhisperKiller</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>transcribeFiles</string>
+			<key>NSPortName</key>
+			<string>WhisperKiller</string>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.audio</string>
+				<string>public.movie</string>
+				<string>public.video</string>
+			</array>
+			<key>NSSendTypes</key>
+			<array>
+				<string>public.file-url</string>
+			</array>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSServiceDescription</key>
+			<string>Transcribes selected audio and video files.</string>
+		</dict>
+	</array>
 </dict>
 </plist>

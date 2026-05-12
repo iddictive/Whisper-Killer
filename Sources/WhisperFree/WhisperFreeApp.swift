@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         print("🚀 applicationDidFinishLaunching...")
 
         configureApplicationIcon()
+        NSApp.servicesProvider = self
+        NSUpdateDynamicServices()
 
         // Ensure app can run without dock icon but with menu bar
         NSApp.setActivationPolicy(.accessory)
@@ -121,6 +123,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             fileTranscriptionController = FileTranscriptionWindowController()
         }
         fileTranscriptionController?.show()
+    }
+
+    @discardableResult
+    func showFileTranscription(urls: [URL]) -> Bool {
+        showFileTranscription()
+        return AppState.shared.requestFileTranscription(urls: urls)
+    }
+
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        let urls = filenames.map { URL(fileURLWithPath: $0) }
+        let didOpen = showFileTranscription(urls: urls)
+        sender.reply(toOpenOrPrint: didOpen ? .success : .failure)
+    }
+
+    @objc(transcribeFiles:userData:error:)
+    func transcribeFiles(
+        _ pasteboard: NSPasteboard,
+        userData: String,
+        error: AutoreleasingUnsafeMutablePointer<NSString?>
+    ) {
+        let urls = fileURLs(from: pasteboard)
+        let supportedURLs = FileTranscriptionSupport.supportedURLs(from: urls)
+
+        guard !supportedURLs.isEmpty else {
+            error.pointee = L.tr(
+                "Select supported audio or video files.",
+                "Выберите поддерживаемые аудио- или видеофайлы."
+            ) as NSString
+            return
+        }
+
+        showFileTranscription(urls: supportedURLs)
+    }
+
+    private func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true
+        ]
+
+        let readURLs = pasteboard
+            .readObjects(forClasses: [NSURL.self], options: options)?
+            .compactMap { $0 as? URL } ?? []
+
+        if !readURLs.isEmpty {
+            return readURLs
+        }
+
+        let filenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+        if let filenames = pasteboard.propertyList(forType: filenamesType) as? [String] {
+            return filenames.map { URL(fileURLWithPath: $0) }
+        }
+
+        return pasteboard.pasteboardItems?.compactMap { item in
+            item.string(forType: .fileURL).flatMap(URL.init(string:))
+        } ?? []
     }
 
     func showAccessibilityDragHelper() {
