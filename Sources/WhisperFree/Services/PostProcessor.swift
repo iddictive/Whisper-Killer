@@ -24,7 +24,7 @@ final class PostProcessor {
 
         let chunks = splitTextForProcessing(text)
         guard chunks.count > 1 else {
-            return try await openAIChat(systemPrompt: mode.systemPrompt, userText: text, temperature: 0.3, maxTokens: 2048)
+            return try await openAIChat(systemPrompt: mode.systemPrompt, userText: text, temperature: 0.3, maxTokens: nil)
         }
 
         var processedChunks: [String] = []
@@ -36,7 +36,7 @@ final class PostProcessor {
                 systemPrompt: mode.systemPrompt,
                 userText: "Chunk \(index + 1) of \(chunks.count):\n\n\(chunk)",
                 temperature: 0.3,
-                maxTokens: 2048
+                maxTokens: nil
             )
             processedChunks.append(result.text)
             promptTokens += result.promptTokens
@@ -185,7 +185,7 @@ final class PostProcessor {
         systemPrompt: String,
         userText: String,
         temperature: Double,
-        maxTokens: Int
+        maxTokens: Int?
     ) async throws -> ProcessedResult {
         switch engine {
         case .openAI:
@@ -245,7 +245,7 @@ final class PostProcessor {
         return chunks
     }
 
-    private func openAIChat(systemPrompt: String, userText: String, temperature: Double, maxTokens: Int) async throws -> ProcessedResult {
+    private func openAIChat(systemPrompt: String, userText: String, temperature: Double, maxTokens: Int?) async throws -> ProcessedResult {
         let engine = PostProcessingEngine.openai
         let apiKey = settings.normalizedAPIKey
         let url = URL(string: "https://api.openai.com/v1/chat/completions")!
@@ -256,15 +256,17 @@ final class PostProcessor {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "model": model,
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 ["role": "user", "content": userText]
             ],
-            "temperature": temperature,
-            "max_tokens": maxTokens
+            "temperature": temperature
         ]
+        if let maxTokens {
+            payload["max_tokens"] = maxTokens
+        }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 

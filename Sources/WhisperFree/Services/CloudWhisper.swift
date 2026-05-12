@@ -8,8 +8,8 @@ final class CloudWhisper: TranscriptionEngine {
     private let apiKey: String
     private let model: CloudTranscriptionModel
     private let maxUploadBytes = 25 * 1024 * 1024 // OpenAI 25 MB limit
-    /// Keep request-sized chunks conservative so longer recordings do not depend on one large API pass.
-    private let maxChunkDuration: TimeInterval = 120
+    /// Fallback chunk duration when a prepared upload still exceeds OpenAI's file-size limit.
+    private let maxChunkDuration: TimeInterval = 600
 
     init(apiKey: String, model: CloudTranscriptionModel) {
         self.apiKey = apiKey
@@ -31,12 +31,12 @@ final class CloudWhisper: TranscriptionEngine {
         let (uploadURL, shouldCleanup) = try await prepareAudioFile(audioURL, timeRange: timeRange, onProgress: onProgress)
         defer { if shouldCleanup { try? FileManager.default.removeItem(at: uploadURL) } }
 
-        // Check if we need to chunk (file too large or too long)
+        // Check if we need to chunk because the prepared upload is still too large.
         let asset = AVURLAsset(url: uploadURL)
         let totalDuration = try await asset.load(.duration).seconds
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: uploadURL.path)[.size] as? Int) ?? 0
 
-        if fileSize > maxUploadBytes || totalDuration > maxChunkDuration {
+        if fileSize > maxUploadBytes {
             print("whisper_debug: ☁️ File needs chunking: \(fileSize) bytes, \(String(format: "%.0f", totalDuration))s duration")
             let result = try await transcribeInChunks(fileURL: uploadURL, totalDuration: totalDuration, language: language, startTime: startTime, onProgress: onProgress)
             onProgress?(1.0, nil)
