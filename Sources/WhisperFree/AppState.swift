@@ -18,13 +18,15 @@ enum ProcessingStage: String {
     case none = ""
 }
 
-private struct ActiveProcessingRecording {
+private struct RecordingProcessingJob {
+    let id: UUID
     let audioURL: URL
     let duration: TimeInterval
     let modeName: String
     let engineUsed: String
     var rawText: String = ""
     var processedText: String = ""
+    var stage: ProcessingStage = .transcribing
 }
 
 
@@ -40,6 +42,7 @@ final class AppState: ObservableObject {
     @Published var lastError: String?
     @Published var lastTranscription: String?
     @Published var fileTranscriptionImportRequest: FileTranscriptionImportRequest?
+    @Published private(set) var backgroundProcessingCount: Int = 0
 
     @Published var copiedFeedback = false
     @Published var availableInputDevices: [AVCaptureDevice] = []
@@ -74,6 +77,15 @@ final class AppState: ObservableObject {
     private func countsTowardDictationStats(_ entry: TranscriptionHistoryEntry) -> Bool {
         !entry.isFromFileImport && !entry.engineUsed.localizedCaseInsensitiveContains("cancelled")
     }
+
+    var isProcessingActive: Bool {
+        state == .processing || backgroundProcessingCount > 0
+    }
+
+    private var shouldShowOverlay: Bool {
+        state == .recording || state == .processing || state == .typing || backgroundProcessingCount > 0 || lastError != nil
+    }
+
     @Published var showOverlayWindow = false {
         didSet {
             if !showOverlayWindow {
@@ -112,7 +124,8 @@ final class AppState: ObservableObject {
     private var pendingStopTask: Task<Void, Never>?
     private var currentProcessingTask: Task<Void, Never>?
     private var currentProcessingToken: UUID?
-    private var activeProcessingRecording: ActiveProcessingRecording?
+    private var processingQueue: [RecordingProcessingJob] = []
+    private var activeProcessingRecording: RecordingProcessingJob?
     private let postReleaseTail: TimeInterval = 0.45
 
     private init() {
@@ -222,7 +235,7 @@ final class AppState: ObservableObject {
         lastError = nil
         errorTimer?.cancel()
         errorTimer = nil
-        if state == .idle {
+        if state == .idle && backgroundProcessingCount == 0 {
             showOverlayWindow = false
         }
     }
@@ -357,7 +370,7 @@ final class AppState: ObservableObject {
                     // Auto-dismiss permission error overlay when access is granted
                     if !denied, let error = self.lastError, error.contains("Microphone access denied") {
                         self.lastError = nil
-                        if self.state == .idle {
+                        if self.state == .idle && self.backgroundProcessingCount == 0 {
                             self.showOverlayWindow = false
                         }
                     }
@@ -541,9 +554,9 @@ final class AppState: ObservableObject {
         recorder.stopMonitoring()
         recorder.cleanup()
         state = .idle
-        processingStage = .none
         keyDownTime = nil
-        if !keepErrorOverlay {
+        refreshBackgroundProcessingState()
+        if !keepErrorOverlay && backgroundProcessingCount == 0 {
             showOverlayWindow = false
         }
     }
@@ -572,14 +585,13 @@ final class AppState: ObservableObject {
         }
         recorder.cleanup()
         state = .idle
-        processingStage = .none
-        showOverlayWindow = false
+        refreshBackgroundProcessingState()
     }
 
     private var currentEngine: TranscriptionEngine?
 
     func cancelProcessing() {
-        guard state == .processing else { return }
+        guard state == .processing || backgroundProcessingCount > 0 else { return }
 
         cancelPendingStopTask()
         if let cancelledRecording = activeProcessingRecording {
@@ -593,6 +605,17 @@ final class AppState: ObservableObject {
                 preserveSource: true
             )
             activeProcessingRecording = nil
+        } else if !processingQueue.isEmpty {
+            let cancelledRecording = processingQueue.removeFirst()
+            saveCancelledRecordingHistoryEntry(
+                audioURL: cancelledRecording.audioURL,
+                duration: cancelledRecording.duration,
+                modeName: cancelledRecording.modeName,
+                engineUsed: cancelledRecording.engineUsed + " + Cancelled",
+                rawText: cancelledRecording.rawText,
+                processedText: cancelledRecording.processedText,
+                preserveSource: false
+            )
         }
         currentProcessingToken = nil
         currentProcessingTask?.cancel()
@@ -600,15 +623,17 @@ final class AppState: ObservableObject {
         currentEngine?.cancel()
         currentEngine = nil
 
-        _ = recorder.stopRecording()
-        recorder.cleanup()
-        state = .idle
-        processingStage = .none
-        showOverlayWindow = false
+        if state == .processing {
+            _ = recorder.stopRecording()
+            recorder.cleanup()
+            state = .idle
+        }
+        refreshBackgroundProcessingState()
+        startNextProcessingJobIfNeeded()
     }
 
     func retranscribeHistoryEntry(_ entry: TranscriptionHistoryEntry) async {
-        guard state == .idle else {
+        guard state == .idle && backgroundProcessingCount == 0 else {
             showError("Wait for the current transcription to finish first.")
             return
         }
@@ -758,236 +783,236 @@ final class AppState: ObservableObject {
         guard let audioURL = audioURLOptional else {
             // Recording too short or failed
             state = .idle
-            showOverlayWindow = false
+            refreshBackgroundProcessingState()
             return
         }
 
-        let selectedModeName = settings.selectedMode.name
-        let selectedEngine = settings.engineType.rawValue
-
-        state = .processing
-        processingStage = .transcribing
-
-        let processingToken = UUID()
-        currentProcessingToken = processingToken
-        activeProcessingRecording = ActiveProcessingRecording(
+        let job = RecordingProcessingJob(
+            id: UUID(),
             audioURL: audioURL,
             duration: recordingDuration,
-            modeName: selectedModeName,
-            engineUsed: selectedEngine
+            modeName: settings.selectedMode.name,
+            engineUsed: settings.engineType.rawValue
         )
+        state = .idle
+        enqueueRecordingForProcessing(job)
+    }
 
+    private func enqueueRecordingForProcessing(_ job: RecordingProcessingJob) {
+        processingQueue.append(job)
+        refreshBackgroundProcessingState()
+        startNextProcessingJobIfNeeded()
+    }
+
+    private func startNextProcessingJobIfNeeded() {
+        guard activeProcessingRecording == nil,
+              currentProcessingTask == nil,
+              !processingQueue.isEmpty
+        else { return }
+
+        var job = processingQueue.removeFirst()
+        job.stage = .transcribing
+        activeProcessingRecording = job
+        currentProcessingToken = job.id
+        refreshBackgroundProcessingState()
+
+        let jobID = job.id
         currentProcessingTask = Task { @MainActor in
-            var rawText = ""
-            var processedText = ""
-            var usage: UsageLog? = nil
-            var processingErrorMessage: String?
+            await self.processRecordingJob(id: jobID)
+        }
+    }
 
-            defer {
-                if self.currentProcessingToken == processingToken {
-                    self.currentEngine = nil
-                    self.currentProcessingTask = nil
-                    self.currentProcessingToken = nil
-                }
+    private func processRecordingJob(id jobID: UUID) async {
+        guard let job = activeProcessingRecording, job.id == jobID else { return }
+
+        let audioURL = job.audioURL
+        let recordingDuration = job.duration
+        let selectedModeName = job.modeName
+        let selectedEngine = job.engineUsed
+        var rawText = ""
+        var processedText = ""
+        var usage: UsageLog? = nil
+        var processingErrorMessage: String?
+
+        do {
+            let fileAttrs = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
+            let fileSize = fileAttrs?[.size] as? Int64 ?? 0
+            print("whisper_debug: 📁 Audio file for transcription: \(audioURL.lastPathComponent), size: \(fileSize) bytes")
+
+            if fileSize < 1000 {
+                print("whisper_debug: ⚠️ WARNING: Audio file is suspiciously small (\(fileSize) bytes)!")
             }
 
-            do {
-                // Diagnostic: check audio file before sending
-                let fileAttrs = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
-                let fileSize = fileAttrs?[.size] as? Int64 ?? 0
-                print("whisper_debug: 📁 Audio file for transcription: \(audioURL.lastPathComponent), size: \(fileSize) bytes")
-                
-                if fileSize < 1000 {
-                    print("whisper_debug: ⚠️ WARNING: Audio file is suspiciously small (\(fileSize) bytes)!")
-                }
-                
-                // 1. Transcribe
-                let engine = TranscriptionEngineFactory.create(for: settings.engineType, settings: settings)
-                self.currentEngine = engine
-                let lang = settings.language == "auto" ? nil : settings.language
-                rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil, onProgress: nil)
-                updateActiveProcessingText(rawText: rawText, processedText: nil)
-                self.currentEngine = nil
-                try Task.checkCancellation()
-                
-                print("whisper_debug: 📝 Raw transcription result: '\(rawText)' (length: \(rawText.count))")
+            let engine = TranscriptionEngineFactory.create(for: settings.engineType, settings: settings)
+            currentEngine = engine
+            let lang = settings.language == "auto" ? nil : settings.language
+            rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil, onProgress: nil)
+            updateActiveProcessingText(for: jobID, rawText: rawText, processedText: nil, stage: nil)
+            if currentProcessingToken == jobID {
+                currentEngine = nil
+            }
+            try Task.checkCancellation()
 
-                let trimmedRawText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmedRawText.isEmpty else {
-                    let errorMessage = "No speech detected. Try speaking more clearly or check your microphone."
-                    saveFailedRecordingHistoryEntry(
-                        audioURL: audioURL,
-                        rawText: rawText,
-                        processedText: processedText,
-                        errorMessage: errorMessage,
-                        modeName: selectedModeName,
-                        duration: recordingDuration,
-                        engineUsed: selectedEngine + " + Error",
-                        usage: usage
-                    )
-                    clearActiveProcessingRecording(for: audioURL)
-                    showError(errorMessage)
-                    state = .idle
-                    processingStage = .none
-                    recorder.cleanup()
-                    currentEngine = nil
-                    return
-                }
+            print("whisper_debug: 📝 Raw transcription result: '\(rawText)' (length: \(rawText.count))")
 
-                // 2. Post-process (if enabled and instant typing is OFF)
-                processedText = rawText
-                updateActiveProcessingText(rawText: nil, processedText: processedText)
-                
-                let shouldRunDiarization = settings.enableSpeakerDiarization && settings.canUseSpeakerDiarization
-                let shouldRunStandardPostProcessing = !shouldRunDiarization
-                    && settings.enablePostProcessing
-                    && settings.selectedMode.name != "Raw"
-                    && !settings.selectedMode.systemPrompt.isEmpty
-
-                if shouldRunDiarization {
-                    print("ℹ️ Skipping standard AI refinement because Diarization is active.")
-                } else if shouldRunStandardPostProcessing {
-                    processingStage = .postProcessing
-                    do {
-                        let processor = PostProcessor(settings: settings)
-                        let result = try await processor.process(text: rawText, mode: settings.selectedMode)
-                        try Task.checkCancellation()
-                        processedText = result.text
-                        updateActiveProcessingText(rawText: nil, processedText: processedText)
-                        
-                        // Create usage log only if AI was actually used
-                        let totalTokens = result.promptTokens + result.completionTokens
-                        if totalTokens > 0 {
-                            let engine = settings.postProcessingEngine
-                            usage = UsageLog(
-                                date: Date(),
-                                modeName: settings.selectedMode.name,
-                                engine: engine.rawValue,
-                                promptTokens: result.promptTokens,
-                                completionTokens: result.completionTokens,
-                                totalTokens: totalTokens,
-                                estimatedCost: UsageLog.estimateCost(prompt: result.promptTokens, completion: result.completionTokens, engine: engine)
-                            )
-                        }
-                    } catch {
-                        print("⚠️ AI refinement failed: \(error)")
-                        processingErrorMessage = error.localizedDescription
-                        self.showError(postProcessingFallbackMessage(for: error))
-                        processingStage = .transcribing // revert stage
-                    }
-                }
-
-                // 3. Diarization (if enabled and configured)
-                if shouldRunDiarization {
-                    processingStage = .postProcessing // reuse stage
-                    do {
-                        let processor = PostProcessor(settings: settings)
-                        let diarizationResult = try await processor.diarize(text: processedText)
-                        try Task.checkCancellation()
-                        processedText = diarizationResult.text
-                        updateActiveProcessingText(rawText: nil, processedText: processedText)
-                        
-                        // Accumulate tokens
-                        let currentTokens = (usage?.totalTokens ?? 0) + diarizationResult.promptTokens + diarizationResult.completionTokens
-                        let currentPromptTokens = (usage?.promptTokens ?? 0) + diarizationResult.promptTokens
-                        let currentCompletionTokens = (usage?.completionTokens ?? 0) + diarizationResult.completionTokens
-                        
-                        usage = UsageLog(
-                            date: Date(),
-                            modeName: "Diarization",
-                            engine: PostProcessingEngine.openai.rawValue,
-                            promptTokens: currentPromptTokens,
-                            completionTokens: currentCompletionTokens,
-                            totalTokens: currentTokens,
-                            estimatedCost: UsageLog.estimateCost(prompt: currentPromptTokens, completion: currentCompletionTokens, engine: .openai)
-                        )
-                    } catch {
-                        print("⚠️ Diarization failed: \(error)")
-                        processingErrorMessage = error.localizedDescription
-                    }
-                }
-
-                let filteredRawText = ProfanityFilter.apply(to: rawText, settings: settings)
-                processedText = ProfanityFilter.apply(to: processedText, settings: settings)
-                try Task.checkCancellation()
-
-                // 4. Insert Result
-                if settings.autoTypeResult {
-                    state = .typing
-                    // Small delay to let the target app settle before insertion.
-                    try await Task.sleep(nanoseconds: 50_000_000)
-                    try Task.checkCancellation()
-                    AutoTyper.insert(text: processedText, method: settings.insertionMethod)
-                    
-                    if settings.experimentalAutoEnter {
-                        AutoTyper.simulateReturn()
-                    }
-                }
-
-                // 5. Save to history & usage logs
-                // 6. Update Stats
-                let wordCount = processedText.split { $0.isWhitespace || $0.isPunctuation }.count
-                settings.lifetimeWords += wordCount
-                settings.lifetimeDuration += recordingDuration
-                saveSettings()
-
-                // 7. Persist audio file
-                let persistentAudioPath = persistRecordingAudio(from: audioURL)
-                clearActiveProcessingRecording(for: audioURL)
-
-                let entry = TranscriptionHistoryEntry(
-                    rawText: filteredRawText,
-                    processedText: processedText,
-                    processingError: processingErrorMessage,
-                    modeName: selectedModeName,
-                    duration: recordingDuration,
-                    engineUsed: selectedEngine + (shouldRunStandardPostProcessing ? " + AI" : "") + (shouldRunDiarization ? " + Diarization" : ""),
-                    usage: usage,
-                    audioFilePath: persistentAudioPath,
-                    ownsAudioFile: persistentAudioPath != nil
-                )
-                Storage.shared.addTranscriptionHistoryEntry(entry)
-                history.insert(entry, at: 0)
-                
-                if let u = usage {
-                    settings.usageLogs.append(u)
-                    cleanupOldLogs()
-                }
-                saveSettings()
-
-                lastTranscription = processedText
-
-                state = .idle
-                processingStage = .none
-                showOverlayWindow = false
-                recorder.cleanup()
-
-
-            } catch {
-                if Task.isCancelled || error is CancellationError {
-                    print("whisper_debug: ⏹️ Processing cancelled by user")
-                    recorder.cleanup()
-                    return
-                }
-
-                print("whisper_debug: ❌ Transcription task failed: \(error)")
+            let trimmedRawText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedRawText.isEmpty else {
+                let errorMessage = "No speech detected. Try speaking more clearly or check your microphone."
                 saveFailedRecordingHistoryEntry(
                     audioURL: audioURL,
                     rawText: rawText,
                     processedText: processedText,
-                    errorMessage: error.localizedDescription,
+                    errorMessage: errorMessage,
                     modeName: selectedModeName,
                     duration: recordingDuration,
                     engineUsed: selectedEngine + " + Error",
                     usage: usage
                 )
-                clearActiveProcessingRecording(for: audioURL)
-                showError(error.localizedDescription)
-                state = .idle
-                processingStage = .none
-                recorder.cleanup()
-                currentEngine = nil
+                finishProcessingJob(id: jobID)
+                showError(errorMessage)
+                return
             }
+
+            processedText = rawText
+            updateActiveProcessingText(for: jobID, rawText: nil, processedText: processedText, stage: nil)
+
+            let shouldRunDiarization = settings.enableSpeakerDiarization && settings.canUseSpeakerDiarization
+            let shouldRunStandardPostProcessing = !shouldRunDiarization
+                && settings.enablePostProcessing
+                && settings.selectedMode.name != "Raw"
+                && !settings.selectedMode.systemPrompt.isEmpty
+
+            if shouldRunDiarization {
+                print("ℹ️ Skipping standard AI refinement because Diarization is active.")
+            } else if shouldRunStandardPostProcessing {
+                updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: .postProcessing)
+                do {
+                    let processor = PostProcessor(settings: settings)
+                    let result = try await processor.process(text: rawText, mode: settings.selectedMode)
+                    try Task.checkCancellation()
+                    processedText = result.text
+                    updateActiveProcessingText(for: jobID, rawText: nil, processedText: processedText, stage: nil)
+
+                    let totalTokens = result.promptTokens + result.completionTokens
+                    if totalTokens > 0 {
+                        let engine = settings.postProcessingEngine
+                        usage = UsageLog(
+                            date: Date(),
+                            modeName: settings.selectedMode.name,
+                            engine: engine.rawValue,
+                            promptTokens: result.promptTokens,
+                            completionTokens: result.completionTokens,
+                            totalTokens: totalTokens,
+                            estimatedCost: UsageLog.estimateCost(prompt: result.promptTokens, completion: result.completionTokens, engine: engine)
+                        )
+                    }
+                } catch {
+                    print("⚠️ AI refinement failed: \(error)")
+                    processingErrorMessage = error.localizedDescription
+                    self.showError(postProcessingFallbackMessage(for: error))
+                    updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: .transcribing)
+                }
+            }
+
+            if shouldRunDiarization {
+                updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: .postProcessing)
+                do {
+                    let processor = PostProcessor(settings: settings)
+                    let diarizationResult = try await processor.diarize(text: processedText)
+                    try Task.checkCancellation()
+                    processedText = diarizationResult.text
+                    updateActiveProcessingText(for: jobID, rawText: nil, processedText: processedText, stage: nil)
+
+                    let currentTokens = (usage?.totalTokens ?? 0) + diarizationResult.promptTokens + diarizationResult.completionTokens
+                    let currentPromptTokens = (usage?.promptTokens ?? 0) + diarizationResult.promptTokens
+                    let currentCompletionTokens = (usage?.completionTokens ?? 0) + diarizationResult.completionTokens
+
+                    usage = UsageLog(
+                        date: Date(),
+                        modeName: "Diarization",
+                        engine: PostProcessingEngine.openai.rawValue,
+                        promptTokens: currentPromptTokens,
+                        completionTokens: currentCompletionTokens,
+                        totalTokens: currentTokens,
+                        estimatedCost: UsageLog.estimateCost(prompt: currentPromptTokens, completion: currentCompletionTokens, engine: .openai)
+                    )
+                } catch {
+                    print("⚠️ Diarization failed: \(error)")
+                    processingErrorMessage = error.localizedDescription
+                }
+            }
+
+            let filteredRawText = ProfanityFilter.apply(to: rawText, settings: settings)
+            processedText = ProfanityFilter.apply(to: processedText, settings: settings)
+            try Task.checkCancellation()
+
+            if settings.autoTypeResult {
+                let shouldOwnTypingState = state != .recording
+                if shouldOwnTypingState {
+                    state = .typing
+                }
+                try await Task.sleep(nanoseconds: 50_000_000)
+                try Task.checkCancellation()
+                AutoTyper.insert(text: processedText, method: settings.insertionMethod)
+
+                if settings.experimentalAutoEnter {
+                    AutoTyper.simulateReturn()
+                }
+
+                if shouldOwnTypingState, state == .typing {
+                    state = .idle
+                }
+            }
+
+            let wordCount = processedText.split { $0.isWhitespace || $0.isPunctuation }.count
+            settings.lifetimeWords += wordCount
+            settings.lifetimeDuration += recordingDuration
+            saveSettings()
+
+            let persistentAudioPath = persistRecordingAudio(from: audioURL)
+
+            let entry = TranscriptionHistoryEntry(
+                rawText: filteredRawText,
+                processedText: processedText,
+                processingError: processingErrorMessage,
+                modeName: selectedModeName,
+                duration: recordingDuration,
+                engineUsed: selectedEngine + (shouldRunStandardPostProcessing ? " + AI" : "") + (shouldRunDiarization ? " + Diarization" : ""),
+                usage: usage,
+                audioFilePath: persistentAudioPath,
+                ownsAudioFile: persistentAudioPath != nil
+            )
+            Storage.shared.addTranscriptionHistoryEntry(entry)
+            history.insert(entry, at: 0)
+
+            if let u = usage {
+                settings.usageLogs.append(u)
+                cleanupOldLogs()
+            }
+            saveSettings()
+
+            lastTranscription = processedText
+            finishProcessingJob(id: jobID)
+        } catch {
+            if Task.isCancelled || error is CancellationError {
+                print("whisper_debug: ⏹️ Processing cancelled by user")
+                finishProcessingJob(id: jobID)
+                return
+            }
+
+            print("whisper_debug: ❌ Transcription task failed: \(error)")
+            saveFailedRecordingHistoryEntry(
+                audioURL: audioURL,
+                rawText: rawText,
+                processedText: processedText,
+                errorMessage: error.localizedDescription,
+                modeName: selectedModeName,
+                duration: recordingDuration,
+                engineUsed: selectedEngine + " + Error",
+                usage: usage
+            )
+            finishProcessingJob(id: jobID)
+            showError(error.localizedDescription)
         }
     }
 
@@ -1014,20 +1039,44 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func updateActiveProcessingText(rawText: String?, processedText: String?) {
-        guard var recording = activeProcessingRecording else { return }
+    private func refreshBackgroundProcessingState() {
+        backgroundProcessingCount = processingQueue.count + (activeProcessingRecording == nil ? 0 : 1)
+
+        if let stage = activeProcessingRecording?.stage {
+            processingStage = stage
+        } else if backgroundProcessingCount == 0 && state != .processing {
+            processingStage = .none
+        }
+
+        showOverlayWindow = shouldShowOverlay
+    }
+
+    private func finishProcessingJob(id jobID: UUID) {
+        if activeProcessingRecording?.id == jobID {
+            activeProcessingRecording = nil
+        }
+        if currentProcessingToken == jobID {
+            currentEngine = nil
+            currentProcessingTask = nil
+            currentProcessingToken = nil
+        }
+        refreshBackgroundProcessingState()
+        startNextProcessingJobIfNeeded()
+    }
+
+    private func updateActiveProcessingText(for jobID: UUID, rawText: String?, processedText: String?, stage: ProcessingStage?) {
+        guard var recording = activeProcessingRecording, recording.id == jobID else { return }
         if let rawText {
             recording.rawText = rawText
         }
         if let processedText {
             recording.processedText = processedText
         }
+        if let stage {
+            recording.stage = stage
+        }
         activeProcessingRecording = recording
-    }
-
-    private func clearActiveProcessingRecording(for sourceURL: URL) {
-        guard activeProcessingRecording?.audioURL == sourceURL else { return }
-        activeProcessingRecording = nil
+        refreshBackgroundProcessingState()
     }
 
     private func saveCancelledRecordingHistoryEntry(
@@ -1127,8 +1176,9 @@ final class AppState: ObservableObject {
         errorTimer = Just(())
             .delay(for: .seconds(5), scheduler: RunLoop.main)
             .sink { [weak self] in
-                self?.lastError = nil
-                self?.showOverlayWindow = false
+                guard let self else { return }
+                self.lastError = nil
+                self.showOverlayWindow = self.shouldShowOverlay
             }
     }
 

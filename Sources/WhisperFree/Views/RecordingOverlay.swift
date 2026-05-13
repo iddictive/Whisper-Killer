@@ -48,10 +48,14 @@ struct RecordingOverlayContent: View {
                     .fill(statusColor)
                     .frame(width: 8, height: 8)
             }
-            .opacity(appState.state == .processing || appState.state == .typing ? (pulse ? 1.0 : 0.3) : 1.0)
+            .opacity(appState.state == .processing || appState.state == .typing || appState.backgroundProcessingCount > 0 ? (pulse ? 1.0 : 0.3) : 1.0)
 
             if appState.state == .recording {
                 WaveformView(levels: recorder.audioLevels)
+
+                if appState.backgroundProcessingCount > 0 {
+                    backgroundProcessingPill
+                }
                 
                 if recorder.isTooQuiet {
                     HStack(spacing: 3) {
@@ -74,12 +78,12 @@ struct RecordingOverlayContent: View {
                     .foregroundStyle(.white)
                 
                 cancelButton
-            } else if appState.state == .processing || appState.state == .typing {
-                Text(appState.state == .processing ? localizedProcessingStage : L.tr("Typing...", "Печать..."))
+            } else if appState.state == .processing || appState.state == .typing || appState.backgroundProcessingCount > 0 {
+                Text(primaryStatusText)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
 
-                if appState.state == .processing {
+                if appState.state == .processing || appState.backgroundProcessingCount > 0 {
                     processingCancelButton
                 }
             } else {
@@ -132,6 +136,8 @@ struct RecordingOverlayContent: View {
 
     private var statusColor: Color {
         if let _ = appState.lastError { return SW.danger }
+        if appState.state == .recording { return SW.danger }
+        if appState.backgroundProcessingCount > 0 { return SW.warning }
         switch appState.state {
         case .recording: return SW.danger
         case .processing: return SW.warning
@@ -142,6 +148,9 @@ struct RecordingOverlayContent: View {
 
     private var statusText: String {
         if let error = appState.lastError { return error }
+        if appState.backgroundProcessingCount > 0 {
+            return localizedProcessingStage
+        }
         switch appState.state {
         case .recording: return L.tr("Recording...", "Запись...")
         case .processing: return localizedProcessingStage
@@ -155,8 +164,44 @@ struct RecordingOverlayContent: View {
         case .converting: return L.tr("Converting...", "Конвертация...")
         case .transcribing: return L.tr("Transcribing...", "Транскрибация...")
         case .postProcessing: return L.tr("Post-processing...", "Постобработка...")
-        case .none: return ""
+        case .none: return L.tr("Processing...", "Обработка...")
         }
+    }
+
+    private var primaryStatusText: String {
+        if appState.state == .typing {
+            return L.tr("Typing...", "Печать...")
+        }
+
+        if appState.backgroundProcessingCount > 0 && appState.state != .processing {
+            return "\(localizedProcessingStage) · \(L.tr("Ready to record", "Можно записывать"))"
+        }
+
+        return localizedProcessingStage
+    }
+
+    private var backgroundProcessingPill: some View {
+        HStack(spacing: 5) {
+            ProgressView()
+                .controlSize(.mini)
+                .tint(SW.warning)
+                .scaleEffect(0.62)
+                .frame(width: 10, height: 10)
+
+            Text(backgroundProcessingLabel)
+                .font(.system(size: 10, weight: .bold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(SW.warning)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).fill(SW.warning.opacity(0.15)))
+    }
+
+    private var backgroundProcessingLabel: String {
+        appState.backgroundProcessingCount > 1
+            ? L.tr("Processing \(appState.backgroundProcessingCount)", "Обработка \(appState.backgroundProcessingCount)")
+            : L.tr("Processing", "Обработка")
     }
 
     private var cancelButton: some View {

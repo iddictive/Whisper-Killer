@@ -391,7 +391,7 @@ struct HistoryView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.accentColor)
-                .disabled(retranscribingEntryIds.contains(entry.entryId) || appState.state != .idle)
+                .disabled(retranscribingEntryIds.contains(entry.entryId) || appState.state != .idle || appState.isProcessingActive)
 
                 Button {
                     togglePlay(entry: entry)

@@ -648,10 +648,11 @@ struct MenuBarIconView: View {
         Image(nsImage: createMenuImage())
             .onAppear { startPulse() }
             .onChange(of: appState.state) { _, _ in startPulse() }
+            .onChange(of: appState.backgroundProcessingCount) { _, _ in startPulse() }
     }
 
     private var isAnimated: Bool {
-        appState.state == .recording || appState.state == .processing
+        appState.state == .recording || appState.isProcessingActive
     }
 
     private func startPulse() {
@@ -677,7 +678,7 @@ struct MenuBarIconView: View {
         switch appState.state {
         case .recording: return .systemRed
         case .processing: return .systemOrange
-        default: return .clear
+        default: return appState.backgroundProcessingCount > 0 ? .systemOrange : .clear
         }
     }
 
@@ -707,7 +708,7 @@ struct MenuBarIconView: View {
         }
 
         // Draw status dot ONLY during recording or processing (skip in monochrome — isTemplate kills colors)
-        if !isMonochrome && (appState.state == .recording || appState.state == .processing) {
+        if !isMonochrome && (appState.state == .recording || appState.isProcessingActive) {
             let dotSize: CGFloat = 6
             let dotX = size.width - dotSize - 1
             let dotY: CGFloat = 1
@@ -716,7 +717,7 @@ struct MenuBarIconView: View {
             NSColor.white.setFill()
             NSBezierPath(ovalIn: dotRect.insetBy(dx: -0.5, dy: -0.5)).fill()
 
-            let opacity = (appState.state == .recording || appState.state == .processing) ? pulseOpacity : 1.0
+            let opacity = (appState.state == .recording || appState.isProcessingActive) ? pulseOpacity : 1.0
             dotColor.withAlphaComponent(opacity).setFill()
             NSBezierPath(ovalIn: dotRect).fill()
         }

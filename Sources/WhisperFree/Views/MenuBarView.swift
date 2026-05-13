@@ -268,7 +268,7 @@ struct MenuBarView: View {
                 liveTranslatorButton
             }
 
-            if appState.state == .processing {
+            if appState.isProcessingActive {
                 ProgressView().controlSize(.mini)
             }
         }
