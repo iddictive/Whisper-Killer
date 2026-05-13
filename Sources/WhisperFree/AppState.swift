@@ -18,6 +18,15 @@ enum ProcessingStage: String {
     case none = ""
 }
 
+private struct ActiveProcessingRecording {
+    let audioURL: URL
+    let duration: TimeInterval
+    let modeName: String
+    let engineUsed: String
+    var rawText: String = ""
+    var processedText: String = ""
+}
+
 
 @MainActor
 final class AppState: ObservableObject {
@@ -37,17 +46,17 @@ final class AppState: ObservableObject {
 
     // Statistics calculated directly from history for accuracy/self-healing
     var totalWords: Int {
-        history.filter { !$0.isFromFileImport }
+        history.filter { countsTowardDictationStats($0) }
                .reduce(0) { $0 + $1.processedText.split { $0.isWhitespace }.count }
     }
     var activeHistoryCount: Int {
-        history.filter { !$0.isFromFileImport }.count
+        history.filter { countsTowardDictationStats($0) }.count
     }
     var fileImportCount: Int {
         history.filter { $0.isFromFileImport }.count
     }
     var totalDuration: TimeInterval {
-        history.filter { !$0.isFromFileImport }
+        history.filter { countsTowardDictationStats($0) }
                .reduce(0) { $0 + $1.duration }
     }
     var averageWPM: Int {
@@ -60,6 +69,10 @@ final class AppState: ObservableObject {
         // Average person types at ~40 WPM. Dictation + AI is much faster.
         // Formula: (Words / 40) - (Words / WPM) -> approximated as 2.5x duration
         return totalDuration * 2.5
+    }
+
+    private func countsTowardDictationStats(_ entry: TranscriptionHistoryEntry) -> Bool {
+        !entry.isFromFileImport && !entry.engineUsed.localizedCaseInsensitiveContains("cancelled")
     }
     @Published var showOverlayWindow = false {
         didSet {
@@ -99,6 +112,7 @@ final class AppState: ObservableObject {
     private var pendingStopTask: Task<Void, Never>?
     private var currentProcessingTask: Task<Void, Never>?
     private var currentProcessingToken: UUID?
+    private var activeProcessingRecording: ActiveProcessingRecording?
     private let postReleaseTail: TimeInterval = 0.45
 
     private init() {
@@ -544,7 +558,18 @@ final class AppState: ObservableObject {
             return
         }
         
-        _ = recorder.stopRecording()
+        let (audioURL, duration) = recorder.stopRecording()
+        if let audioURL {
+            saveCancelledRecordingHistoryEntry(
+                audioURL: audioURL,
+                duration: duration,
+                modeName: settings.selectedMode.name,
+                engineUsed: settings.engineType.rawValue + " + Cancelled",
+                rawText: "",
+                processedText: "",
+                preserveSource: false
+            )
+        }
         recorder.cleanup()
         state = .idle
         processingStage = .none
@@ -557,6 +582,18 @@ final class AppState: ObservableObject {
         guard state == .processing else { return }
 
         cancelPendingStopTask()
+        if let cancelledRecording = activeProcessingRecording {
+            saveCancelledRecordingHistoryEntry(
+                audioURL: cancelledRecording.audioURL,
+                duration: cancelledRecording.duration,
+                modeName: cancelledRecording.modeName,
+                engineUsed: cancelledRecording.engineUsed + " + Cancelled",
+                rawText: cancelledRecording.rawText,
+                processedText: cancelledRecording.processedText,
+                preserveSource: true
+            )
+            activeProcessingRecording = nil
+        }
         currentProcessingToken = nil
         currentProcessingTask?.cancel()
         currentProcessingTask = nil
@@ -725,19 +762,26 @@ final class AppState: ObservableObject {
             return
         }
 
+        let selectedModeName = settings.selectedMode.name
+        let selectedEngine = settings.engineType.rawValue
+
         state = .processing
         processingStage = .transcribing
 
         let processingToken = UUID()
         currentProcessingToken = processingToken
+        activeProcessingRecording = ActiveProcessingRecording(
+            audioURL: audioURL,
+            duration: recordingDuration,
+            modeName: selectedModeName,
+            engineUsed: selectedEngine
+        )
 
         currentProcessingTask = Task { @MainActor in
             var rawText = ""
             var processedText = ""
             var usage: UsageLog? = nil
             var processingErrorMessage: String?
-            let selectedModeName = settings.selectedMode.name
-            let selectedEngine = settings.engineType.rawValue
 
             defer {
                 if self.currentProcessingToken == processingToken {
@@ -762,6 +806,7 @@ final class AppState: ObservableObject {
                 self.currentEngine = engine
                 let lang = settings.language == "auto" ? nil : settings.language
                 rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil, onProgress: nil)
+                updateActiveProcessingText(rawText: rawText, processedText: nil)
                 self.currentEngine = nil
                 try Task.checkCancellation()
                 
@@ -780,6 +825,7 @@ final class AppState: ObservableObject {
                         engineUsed: selectedEngine + " + Error",
                         usage: usage
                     )
+                    clearActiveProcessingRecording(for: audioURL)
                     showError(errorMessage)
                     state = .idle
                     processingStage = .none
@@ -790,6 +836,7 @@ final class AppState: ObservableObject {
 
                 // 2. Post-process (if enabled and instant typing is OFF)
                 processedText = rawText
+                updateActiveProcessingText(rawText: nil, processedText: processedText)
                 
                 let shouldRunDiarization = settings.enableSpeakerDiarization && settings.canUseSpeakerDiarization
                 let shouldRunStandardPostProcessing = !shouldRunDiarization
@@ -806,6 +853,7 @@ final class AppState: ObservableObject {
                         let result = try await processor.process(text: rawText, mode: settings.selectedMode)
                         try Task.checkCancellation()
                         processedText = result.text
+                        updateActiveProcessingText(rawText: nil, processedText: processedText)
                         
                         // Create usage log only if AI was actually used
                         let totalTokens = result.promptTokens + result.completionTokens
@@ -837,6 +885,7 @@ final class AppState: ObservableObject {
                         let diarizationResult = try await processor.diarize(text: processedText)
                         try Task.checkCancellation()
                         processedText = diarizationResult.text
+                        updateActiveProcessingText(rawText: nil, processedText: processedText)
                         
                         // Accumulate tokens
                         let currentTokens = (usage?.totalTokens ?? 0) + diarizationResult.promptTokens + diarizationResult.completionTokens
@@ -883,17 +932,8 @@ final class AppState: ObservableObject {
                 saveSettings()
 
                 // 7. Persist audio file
-                var persistentAudioPath: String? = nil
-                let fileName = "recording_\(UUID().uuidString).wav"
-                let targetURL = Storage.recordingsDirectory.appendingPathComponent(fileName)
-                
-                do {
-                    try FileManager.default.moveItem(at: audioURL, to: targetURL)
-                    persistentAudioPath = targetURL.path
-                    print("whisper_debug: 📁 Moved recording to: \(persistentAudioPath!)")
-                } catch {
-                    print("whisper_debug: ❌ Failed to move recording: \(error)")
-                }
+                let persistentAudioPath = persistRecordingAudio(from: audioURL)
+                clearActiveProcessingRecording(for: audioURL)
 
                 let entry = TranscriptionHistoryEntry(
                     rawText: filteredRawText,
@@ -901,7 +941,7 @@ final class AppState: ObservableObject {
                     processingError: processingErrorMessage,
                     modeName: selectedModeName,
                     duration: recordingDuration,
-                    engineUsed: settings.engineType.rawValue + (shouldRunStandardPostProcessing ? " + AI" : "") + (shouldRunDiarization ? " + Diarization" : ""),
+                    engineUsed: selectedEngine + (shouldRunStandardPostProcessing ? " + AI" : "") + (shouldRunDiarization ? " + Diarization" : ""),
                     usage: usage,
                     audioFilePath: persistentAudioPath,
                     ownsAudioFile: persistentAudioPath != nil
@@ -941,6 +981,7 @@ final class AppState: ObservableObject {
                     engineUsed: selectedEngine + " + Error",
                     usage: usage
                 )
+                clearActiveProcessingRecording(for: audioURL)
                 showError(error.localizedDescription)
                 state = .idle
                 processingStage = .none
@@ -950,7 +991,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func persistRecordingAudio(from sourceURL: URL) -> String? {
+    private func persistRecordingAudio(from sourceURL: URL, preserveSource: Bool = false) -> String? {
         let fileName = "recording_\(UUID().uuidString).wav"
         let targetURL = Storage.recordingsDirectory.appendingPathComponent(fileName)
 
@@ -959,13 +1000,60 @@ final class AppState: ObservableObject {
                 try FileManager.default.removeItem(at: targetURL)
             }
 
-            try FileManager.default.moveItem(at: sourceURL, to: targetURL)
-            print("whisper_debug: 📁 Moved recording to: \(targetURL.path)")
+            if preserveSource {
+                try FileManager.default.copyItem(at: sourceURL, to: targetURL)
+                print("whisper_debug: 📁 Copied recording to: \(targetURL.path)")
+            } else {
+                try FileManager.default.moveItem(at: sourceURL, to: targetURL)
+                print("whisper_debug: 📁 Moved recording to: \(targetURL.path)")
+            }
             return targetURL.path
         } catch {
-            print("whisper_debug: ❌ Failed to move recording: \(error)")
+            print("whisper_debug: ❌ Failed to persist recording: \(error)")
             return nil
         }
+    }
+
+    private func updateActiveProcessingText(rawText: String?, processedText: String?) {
+        guard var recording = activeProcessingRecording else { return }
+        if let rawText {
+            recording.rawText = rawText
+        }
+        if let processedText {
+            recording.processedText = processedText
+        }
+        activeProcessingRecording = recording
+    }
+
+    private func clearActiveProcessingRecording(for sourceURL: URL) {
+        guard activeProcessingRecording?.audioURL == sourceURL else { return }
+        activeProcessingRecording = nil
+    }
+
+    private func saveCancelledRecordingHistoryEntry(
+        audioURL: URL,
+        duration: TimeInterval,
+        modeName: String,
+        engineUsed: String,
+        rawText: String,
+        processedText: String,
+        preserveSource: Bool
+    ) {
+        let persistentAudioPath = persistRecordingAudio(from: audioURL, preserveSource: preserveSource)
+        let filteredRawText = ProfanityFilter.apply(to: rawText, settings: settings)
+        let filteredProcessedText = processedText.isEmpty ? "" : ProfanityFilter.apply(to: processedText, settings: settings)
+        let entry = TranscriptionHistoryEntry(
+            rawText: filteredRawText,
+            processedText: filteredProcessedText,
+            processingError: L.tr("Recording saved without transcription.", "Запись сохранена без транскрипции."),
+            modeName: modeName,
+            duration: duration,
+            engineUsed: engineUsed,
+            audioFilePath: persistentAudioPath,
+            ownsAudioFile: persistentAudioPath != nil
+        )
+        Storage.shared.addTranscriptionHistoryEntry(entry)
+        history.insert(entry, at: 0)
     }
 
     private func saveFailedRecordingHistoryEntry(

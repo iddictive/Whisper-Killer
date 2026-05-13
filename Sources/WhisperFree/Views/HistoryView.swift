@@ -265,12 +265,12 @@ struct HistoryView: View {
             }
 
             if entry.processingError?.isEmpty == false {
-                Text(L.tr("ERROR", "ОШИБКА"))
+                Text(isCancelledRecording(entry) ? L.tr("UNPROCESSED", "БЕЗ ОБРАБОТКИ") : L.tr("ERROR", "ОШИБКА"))
                     .font(.system(size: 9, weight: .bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(SW.danger.opacity(0.12))
-                    .foregroundStyle(SW.danger)
+                    .background((isCancelledRecording(entry) ? SW.warning : SW.danger).opacity(0.12))
+                    .foregroundStyle(isCancelledRecording(entry) ? SW.warning : SW.danger)
                     .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
 
@@ -453,6 +453,10 @@ struct HistoryView: View {
         }
 
         return entry.processingError ?? ""
+    }
+
+    private func isCancelledRecording(_ entry: TranscriptionHistoryEntry) -> Bool {
+        entry.engineUsed.localizedCaseInsensitiveContains("cancelled")
     }
 
     private func formatSavedTime(_ time: TimeInterval) -> String {
