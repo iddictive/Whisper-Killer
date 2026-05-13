@@ -173,10 +173,6 @@ struct RecordingOverlayContent: View {
             return L.tr("Typing...", "Печать...")
         }
 
-        if appState.backgroundProcessingCount > 0 && appState.state != .processing {
-            return "\(localizedProcessingStage) · \(L.tr("Ready to record", "Можно записывать"))"
-        }
-
         return localizedProcessingStage
     }
 
