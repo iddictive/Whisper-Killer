@@ -11,6 +11,8 @@ struct HistoryView: View {
     @State private var renamingEntry: TranscriptionHistoryEntry?
     @State private var newTranscriptionText = ""
     @State private var retranscribingEntryIds = Set<UUID>()
+    @State private var markdownSaveURLs: [UUID: URL] = [:]
+    @State private var markdownSaveErrors: [UUID: String] = [:]
 
     var filteredHistory: [TranscriptionHistoryEntry] {
         if searchText.isEmpty {
@@ -376,6 +378,19 @@ struct HistoryView: View {
                 .foregroundStyle(.secondary)
             }
 
+            if canSaveMarkdown(for: entry) {
+                Button {
+                    saveMarkdown(for: entry)
+                } label: {
+                    Label(L.tr("Save as MD", "Save as MD"), systemImage: "square.and.arrow.down")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+
+                markdownSaveStatus(entry)
+            }
+
             if let path = entry.audioFilePath, FileManager.default.fileExists(atPath: path) {
                 Button {
                     let entryId = entry.entryId
@@ -439,6 +454,21 @@ struct HistoryView: View {
         }
     }
 
+    @ViewBuilder
+    private func markdownSaveStatus(_ entry: TranscriptionHistoryEntry) -> some View {
+        if let error = markdownSaveErrors[entry.entryId] {
+            Text(error)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(SW.danger)
+                .lineLimit(1)
+        } else if let url = markdownSaveURLs[entry.entryId] {
+            Text(L.tr("Saved \(url.lastPathComponent)", "Сохранено \(url.lastPathComponent)"))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(SW.success)
+                .lineLimit(1)
+        }
+    }
+
     private func preferredDisplayText(for entry: TranscriptionHistoryEntry) -> String {
         if let summary = entry.summaryText, !summary.isEmpty {
             return summary
@@ -453,6 +483,43 @@ struct HistoryView: View {
         }
 
         return entry.processingError ?? ""
+    }
+
+    private func markdownText(for entry: TranscriptionHistoryEntry) -> String {
+        if !entry.processedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return entry.processedText
+        }
+
+        return entry.rawText
+    }
+
+    private func canSaveMarkdown(for entry: TranscriptionHistoryEntry) -> Bool {
+        guard entry.isFromFileImport,
+              let path = entry.audioFilePath,
+              FileManager.default.fileExists(atPath: path)
+        else { return false }
+
+        return !markdownText(for: entry).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func saveMarkdown(for entry: TranscriptionHistoryEntry) {
+        guard let path = entry.audioFilePath else { return }
+        let text = markdownText(for: entry).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !text.isEmpty else {
+            markdownSaveURLs[entry.entryId] = nil
+            markdownSaveErrors[entry.entryId] = L.tr("Nothing to save.", "Нечего сохранить.")
+            return
+        }
+
+        do {
+            let url = try MarkdownTranscriptExporter.save(text: text, nextToSourceFile: URL(fileURLWithPath: path))
+            markdownSaveURLs[entry.entryId] = url
+            markdownSaveErrors[entry.entryId] = nil
+        } catch {
+            markdownSaveURLs[entry.entryId] = nil
+            markdownSaveErrors[entry.entryId] = L.tr("Save failed.", "Не удалось сохранить.")
+        }
     }
 
     private func isCancelledRecording(_ entry: TranscriptionHistoryEntry) -> Bool {

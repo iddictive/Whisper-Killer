@@ -175,29 +175,12 @@ final class QueueItem: ObservableObject, Identifiable {
         }
 
         do {
-            let destinationURL = nextAvailableMarkdownURL()
-            try (result + "\n").write(to: destinationURL, atomically: true, encoding: .utf8)
-            markdownSaveURL = destinationURL
+            markdownSaveURL = try MarkdownTranscriptExporter.save(text: result, nextToSourceFile: url)
             markdownSaveError = nil
         } catch {
             markdownSaveURL = nil
             markdownSaveError = L.tr("Save failed.", "Не удалось сохранить.")
         }
-    }
-
-    private func nextAvailableMarkdownURL() -> URL {
-        let directory = url.deletingLastPathComponent()
-        let baseName = url.deletingPathExtension().lastPathComponent
-        let fileManager = FileManager.default
-        var candidate = directory.appendingPathComponent(baseName).appendingPathExtension("md")
-        var index = 2
-
-        while fileManager.fileExists(atPath: candidate.path) {
-            candidate = directory.appendingPathComponent("\(baseName) \(index)").appendingPathExtension("md")
-            index += 1
-        }
-
-        return candidate
     }
 
     func cancel() {
