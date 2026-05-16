@@ -11,6 +11,7 @@ struct FileTranscriptionView: View {
 
     @State private var queueItems: [QueueItem] = []
     @State private var isProcessing = false
+    @State private var queueStateRevision = 0
     @State private var consumedImportRequestID: UUID?
 
     var body: some View {
@@ -50,7 +51,7 @@ struct FileTranscriptionView: View {
             
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 8) {
-                    if !queueItems.isEmpty && !isProcessing {
+                    if !queueItems.isEmpty && !hasRunningItems {
                         Button(role: .destructive) {
                             for item in queueItems { item.cancel() }
                             queueItems.removeAll()
@@ -249,7 +250,9 @@ struct FileTranscriptionView: View {
         ScrollView {
             LazyVStack(spacing: 8) {
                 ForEach(queueItems) { item in
-                    QueueCardView(item: item, onCancel: {
+                    QueueCardView(item: item, canStart: canStartQueuedItems, onStart: {
+                        startItem(item)
+                    }, onCancel: {
                         cancelItem(item)
                     }, onRemove: {
                         removeItem(item)
@@ -331,6 +334,7 @@ struct FileTranscriptionView: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .tint(.accentColor)
+                        .disabled(appState.settings.engineType != .cloud && hasRunningItems)
                     }
                 }
 
@@ -488,6 +492,15 @@ struct FileTranscriptionView: View {
         queueItems.compactMap { $0.displayCost(settings: appState.settings) }.reduce(0, +)
     }
 
+    private var hasRunningItems: Bool {
+        _ = queueStateRevision
+        return queueItems.contains { $0.isRunning }
+    }
+
+    private var canStartQueuedItems: Bool {
+        appState.settings.engineType == .cloud || (!isProcessing && !hasRunningItems)
+    }
+
     private func updateVisibleCosts() {
         for item in queueItems {
             item.updateCost(settings: appState.settings)
@@ -498,11 +511,13 @@ struct FileTranscriptionView: View {
         // Find the first queued item that hasn't started
         guard let nextItem = queueItems.first(where: { $0.status == .queued }) else {
             isProcessing = false
+            queueStateRevision += 1
             return
         }
 
         isProcessing = true
         nextItem.startTranscription(settings: appState.settings, appState: appState)
+        queueStateRevision += 1
 
         // When this item finishes, process the next one
         Task {
@@ -521,6 +536,57 @@ struct FileTranscriptionView: View {
         }
     }
 
+    private func startItem(_ item: QueueItem) {
+        guard item.status == .queued else { return }
+
+        if appState.settings.engineType == .cloud {
+            startCloudItem(item)
+            return
+        }
+
+        guard !isProcessing && !hasRunningItems else { return }
+        isProcessing = true
+        item.startTranscription(settings: appState.settings, appState: appState)
+        queueStateRevision += 1
+
+        Task {
+            while true {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                let status = item.status
+                if status == .done || status == .cancelled || {
+                    if case .error = status { return true }
+                    return false
+                }() {
+                    break
+                }
+            }
+
+            isProcessing = false
+            queueStateRevision += 1
+        }
+    }
+
+    private func startCloudItem(_ item: QueueItem) {
+        guard item.status == .queued else { return }
+        item.startTranscription(settings: appState.settings, appState: appState)
+        queueStateRevision += 1
+
+        Task {
+            while true {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                let status = item.status
+                if status == .done || status == .cancelled || {
+                    if case .error = status { return true }
+                    return false
+                }() {
+                    break
+                }
+            }
+
+            queueStateRevision += 1
+        }
+    }
+
     private func cancelItem(_ item: QueueItem) {
         item.cancel()
     }
@@ -535,7 +601,14 @@ struct FileTranscriptionView: View {
     }
 
     private func startAllQueued() {
-        guard !isProcessing else { return }
+        if appState.settings.engineType == .cloud {
+            for item in queueItems where item.status == .queued {
+                startCloudItem(item)
+            }
+            return
+        }
+
+        guard !isProcessing && !hasRunningItems else { return }
         processNextInQueue()
     }
 }
@@ -631,6 +704,8 @@ struct RangeSlider: View {
 
 struct QueueCardView: View {
     @ObservedObject var item: QueueItem
+    var canStart: Bool
+    var onStart: () -> Void
     var onCancel: () -> Void
     var onRemove: () -> Void
     @EnvironmentObject private var appState: AppState
@@ -721,19 +796,34 @@ struct QueueCardView: View {
 
     @ViewBuilder
     private var actionButton: some View {
-        if isFinished {
-            Button(action: onRemove) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary.opacity(0.6))
-                    .padding(4)
+        if item.status == .done, item.result != nil {
+            HStack(spacing: 8) {
+                Button {
+                    item.saveResultAsMarkdown()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10))
+                        Text(L.tr("Save as MD", "Save as MD"))
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(SW.accent.opacity(0.12))
+                    .foregroundStyle(Color.accentColor)
+                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help(L.tr("Save transcript next to the original file", "Сохранить транскрипт рядом с исходным файлом"))
+
+                removeButton
             }
-            .buttonStyle(.plain)
-            .help(L.tr("Remove from queue", "Удалить из очереди"))
+        } else if isFinished {
+            removeButton
         } else if item.status == .queued {
             HStack(spacing: 8) {
                 Button {
-                    item.startTranscription(settings: appState.settings, appState: appState)
+                    onStart()
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "play.fill")
@@ -746,8 +836,10 @@ struct QueueCardView: View {
                     .background(SW.accent)
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                    .opacity(canStart ? 1 : 0.45)
                 }
                 .buttonStyle(.plain)
+                .disabled(!canStart)
 
                 Button(action: onCancel) {
                     Image(systemName: "xmark.circle.fill")
@@ -774,6 +866,17 @@ struct QueueCardView: View {
         }
     }
 
+    private var removeButton: some View {
+        Button(action: onRemove) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary.opacity(0.6))
+                .padding(4)
+        }
+        .buttonStyle(.plain)
+        .help(L.tr("Remove from queue", "Удалить из очереди"))
+    }
+
     // MARK: - Row 2: Progress
 
     @ViewBuilder
@@ -795,6 +898,7 @@ struct QueueCardView: View {
                     costLabel
                     speedLabel
                     errorLabel
+                    markdownSaveLabel
                     Spacer()
                 }
             }
@@ -845,6 +949,25 @@ struct QueueCardView: View {
                 .font(.system(size: 9))
                 .foregroundStyle(SW.danger)
                 .lineLimit(1)
+        }
+    }
+
+    @ViewBuilder
+    private var markdownSaveLabel: some View {
+        if let error = item.markdownSaveError {
+            Text(error)
+                .font(.system(size: 9))
+                .foregroundStyle(SW.danger)
+                .lineLimit(1)
+        } else if let url = item.markdownSaveURL {
+            HStack(spacing: 2) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 8))
+                Text(L.tr("Saved \(url.lastPathComponent)", "Сохранено \(url.lastPathComponent)"))
+                    .font(.system(size: 9, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(SW.success)
         }
     }
 

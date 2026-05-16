@@ -117,6 +117,8 @@ final class QueueItem: ObservableObject, Identifiable {
     @Published var isExpanded = false
     @Published var isSummarizing = false
     @Published var summaryError: String?
+    @Published var markdownSaveURL: URL?
+    @Published var markdownSaveError: String?
 
     var historyEntryID: UUID?
 
@@ -165,6 +167,39 @@ final class QueueItem: ObservableObject, Identifiable {
         return CostEstimate.audio(durationSeconds: selectedDuration, model: settings.cloudTranscriptionModel)
     }
 
+    func saveResultAsMarkdown() {
+        guard let result = result?.trimmingCharacters(in: .whitespacesAndNewlines), !result.isEmpty else {
+            markdownSaveURL = nil
+            markdownSaveError = L.tr("Nothing to save.", "Нечего сохранить.")
+            return
+        }
+
+        do {
+            let destinationURL = nextAvailableMarkdownURL()
+            try (result + "\n").write(to: destinationURL, atomically: true, encoding: .utf8)
+            markdownSaveURL = destinationURL
+            markdownSaveError = nil
+        } catch {
+            markdownSaveURL = nil
+            markdownSaveError = L.tr("Save failed.", "Не удалось сохранить.")
+        }
+    }
+
+    private func nextAvailableMarkdownURL() -> URL {
+        let directory = url.deletingLastPathComponent()
+        let baseName = url.deletingPathExtension().lastPathComponent
+        let fileManager = FileManager.default
+        var candidate = directory.appendingPathComponent(baseName).appendingPathExtension("md")
+        var index = 2
+
+        while fileManager.fileExists(atPath: candidate.path) {
+            candidate = directory.appendingPathComponent("\(baseName) \(index)").appendingPathExtension("md")
+            index += 1
+        }
+
+        return candidate
+    }
+
     func cancel() {
         engine?.cancel()
         transcriptionTask?.cancel()
@@ -173,8 +208,12 @@ final class QueueItem: ObservableObject, Identifiable {
     }
 
     func startTranscription(settings: AppSettings, appState: AppState) {
+        guard status == .queued else { return }
+
         let runSettings = settings
         let provenance = TranscriptionRunProvenance(settings: runSettings)
+        status = .extracting
+        progress = 0
         startTime = Date()
         runProvenance = provenance
         updateCost(settings: runSettings)
@@ -271,6 +310,8 @@ final class QueueItem: ObservableObject, Identifiable {
                     self.result = filteredProcessedText
                     self.summary = nil
                     self.summaryError = nil
+                    self.markdownSaveURL = nil
+                    self.markdownSaveError = nil
                     self.status = .done
                     self.progress = 1.0
                     self.isExpanded = true
