@@ -12,7 +12,10 @@ struct FileTranscriptionView: View {
     @State private var queueItems: [QueueItem] = []
     @State private var isProcessing = false
     @State private var queueStateRevision = 0
+    @State private var shouldDrainCloudQueue = false
     @State private var consumedImportRequestID: UUID?
+
+    private let maxCloudParallelJobs = 3
 
     var body: some View {
         ZStack {
@@ -334,7 +337,7 @@ struct FileTranscriptionView: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .tint(.accentColor)
-                        .disabled(appState.settings.engineType != .cloud && hasRunningItems)
+                        .disabled(appState.settings.engineType == .cloud ? runningItemCount >= maxCloudParallelJobs : hasRunningItems)
                     }
                 }
 
@@ -493,12 +496,20 @@ struct FileTranscriptionView: View {
     }
 
     private var hasRunningItems: Bool {
+        runningItemCount > 0
+    }
+
+    private var runningItemCount: Int {
         _ = queueStateRevision
-        return queueItems.contains { $0.isRunning }
+        return queueItems.filter { $0.isRunning }.count
     }
 
     private var canStartQueuedItems: Bool {
-        appState.settings.engineType == .cloud || (!isProcessing && !hasRunningItems)
+        if appState.settings.engineType == .cloud {
+            return runningItemCount < maxCloudParallelJobs
+        }
+
+        return !isProcessing && !hasRunningItems
     }
 
     private func updateVisibleCosts() {
@@ -567,7 +578,7 @@ struct FileTranscriptionView: View {
     }
 
     private func startCloudItem(_ item: QueueItem) {
-        guard item.status == .queued else { return }
+        guard item.status == .queued, runningItemCount < maxCloudParallelJobs else { return }
         item.startTranscription(settings: appState.settings, appState: appState)
         queueStateRevision += 1
 
@@ -584,6 +595,20 @@ struct FileTranscriptionView: View {
             }
 
             queueStateRevision += 1
+            if shouldDrainCloudQueue {
+                startCloudJobsUpToLimit()
+            }
+        }
+    }
+
+    private func startCloudJobsUpToLimit() {
+        while runningItemCount < maxCloudParallelJobs,
+              let item = queueItems.first(where: { $0.status == .queued }) {
+            startCloudItem(item)
+        }
+
+        if queueItems.allSatisfy({ $0.status != .queued }) && runningItemCount == 0 {
+            shouldDrainCloudQueue = false
         }
     }
 
@@ -602,9 +627,8 @@ struct FileTranscriptionView: View {
 
     private func startAllQueued() {
         if appState.settings.engineType == .cloud {
-            for item in queueItems where item.status == .queued {
-                startCloudItem(item)
-            }
+            shouldDrainCloudQueue = true
+            startCloudJobsUpToLimit()
             return
         }
 

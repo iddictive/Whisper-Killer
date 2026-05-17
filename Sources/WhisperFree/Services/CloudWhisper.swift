@@ -165,13 +165,9 @@ final class CloudWhisper: TranscriptionEngine {
         print("whisper_debug: ☁️ Uploading \(audioData.count) bytes (\(ext)) to OpenAI Whisper API...")
         onProgress?(progressRange.0 + (progressRange.1 - progressRange.0) * 0.3, nil)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, httpResponse) = try await TransientHTTPRetry.data(for: request, label: "OpenAI transcription")
 
         onProgress?(progressRange.1, nil)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw TranscriptionError.invalidResponse
-        }
 
         if httpResponse.statusCode == 401 {
             throw TranscriptionError.networkError("Invalid API key. Please check your OpenAI API key in Settings → Engine & API.")

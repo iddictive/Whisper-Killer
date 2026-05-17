@@ -270,18 +270,18 @@ final class PostProcessor {
 
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, httpResponse) = try await TransientHTTPRetry.data(for: request, label: "OpenAI chat")
 
-        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
+        if httpResponse.statusCode == 401 {
             throw TranscriptionError.networkError("Invalid API Key for \(engine.rawValue).")
         }
 
-        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 429 {
+        if httpResponse.statusCode == 429 {
             let errorText = openAIErrorMessage(from: data) ?? "OpenAI quota exceeded. Check billing and project limits."
             throw TranscriptionError.networkError(errorText)
         }
 
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+        guard httpResponse.statusCode == 200 else {
             let errorText = openAIErrorMessage(from: data) ?? String(data: data, encoding: .utf8) ?? "Unknown error"
             throw TranscriptionError.networkError("\(engine.rawValue) post-processing failed: \(errorText)")
         }
