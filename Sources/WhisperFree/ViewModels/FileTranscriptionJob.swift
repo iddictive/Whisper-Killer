@@ -119,6 +119,7 @@ final class QueueItem: ObservableObject, Identifiable {
     @Published var summaryError: String?
     @Published var markdownSaveURL: URL?
     @Published var markdownSaveError: String?
+    @Published var shouldReduceCloudConcurrency = false
 
     var historyEntryID: UUID?
 
@@ -199,6 +200,7 @@ final class QueueItem: ObservableObject, Identifiable {
         progress = 0
         startTime = Date()
         runProvenance = provenance
+        shouldReduceCloudConcurrency = false
         updateCost(settings: runSettings)
 
         let engine = TranscriptionEngineFactory.create(for: runSettings.engineType, settings: runSettings)
@@ -323,6 +325,12 @@ final class QueueItem: ObservableObject, Identifiable {
                 }
             } catch {
                 await MainActor.run {
+                    if let transcriptionError = error as? TranscriptionError {
+                        self.shouldReduceCloudConcurrency = transcriptionError.shouldReduceCloudConcurrency
+                    } else {
+                        self.shouldReduceCloudConcurrency = false
+                    }
+
                     self.updateCost(settings: runSettings)
                     let rawText = self.rawResult ?? ""
                     let processedText = self.result ?? self.rawResult ?? ""

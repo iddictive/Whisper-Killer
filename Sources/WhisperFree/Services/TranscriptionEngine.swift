@@ -37,6 +37,21 @@ enum TranscriptionError: LocalizedError {
             return "Transcription failed: \(msg)"
         }
     }
+
+    var shouldReduceCloudConcurrency: Bool {
+        guard case .networkError(let message) = self else { return false }
+        let normalized = message.lowercased()
+
+        if normalized.contains("http 429") || normalized.contains("rate limit") || normalized.contains("quota") {
+            return true
+        }
+
+        for statusCode in [500, 502, 503, 504] where normalized.contains("http \(statusCode)") {
+            return true
+        }
+
+        return false
+    }
 }
 
 // MARK: - Engine Factory

@@ -175,7 +175,7 @@ final class CloudWhisper: TranscriptionEngine {
 
         if httpResponse.statusCode == 429 {
             let errorText = openAIErrorMessage(from: data) ?? "OpenAI quota exceeded. Check billing and project limits."
-            throw TranscriptionError.networkError(errorText)
+            throw TranscriptionError.networkError("HTTP 429: \(errorText)")
         }
 
         if httpResponse.statusCode != 200 {

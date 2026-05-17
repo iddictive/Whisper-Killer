@@ -13,9 +13,12 @@ struct FileTranscriptionView: View {
     @State private var isProcessing = false
     @State private var queueStateRevision = 0
     @State private var shouldDrainCloudQueue = false
+    @State private var cloudParallelLimit = 3
+    @State private var cloudRecoverySuccesses = 0
     @State private var consumedImportRequestID: UUID?
 
-    private let maxCloudParallelJobs = 3
+    private let defaultCloudParallelJobs = 3
+    private let minCloudParallelJobs = 1
 
     var body: some View {
         ZStack {
@@ -337,7 +340,7 @@ struct FileTranscriptionView: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .tint(.accentColor)
-                        .disabled(appState.settings.engineType == .cloud ? runningItemCount >= maxCloudParallelJobs : hasRunningItems)
+                        .disabled(appState.settings.engineType == .cloud ? runningItemCount >= cloudParallelLimit : hasRunningItems)
                     }
                 }
 
@@ -506,7 +509,7 @@ struct FileTranscriptionView: View {
 
     private var canStartQueuedItems: Bool {
         if appState.settings.engineType == .cloud {
-            return runningItemCount < maxCloudParallelJobs
+            return runningItemCount < cloudParallelLimit
         }
 
         return !isProcessing && !hasRunningItems
@@ -578,7 +581,7 @@ struct FileTranscriptionView: View {
     }
 
     private func startCloudItem(_ item: QueueItem) {
-        guard item.status == .queued, runningItemCount < maxCloudParallelJobs else { return }
+        guard item.status == .queued, runningItemCount < cloudParallelLimit else { return }
         item.startTranscription(settings: appState.settings, appState: appState)
         queueStateRevision += 1
 
@@ -594,6 +597,7 @@ struct FileTranscriptionView: View {
                 }
             }
 
+            handleCloudItemFinished(item, status: item.status)
             queueStateRevision += 1
             if shouldDrainCloudQueue {
                 startCloudJobsUpToLimit()
@@ -602,13 +606,40 @@ struct FileTranscriptionView: View {
     }
 
     private func startCloudJobsUpToLimit() {
-        while runningItemCount < maxCloudParallelJobs,
+        while runningItemCount < cloudParallelLimit,
               let item = queueItems.first(where: { $0.status == .queued }) {
             startCloudItem(item)
         }
 
         if queueItems.allSatisfy({ $0.status != .queued }) && runningItemCount == 0 {
             shouldDrainCloudQueue = false
+        }
+    }
+
+    private func handleCloudItemFinished(_ item: QueueItem, status: QueueItemStatus) {
+        switch status {
+        case .done:
+            guard cloudParallelLimit < defaultCloudParallelJobs else {
+                cloudRecoverySuccesses = 0
+                return
+            }
+
+            cloudRecoverySuccesses += 1
+            if cloudRecoverySuccesses >= cloudParallelLimit {
+                cloudParallelLimit = min(defaultCloudParallelJobs, cloudParallelLimit + 1)
+                cloudRecoverySuccesses = 0
+                print("whisper_debug: ☁️ Cloud parallel limit recovered to \(cloudParallelLimit)")
+            }
+        case .error:
+            guard item.shouldReduceCloudConcurrency else { return }
+            cloudRecoverySuccesses = 0
+
+            if cloudParallelLimit > minCloudParallelJobs {
+                cloudParallelLimit = max(minCloudParallelJobs, cloudParallelLimit - 1)
+                print("whisper_debug: ☁️ Cloud parallel limit reduced to \(cloudParallelLimit)")
+            }
+        default:
+            break
         }
     }
 
