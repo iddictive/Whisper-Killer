@@ -17,6 +17,7 @@ struct FileTranscriptionView: View {
     @State private var cloudParallelLimit = 3
     @State private var cloudRecoverySuccesses = 0
     @State private var consumedImportRequestID: UUID?
+    @State private var consumedGoogleMeetImportRequestID: UUID?
 
     private let defaultCloudParallelJobs = 3
     private let minCloudParallelJobs = 1
@@ -85,8 +86,12 @@ struct FileTranscriptionView: View {
         .onChange(of: appState.fileTranscriptionImportRequest) { _, request in
             consumeImportRequest(request)
         }
+        .onChange(of: appState.googleMeetImportRequestID) { _, requestID in
+            consumeGoogleMeetImportRequest(requestID)
+        }
         .onAppear {
             consumeImportRequest(appState.fileTranscriptionImportRequest)
+            consumeGoogleMeetImportRequest(appState.googleMeetImportRequestID)
         }
         .fileImporter(
             isPresented: $showFilePicker,
@@ -515,6 +520,13 @@ struct FileTranscriptionView: View {
         consumedImportRequestID = request.id
         addToQueue(request.urls)
         appState.consumeFileTranscriptionRequest(id: request.id)
+    }
+
+    private func consumeGoogleMeetImportRequest(_ requestID: UUID?) {
+        guard let requestID, consumedGoogleMeetImportRequestID != requestID else { return }
+        consumedGoogleMeetImportRequestID = requestID
+        showGoogleMeetImporter = true
+        appState.consumeGoogleMeetImportRequest(id: requestID)
     }
 
     private var totalDisplayCost: Double {

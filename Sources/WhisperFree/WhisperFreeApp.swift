@@ -75,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             print("🪄 Showing Setup Wizard...")
             showSetupWizard()
         }
+
         print("✨ Launch sequence complete")
     }
 

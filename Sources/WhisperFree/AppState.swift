@@ -42,6 +42,7 @@ final class AppState: ObservableObject {
     @Published var lastError: String?
     @Published var lastTranscription: String?
     @Published var fileTranscriptionImportRequest: FileTranscriptionImportRequest?
+    @Published var googleMeetImportRequestID: UUID?
     @Published private(set) var backgroundProcessingCount: Int = 0
 
     @Published var copiedFeedback = false
@@ -262,6 +263,15 @@ final class AppState: ObservableObject {
     func consumeFileTranscriptionRequest(id: UUID) {
         guard fileTranscriptionImportRequest?.id == id else { return }
         fileTranscriptionImportRequest = nil
+    }
+
+    func requestGoogleMeetImport() {
+        googleMeetImportRequestID = UUID()
+    }
+
+    func consumeGoogleMeetImportRequest(id: UUID) {
+        guard googleMeetImportRequestID == id else { return }
+        googleMeetImportRequestID = nil
     }
 
     // MARK: - Hotkey Setup

@@ -2,30 +2,43 @@ import SwiftUI
 
 @MainActor
 final class GoogleMeetImportViewModel: ObservableObject {
-    @Published var recordings: [GoogleDriveRecording] = []
+    @Published var meetings: [GoogleCalendarMeeting] = []
+    @Published var selectedDate = Date()
     @Published var isConnected = GoogleDriveMeetImporter.shared.isConnected
     @Published var isLoading = false
     @Published var statusMessage: String?
     @Published var errorMessage: String?
-    @Published var importingRecordingID: String?
+    @Published var importingMeetingID: String?
 
     func connectAndRefresh() {
         Task {
             await runBusyTask { [self] in
                 try await GoogleDriveMeetImporter.shared.connect()
                 self.isConnected = true
-                self.recordings = try await GoogleDriveMeetImporter.shared.listRecentMeetRecordings()
-                self.statusMessage = L.tr("Google Drive connected.", "Google Drive подключён.")
+                self.meetings = try await GoogleDriveMeetImporter.shared.listCalendarMeetings(on: self.selectedDate)
+                self.statusMessage = L.tr("Google Calendar connected.", "Google Calendar подключён.")
             }
         }
     }
 
+    func selectDate(_ date: Date) {
+        selectedDate = date
+        refresh()
+    }
+
+    func moveDay(_ value: Int) {
+        selectedDate = Calendar.current.date(byAdding: .day, value: value, to: selectedDate) ?? selectedDate
+        refresh()
+    }
+
     func refresh() {
+        guard isConnected else { return }
+
         Task {
             await runBusyTask { [self] in
-                self.recordings = try await GoogleDriveMeetImporter.shared.listRecentMeetRecordings()
-                self.statusMessage = self.recordings.isEmpty
-                    ? L.tr("No recent Meet recordings found.", "Свежие записи Meet не найдены.")
+                self.meetings = try await GoogleDriveMeetImporter.shared.listCalendarMeetings(on: self.selectedDate)
+                self.statusMessage = self.meetings.isEmpty
+                    ? L.tr("No Meet meetings on this day.", "В этот день нет встреч Meet.")
                     : nil
             }
         }
@@ -34,14 +47,16 @@ final class GoogleMeetImportViewModel: ObservableObject {
     func disconnect() {
         GoogleDriveMeetImporter.shared.disconnect()
         isConnected = false
-        recordings = []
-        statusMessage = L.tr("Google Drive disconnected.", "Google Drive отключён.")
+        meetings = []
+        statusMessage = L.tr("Google disconnected.", "Google отключён.")
         errorMessage = nil
     }
 
-    func importRecording(_ recording: GoogleDriveRecording, onImport: @escaping ([URL]) -> Void) {
+    func importMeeting(_ meeting: GoogleCalendarMeeting, onImport: @escaping ([URL]) -> Void) {
+        guard let recording = meeting.recording else { return }
+
         Task {
-            importingRecordingID = recording.id
+            importingMeetingID = meeting.id
             errorMessage = nil
             do {
                 let url = try await GoogleDriveMeetImporter.shared.downloadRecording(recording)
@@ -50,7 +65,7 @@ final class GoogleMeetImportViewModel: ObservableObject {
             } catch {
                 errorMessage = error.localizedDescription
             }
-            importingRecordingID = nil
+            importingMeetingID = nil
         }
     }
 
@@ -89,10 +104,10 @@ struct GoogleMeetImportView: View {
                 messageBar(text: status, color: SW.accent, icon: "checkmark.circle.fill")
             }
         }
-        .frame(width: 520, height: 460)
+        .frame(width: 620, height: 520)
         .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow).ignoresSafeArea())
         .onAppear {
-            if viewModel.isConnected && viewModel.recordings.isEmpty {
+            if viewModel.isConnected && viewModel.meetings.isEmpty {
                 viewModel.refresh()
             }
         }
@@ -100,10 +115,10 @@ struct GoogleMeetImportView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "video.badge.waveform")
+            Image(systemName: "calendar.badge.clock")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(SW.accent)
-            Text(L.tr("Meet Recordings", "Записи Meet"))
+            Text(L.tr("Meet Calendar", "Календарь Meet"))
                 .font(.system(size: 14, weight: .semibold))
             Spacer()
 
@@ -134,21 +149,21 @@ struct GoogleMeetImportView: View {
     private var connectContent: some View {
         VStack(spacing: 14) {
             Spacer()
-            Image(systemName: "g.circle")
+            Image(systemName: "calendar.badge.plus")
                 .font(.system(size: 42, weight: .regular))
                 .foregroundStyle(SW.tertiaryText)
 
-            Text(L.tr("Connect Google Drive", "Подключить Google Drive"))
+            Text(L.tr("Connect Google Calendar", "Подключить Google Calendar"))
                 .font(.system(size: 15, weight: .semibold))
 
             Text(L.tr(
-                "Sign in to find Meet recording files in your Drive and import them into file transcription.",
-                "Войдите, чтобы найти записи Meet в Drive и импортировать их в транскрибацию файлов."
+                "Choose a past Meet event, then transcribe its recording when Google has generated one.",
+                "Выберите прошедшую Meet-встречу и транскрибируйте запись, когда Google её уже сгенерировал."
             ))
             .font(SW.compactFont)
             .foregroundStyle(SW.secondaryText)
             .multilineTextAlignment(.center)
-            .frame(maxWidth: 330)
+            .frame(maxWidth: 360)
 
             Button {
                 viewModel.connectAndRefresh()
@@ -173,31 +188,34 @@ struct GoogleMeetImportView: View {
     }
 
     private var connectedContent: some View {
-        Group {
-            if viewModel.isLoading && viewModel.recordings.isEmpty {
+        VStack(spacing: 0) {
+            calendarStrip
+            Divider()
+
+            if viewModel.isLoading && viewModel.meetings.isEmpty {
                 VStack(spacing: 10) {
                     Spacer()
                     ProgressView()
-                    Text(L.tr("Loading recordings...", "Загружаю записи..."))
+                    Text(L.tr("Loading meetings and recordings...", "Загружаю встречи и записи..."))
                         .font(SW.compactFont)
                         .foregroundStyle(SW.secondaryText)
                     Spacer()
                 }
-            } else if viewModel.recordings.isEmpty {
+            } else if viewModel.meetings.isEmpty {
                 SWEmptyState(
-                    icon: "video.slash",
-                    title: L.tr("No recordings found", "Записи не найдены"),
-                    detail: L.tr("Only Drive files whose names look like Meet recordings are shown.", "Показываются только файлы Drive, похожие по названию на записи Meet.")
+                    icon: "calendar.badge.exclamationmark",
+                    title: L.tr("No Meet meetings", "Нет Meet-встреч"),
+                    detail: L.tr("Pick another day in the calendar strip.", "Выберите другой день в календаре.")
                 )
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        ForEach(viewModel.recordings) { recording in
-                            GoogleMeetRecordingRow(
-                                recording: recording,
-                                isImporting: viewModel.importingRecordingID == recording.id,
+                        ForEach(viewModel.meetings) { meeting in
+                            GoogleCalendarMeetingRow(
+                                meeting: meeting,
+                                isImporting: viewModel.importingMeetingID == meeting.id,
                                 onImport: {
-                                    viewModel.importRecording(recording, onImport: onImport)
+                                    viewModel.importMeeting(meeting, onImport: onImport)
                                 }
                             )
                         }
@@ -206,6 +224,58 @@ struct GoogleMeetImportView: View {
                 }
             }
         }
+    }
+
+    private var calendarStrip: some View {
+        HStack(spacing: 8) {
+            Button {
+                viewModel.moveDay(-1)
+            } label: {
+                Image(systemName: "chevron.left")
+            }
+            .buttonStyle(.borderless)
+            .disabled(viewModel.isLoading)
+
+            ForEach(visibleDays, id: \.self) { date in
+                CalendarDayButton(
+                    date: date,
+                    isSelected: Calendar.current.isDate(date, inSameDayAs: viewModel.selectedDate),
+                    action: {
+                        viewModel.selectDate(date)
+                    }
+                )
+                .disabled(viewModel.isLoading)
+            }
+
+            Button {
+                viewModel.moveDay(1)
+            } label: {
+                Image(systemName: "chevron.right")
+            }
+            .buttonStyle(.borderless)
+            .disabled(viewModel.isLoading)
+
+            Divider()
+                .frame(height: 22)
+
+            Button {
+                viewModel.selectDate(Date())
+            } label: {
+                Text(L.tr("Today", "Сегодня"))
+                    .font(SW.compactFont)
+            }
+            .buttonStyle(.borderless)
+            .disabled(viewModel.isLoading)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(SW.windowBackground.opacity(0.35))
+    }
+
+    private var visibleDays: [Date] {
+        let calendar = Calendar.current
+        let selectedStart = calendar.startOfDay(for: viewModel.selectedDate)
+        return (-3...3).compactMap { calendar.date(byAdding: .day, value: $0, to: selectedStart) }
     }
 
     private func messageBar(text: String, color: Color, icon: String) -> some View {
@@ -223,34 +293,77 @@ struct GoogleMeetImportView: View {
     }
 }
 
-private struct GoogleMeetRecordingRow: View {
-    let recording: GoogleDriveRecording
+private struct CalendarDayButton: View {
+    let date: Date
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Text(Self.weekdayFormatter.string(from: date))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.white.opacity(0.82) : SW.secondaryText)
+                Text(Self.dayFormatter.string(from: date))
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(isSelected ? Color.white : SW.primaryText)
+            }
+            .frame(width: 46, height: 42)
+            .background(isSelected ? SW.accent : SW.rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private static let weekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        return formatter
+    }()
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter
+    }()
+}
+
+private struct GoogleCalendarMeetingRow: View {
+    let meeting: GoogleCalendarMeeting
     let isImporting: Bool
     let onImport: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: recording.canImportForTranscription ? "video.fill" : "doc.text.fill")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(recording.canImportForTranscription ? SW.accent : SW.secondaryText)
-                .frame(width: 24)
+        HStack(spacing: 12) {
+            VStack(spacing: 3) {
+                Text(meeting.timeRangeLabel)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(SW.primaryText)
+                Text(meeting.meetingCode ?? "Meet")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(SW.secondaryText)
+                    .lineLimit(1)
+            }
+            .frame(width: 92, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(recording.name)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(meeting.title)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(SW.primaryText)
                     .lineLimit(1)
 
-                HStack(spacing: 8) {
-                    Text(recording.displayDate)
-                    if !recording.displaySize.isEmpty {
-                        Text(recording.displaySize)
+                HStack(spacing: 6) {
+                    if let recording = meeting.recording {
+                        SWStatusBadge(title: L.tr("Recording ready", "Запись готова"), icon: "checkmark.circle.fill", color: SW.accent)
+                        if !recording.displaySize.isEmpty {
+                            Text(recording.displaySize)
+                                .font(.system(size: 10))
+                                .foregroundStyle(SW.secondaryText)
+                        }
+                    } else {
+                        SWStatusBadge(title: L.tr("No recording", "Нет записи"), icon: "clock", color: SW.secondaryText)
                     }
-                    Text(recording.mimeType)
                 }
-                .font(.system(size: 10))
-                .foregroundStyle(SW.secondaryText)
-                .lineLimit(1)
             }
 
             Spacer()
@@ -258,16 +371,20 @@ private struct GoogleMeetRecordingRow: View {
             Button {
                 onImport()
             } label: {
-                if isImporting {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: "arrow.down.circle")
+                HStack(spacing: 5) {
+                    if isImporting {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "text.bubble")
+                    }
+                    Text(L.tr("Transcribe", "Транскрибировать"))
                 }
+                .font(.system(size: 11, weight: .semibold))
             }
-            .buttonStyle(.borderless)
-            .disabled(!recording.canImportForTranscription || isImporting)
-            .help(recording.canImportForTranscription ? L.tr("Import", "Импортировать") : L.tr("Not an audio/video file", "Это не аудио/видео файл"))
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(meeting.recording == nil || isImporting)
         }
         .padding(10)
         .background(SW.rowBackground)

@@ -208,6 +208,7 @@ struct MenuBarView: View {
                 }
                 menuButton(icon: "video.badge.waveform", title: L.tr("Import Meet Recording...", "Импортировать запись Meet...")) {
                     AppDelegate.shared?.showFileTranscription()
+                    appState.requestGoogleMeetImport()
                 }
 
                 menuButton(icon: "wand.and.stars", title: L.tr("Setup Wizard", "Мастер настройки")) {

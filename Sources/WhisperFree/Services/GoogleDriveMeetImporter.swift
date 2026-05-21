@@ -34,6 +34,33 @@ struct GoogleDriveRecording: Identifiable, Equatable {
     }()
 }
 
+struct GoogleCalendarMeeting: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let startDate: Date
+    let endDate: Date?
+    let meetURL: URL?
+    let meetingCode: String?
+    var recording: GoogleDriveRecording?
+
+    var timeRangeLabel: String {
+        let start = Self.timeFormatter.string(from: startDate)
+        guard let endDate else { return start }
+        return "\(start)-\(Self.timeFormatter.string(from: endDate))"
+    }
+
+    var hasRecording: Bool {
+        recording != nil
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter
+    }()
+}
+
 enum GoogleDriveImportError: LocalizedError {
     case authCancelled
     case callbackFailed
@@ -158,6 +185,43 @@ final class GoogleDriveMeetImporter {
         }
     }
 
+    func listCalendarMeetings(on date: Date) async throws -> [GoogleCalendarMeeting] {
+        let accessToken = try await validAccessToken()
+        let bounds = dayBounds(for: date)
+        let response = try await calendarEvents(start: bounds.start, end: bounds.end, accessToken: accessToken)
+
+        var meetings = response.items.compactMap { event -> GoogleCalendarMeeting? in
+            guard let startDate = event.start.resolvedDate(isoFormatter: isoFormatter) else { return nil }
+            let endDate = event.end?.resolvedDate(isoFormatter: isoFormatter)
+            let meetURL = event.resolvedMeetURL
+            let meetingCode = event.resolvedMeetingCode
+
+            guard meetURL != nil || meetingCode != nil else { return nil }
+
+            return GoogleCalendarMeeting(
+                id: event.id,
+                title: event.summary?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? L.tr("Untitled meeting", "Встреча без названия"),
+                startDate: startDate,
+                endDate: endDate,
+                meetURL: meetURL,
+                meetingCode: meetingCode,
+                recording: nil
+            )
+        }
+
+        for index in meetings.indices {
+            guard let meetingCode = meetings[index].meetingCode else { continue }
+            meetings[index].recording = try? await recordingForMeetingCode(
+                meetingCode,
+                start: bounds.start,
+                end: bounds.end,
+                accessToken: accessToken
+            )
+        }
+
+        return meetings.sorted { $0.startDate < $1.startDate }
+    }
+
     func downloadRecording(_ recording: GoogleDriveRecording) async throws -> URL {
         guard recording.canImportForTranscription else {
             throw GoogleDriveImportError.unsupportedFileType(recording.mimeType)
@@ -180,6 +244,113 @@ final class GoogleDriveMeetImporter {
         }
         try FileManager.default.moveItem(at: temporaryURL, to: destination)
         return destination
+    }
+
+    private func calendarEvents(start: Date, end: Date, accessToken: String) async throws -> CalendarEventsResponse {
+        var components = URLComponents(string: "https://www.googleapis.com/calendar/v3/calendars/primary/events")!
+        components.queryItems = [
+            URLQueryItem(name: "timeMin", value: isoFormatter.string(from: start)),
+            URLQueryItem(name: "timeMax", value: isoFormatter.string(from: end)),
+            URLQueryItem(name: "singleEvents", value: "true"),
+            URLQueryItem(name: "orderBy", value: "startTime"),
+            URLQueryItem(name: "maxResults", value: "40"),
+            URLQueryItem(name: "fields", value: "items(id,summary,start,end,hangoutLink,conferenceData(conferenceId,entryPoints(entryPointType,uri)))")
+        ]
+
+        guard let url = components.url else { throw GoogleDriveImportError.invalidCallback }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Self.validateHTTPResponse(response, data: data)
+        return try JSONDecoder().decode(CalendarEventsResponse.self, from: data)
+    }
+
+    private func recordingForMeetingCode(_ meetingCode: String, start: Date, end: Date, accessToken: String) async throws -> GoogleDriveRecording? {
+        var components = URLComponents(string: "https://meet.googleapis.com/v2/conferenceRecords")!
+        let filter = """
+        space.meeting_code = "\(meetingCode)" AND start_time>="\(isoFormatter.string(from: start))" AND start_time<="\(isoFormatter.string(from: end))"
+        """
+        components.queryItems = [
+            URLQueryItem(name: "pageSize", value: "10"),
+            URLQueryItem(name: "filter", value: filter)
+        ]
+
+        guard let url = components.url else { throw GoogleDriveImportError.invalidCallback }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Self.validateHTTPResponse(response, data: data)
+        let records = try JSONDecoder().decode(ConferenceRecordsResponse.self, from: data).conferenceRecords ?? []
+
+        for record in records {
+            if let recording = try await firstGeneratedRecording(parent: record.name, accessToken: accessToken) {
+                return recording
+            }
+        }
+
+        return nil
+    }
+
+    private func firstGeneratedRecording(parent: String, accessToken: String) async throws -> GoogleDriveRecording? {
+        var components = URLComponents(string: "https://meet.googleapis.com/v2/\(parent)/recordings")!
+        components.queryItems = [URLQueryItem(name: "pageSize", value: "10")]
+        guard let url = components.url else { throw GoogleDriveImportError.invalidCallback }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Self.validateHTTPResponse(response, data: data)
+        let recordings = try JSONDecoder().decode(MeetRecordingsResponse.self, from: data).recordings ?? []
+
+        guard let generated = recordings.first(where: { $0.state == "FILE_GENERATED" }),
+              let fileID = generated.driveDestination?.file,
+              !fileID.isEmpty
+        else { return nil }
+
+        return try await driveFileMetadata(fileID: fileID, accessToken: accessToken)
+            ?? GoogleDriveRecording(
+                id: fileID,
+                name: L.tr("Google Meet Recording.mp4", "Запись Google Meet.mp4"),
+                mimeType: "video/mp4",
+                modifiedTime: generated.endTime.flatMap { isoFormatter.date(from: $0) },
+                sizeBytes: nil,
+                webViewLink: generated.driveDestination?.exportUri.flatMap(URL.init(string:))
+            )
+    }
+
+    private func driveFileMetadata(fileID: String, accessToken: String) async throws -> GoogleDriveRecording? {
+        var components = URLComponents(string: "https://www.googleapis.com/drive/v3/files/\(fileID)")!
+        components.queryItems = [
+            URLQueryItem(name: "supportsAllDrives", value: "true"),
+            URLQueryItem(name: "fields", value: "id,name,mimeType,modifiedTime,size,webViewLink")
+        ]
+
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Self.validateHTTPResponse(response, data: data)
+        let file = try JSONDecoder().decode(DriveFile.self, from: data)
+
+        return GoogleDriveRecording(
+            id: file.id,
+            name: file.name,
+            mimeType: file.mimeType,
+            modifiedTime: file.modifiedTime.flatMap { isoFormatter.date(from: $0) },
+            sizeBytes: file.size.flatMap(Int64.init),
+            webViewLink: file.webViewLink.flatMap(URL.init(string:))
+        )
+    }
+
+    private func dayBounds(for date: Date) -> (start: Date, end: Date) {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: date)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? date
+        return (start, end)
     }
 
     private func validAccessToken() async throws -> String {
@@ -466,6 +637,89 @@ private struct DriveFilesResponse: Decodable {
     let files: [DriveFile]
 }
 
+private struct CalendarEventsResponse: Decodable {
+    let items: [CalendarEvent]
+}
+
+private struct CalendarEvent: Decodable {
+    let id: String
+    let summary: String?
+    let start: CalendarEventDate
+    let end: CalendarEventDate?
+    let hangoutLink: String?
+    let conferenceData: CalendarConferenceData?
+
+    var resolvedMeetURL: URL? {
+        if let hangoutLink, let url = URL(string: hangoutLink) {
+            return url
+        }
+
+        return conferenceData?.entryPoints?
+            .first(where: { $0.entryPointType == "video" })?
+            .uri
+            .flatMap(URL.init(string:))
+    }
+
+    var resolvedMeetingCode: String? {
+        if let conferenceID = conferenceData?.conferenceId?.normalizedMeetCode {
+            return conferenceID
+        }
+
+        guard let url = resolvedMeetURL else { return nil }
+        return url.lastPathComponent.normalizedMeetCode
+    }
+}
+
+private struct CalendarEventDate: Decodable {
+    let date: String?
+    let dateTime: String?
+
+    func resolvedDate(isoFormatter: ISO8601DateFormatter) -> Date? {
+        if let dateTime {
+            return isoFormatter.date(from: dateTime)
+        }
+
+        guard let date else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = .current
+        return formatter.date(from: date)
+    }
+}
+
+private struct CalendarConferenceData: Decodable {
+    let conferenceId: String?
+    let entryPoints: [CalendarEntryPoint]?
+}
+
+private struct CalendarEntryPoint: Decodable {
+    let entryPointType: String?
+    let uri: String?
+}
+
+private struct ConferenceRecordsResponse: Decodable {
+    let conferenceRecords: [ConferenceRecord]?
+}
+
+private struct ConferenceRecord: Decodable {
+    let name: String
+}
+
+private struct MeetRecordingsResponse: Decodable {
+    let recordings: [MeetRecording]?
+}
+
+private struct MeetRecording: Decodable {
+    let state: String?
+    let endTime: String?
+    let driveDestination: MeetDriveDestination?
+}
+
+private struct MeetDriveDestination: Decodable {
+    let file: String?
+    let exportUri: String?
+}
+
 private struct DriveFile: Decodable {
     let id: String
     let name: String
@@ -473,6 +727,24 @@ private struct DriveFile: Decodable {
     let modifiedTime: String?
     let size: String?
     let webViewLink: String?
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
+
+    var normalizedMeetCode: String? {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-"))
+        let cleaned = unicodeScalars
+            .filter { allowed.contains($0) }
+            .map(String.init)
+            .joined()
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+
+        return cleaned.isEmpty ? nil : cleaned
+    }
 }
 
 private extension Data {
