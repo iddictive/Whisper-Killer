@@ -82,8 +82,6 @@ struct FileTranscriptionView: View {
 
     private var fileTranscriptionContent: some View {
         VStack(spacing: 0) {
-            headerView
-            Divider()
             configBar
             Divider()
 
@@ -100,44 +98,41 @@ struct FileTranscriptionView: View {
                 bottomBar
             }
         }
-    }
-
-    private var headerView: some View {
-        HStack {
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-            Text(L.tr("File Transcription", "Транскрибация файла"))
-                .font(.system(size: 14, weight: .semibold))
-            Spacer()
-
-            if !queueItems.isEmpty {
-                let doneCount = queueItems.filter { $0.status == .done }.count
-                Text("\(doneCount)/\(queueItems.count)")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.1))
-                    .foregroundStyle(Color.accentColor)
-                    .clipShape(Capsule())
+        .toolbarBackground(.visible, for: .windowToolbar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(SW.accent)
+                    Text(L.tr("File Transcription", "Транскрибация файла"))
+                        .font(.system(size: 13, weight: .semibold))
+                }
             }
 
-            if !queueItems.isEmpty && !hasRunningItems {
-                Button(role: .destructive) {
-                    for item in queueItems { item.cancel() }
-                    queueItems.removeAll()
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 11, weight: .semibold))
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 8) {
+                    if !queueItems.isEmpty {
+                        let doneCount = queueItems.filter { $0.status == .done }.count
+                        Text("\(doneCount)/\(queueItems.count)")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if !queueItems.isEmpty && !hasRunningItems {
+                        Button(role: .destructive) {
+                            for item in queueItems { item.cancel() }
+                            queueItems.removeAll()
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(SW.danger)
+                        .help(L.tr("Clear All Files", "Очистить все файлы"))
+                    }
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(SW.danger)
-                .help(L.tr("Clear All Files", "Очистить все файлы"))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 24)
-        .padding(.bottom, 8)
     }
 
     // MARK: - Config Bar
