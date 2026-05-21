@@ -97,9 +97,6 @@ struct GoogleMeetImportView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
-
             if viewModel.isConnected {
                 connectedContent
             } else {
@@ -113,53 +110,55 @@ struct GoogleMeetImportView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .toolbarBackground(.visible, for: .windowToolbar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 8) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(SW.accent)
+                    Text(L.tr("Meet Calendar", "Календарь Meet"))
+                        .font(.system(size: 13, weight: .semibold))
+                }
+            }
+
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 8) {
+                    if viewModel.isConnected {
+                        Button {
+                            viewModel.refresh()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(viewModel.isLoading)
+                        .help(L.tr("Refresh", "Обновить"))
+
+                        Button {
+                            viewModel.disconnect()
+                        } label: {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(viewModel.isLoading)
+                        .help(L.tr("Disconnect Google", "Отключить Google"))
+                    }
+
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(L.tr("Close", "Закрыть"))
+                }
+            }
+        }
         .onAppear {
             if viewModel.isConnected && viewModel.meetings.isEmpty {
                 viewModel.refresh()
             }
         }
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "calendar.badge.clock")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(SW.accent)
-            Text(L.tr("Meet Calendar", "Календарь Meet"))
-                .font(.system(size: 14, weight: .semibold))
-            Spacer()
-
-            if viewModel.isConnected {
-                Button {
-                    viewModel.refresh()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.borderless)
-                .disabled(viewModel.isLoading)
-                .help(L.tr("Refresh", "Обновить"))
-
-                Button {
-                    viewModel.disconnect()
-                } label: {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                }
-                .buttonStyle(.borderless)
-                .disabled(viewModel.isLoading)
-                .help(L.tr("Disconnect Google", "Отключить Google"))
-            }
-
-            Button {
-                onClose()
-            } label: {
-                Image(systemName: "xmark")
-            }
-            .buttonStyle(.borderless)
-            .help(L.tr("Close", "Закрыть"))
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 24)
-        .padding(.bottom, 12)
     }
 
     private var connectContent: some View {
