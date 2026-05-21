@@ -158,7 +158,8 @@ struct GoogleMeetImportView: View {
             .help(L.tr("Close", "Закрыть"))
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.top, 24)
+        .padding(.bottom, 12)
     }
 
     private var connectContent: some View {

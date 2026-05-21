@@ -44,35 +44,6 @@ struct FileTranscriptionView: View {
             errorOverlay
         }
         .frame(minWidth: showGoogleMeetImporter ? 560 : 400, minHeight: showGoogleMeetImporter ? 500 : 320)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if !showGoogleMeetImporter {
-                WindowHeaderUnderlay()
-            }
-        }
-        .toolbar {
-            if !showGoogleMeetImporter {
-                ToolbarItem(placement: .principal) {
-                    Text(L.tr("File Transcription", "Транскрибация файла"))
-                        .font(.system(size: 13, weight: .semibold))
-                }
-
-                ToolbarItem(placement: .primaryAction) {
-                    HStack(spacing: 8) {
-                        if !queueItems.isEmpty && !hasRunningItems {
-                            Button(role: .destructive) {
-                                for item in queueItems { item.cancel() }
-                                queueItems.removeAll()
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 11))
-                            }
-                            .foregroundStyle(.red.opacity(0.8))
-                            .help(L.tr("Clear All Files", "Очистить все файлы"))
-                        }
-                    }
-                }
-            }
-        }
         .onDisappear {
             for item in queueItems { item.cancel() }
             queueItems.removeAll()
@@ -111,6 +82,8 @@ struct FileTranscriptionView: View {
 
     private var fileTranscriptionContent: some View {
         VStack(spacing: 0) {
+            headerView
+            Divider()
             configBar
             Divider()
 
@@ -147,6 +120,19 @@ struct FileTranscriptionView: View {
                     .background(Color.accentColor.opacity(0.1))
                     .foregroundStyle(Color.accentColor)
                     .clipShape(Capsule())
+            }
+
+            if !queueItems.isEmpty && !hasRunningItems {
+                Button(role: .destructive) {
+                    for item in queueItems { item.cancel() }
+                    queueItems.removeAll()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(SW.danger)
+                .help(L.tr("Clear All Files", "Очистить все файлы"))
             }
         }
         .padding(.horizontal, 16)
