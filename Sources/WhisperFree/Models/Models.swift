@@ -226,6 +226,34 @@ struct TranscriptionHistoryEntry: Codable {
     }
 }
 
+// MARK: - AI Chat
+
+enum AIChatMessageRole: String, Codable {
+    case user
+    case assistant
+}
+
+struct AIChatMessage: Codable, Identifiable, Hashable {
+    var id: UUID = UUID()
+    var role: AIChatMessageRole
+    var content: String
+    var date: Date = Date()
+    var attachmentTitle: String? = nil
+}
+
+struct AIChatConversation: Codable, Identifiable, Hashable {
+    var id: UUID = UUID()
+    var title: String
+    var messages: [AIChatMessage] = []
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+
+    var displayTitle: String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "AI Chat" : trimmed
+    }
+}
+
 // MARK: - Recording Mode
 
 enum RecordingMode: String, Codable, CaseIterable {
@@ -585,6 +613,10 @@ struct AppSettings: Codable {
     var useScreenCaptureKit: Bool = false
     var liveTranslatorCompactMode: Bool = false
 
+    // AI Chat
+    var selectedAIChatModel: String = "gpt-4o-mini"
+    var selectedAIChatConversationID: UUID? = nil
+
     enum CodingKeys: String, CodingKey {
         case apiKey, cloudTranscriptionModel, postProcessingEngine, autoTypeResult, enableProfanityFilter, language,
              selectedModeName, customModes, recordingMode, engineType, localModelSize,
@@ -594,7 +626,8 @@ struct AppSettings: Codable {
              experimentalAutoEnter, enableSpeakerDiarization, customProfanityDictionaries, selectedInputDeviceID,
              lifetimeWords, lifetimeDuration, audioRetentionPolicy,
              liveTranslatorEnabled, liveTranslatorTargetLanguage, liveTranslatorSourceLanguage, liveTranslatorEngine, liveTranslatorLocalModel,
-             liveTranslatorInputDeviceID, liveTranslatorHotkeyConfig, useScreenCaptureKit, liveTranslatorCompactMode
+             liveTranslatorInputDeviceID, liveTranslatorHotkeyConfig, useScreenCaptureKit, liveTranslatorCompactMode,
+             selectedAIChatModel, selectedAIChatConversationID
     }
 
     init() {}
@@ -637,6 +670,8 @@ struct AppSettings: Codable {
         liveTranslatorHotkeyConfig = try container.decodeIfPresent(HotkeyConfig.self, forKey: .liveTranslatorHotkeyConfig) ?? HotkeyConfig(keyCode: 17, useOption: true, useCommand: true)
         useScreenCaptureKit = try container.decodeIfPresent(Bool.self, forKey: .useScreenCaptureKit) ?? false
         liveTranslatorCompactMode = try container.decodeIfPresent(Bool.self, forKey: .liveTranslatorCompactMode) ?? false
+        selectedAIChatModel = try container.decodeIfPresent(String.self, forKey: .selectedAIChatModel) ?? "gpt-4o-mini"
+        selectedAIChatConversationID = try container.decodeIfPresent(UUID.self, forKey: .selectedAIChatConversationID)
     }
 
     var allModes: [TranscriptionMode] {

@@ -44,6 +44,12 @@ final class AppState: ObservableObject {
     @Published var fileTranscriptionImportRequest: FileTranscriptionImportRequest?
     @Published var googleMeetImportRequestID: UUID?
     @Published private(set) var backgroundProcessingCount: Int = 0
+    @Published var aiChatConversations: [AIChatConversation] = []
+    @Published var availableAIChatModels: [String] = []
+    @Published var isLoadingAIChatModels = false
+    @Published var isAIChatSending = false
+    @Published var isAIChatVoiceRecording = false
+    @Published var aiChatError: String?
 
     @Published var copiedFeedback = false
     @Published var availableInputDevices: [AVCaptureDevice] = []
@@ -112,6 +118,7 @@ final class AppState: ObservableObject {
 
     // MARK: - Services
     let recorder = AudioRecorder()
+    private let aiChatRecorder = AudioRecorder()
     let modelManager = ModelManager()
     private let hotkeyManager = HotkeyManager()
     private let liveTranslatorHotkeyManager = HotkeyManager()
@@ -133,7 +140,9 @@ final class AppState: ObservableObject {
         print("🚀 AppState initializing...")
         self.settings = Storage.shared.loadSettings()
         self.history = Storage.shared.loadHistory()
+        self.aiChatConversations = Storage.shared.loadAIChatConversations()
         self.settings.normalizeBeforeSaving()
+        ensureSelectedAIChatConversation()
         sanitizeDisabledFeatureState()
         Storage.shared.saveSettings(self.settings)
         print("📦 Settings and History loaded")
@@ -247,6 +256,294 @@ final class AppState: ObservableObject {
         settings.normalizeBeforeSaving()
         Storage.shared.saveSettings(settings)
         hotkeyManager.config = settings.hotkeyConfig
+    }
+
+    var selectedAIChatConversation: AIChatConversation? {
+        guard let selectedID = settings.selectedAIChatConversationID else { return aiChatConversations.first }
+        return aiChatConversations.first { $0.id == selectedID } ?? aiChatConversations.first
+    }
+
+    @discardableResult
+    func ensureSelectedAIChatConversation() -> UUID {
+        if let selectedID = settings.selectedAIChatConversationID,
+           aiChatConversations.contains(where: { $0.id == selectedID }) {
+            return selectedID
+        }
+
+        if let first = aiChatConversations.first {
+            settings.selectedAIChatConversationID = first.id
+            return first.id
+        }
+
+        let conversation = AIChatConversation(title: L.tr("New Chat", "Новый чат"))
+        aiChatConversations = [conversation]
+        settings.selectedAIChatConversationID = conversation.id
+        Storage.shared.saveAIChatConversations(aiChatConversations)
+        return conversation.id
+    }
+
+    func selectAIChatConversation(_ id: UUID) {
+        guard aiChatConversations.contains(where: { $0.id == id }) else { return }
+        settings.selectedAIChatConversationID = id
+        saveSettings()
+    }
+
+    func createAIChatConversation() {
+        let number = aiChatConversations.count + 1
+        let conversation = AIChatConversation(title: L.tr("Chat \(number)", "Чат \(number)"))
+        aiChatConversations.insert(conversation, at: 0)
+        settings.selectedAIChatConversationID = conversation.id
+        saveSettings()
+        Storage.shared.saveAIChatConversations(aiChatConversations)
+    }
+
+    func refreshAIChatModelsIfNeeded(force: Bool = false) {
+        guard settings.hasOpenAIAPIKey else {
+            availableAIChatModels = []
+            return
+        }
+        if !force, !availableAIChatModels.isEmpty { return }
+        guard !isLoadingAIChatModels else { return }
+
+        isLoadingAIChatModels = true
+        aiChatError = nil
+
+        Task {
+            do {
+                let models = try await AIChatService.fetchOpenAIChatModels(apiKey: settings.normalizedAPIKey)
+                await MainActor.run {
+                    self.availableAIChatModels = models
+                    if !models.isEmpty, !models.contains(self.settings.selectedAIChatModel) {
+                        self.settings.selectedAIChatModel = models[0]
+                        self.saveSettings()
+                    }
+                    self.isLoadingAIChatModels = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.aiChatError = error.localizedDescription
+                    self.isLoadingAIChatModels = false
+                }
+            }
+        }
+    }
+
+    func setAIChatModel(_ model: String) {
+        settings.selectedAIChatModel = model
+        saveSettings()
+    }
+
+    func attachLatestTranscriptionToAIChat() {
+        if let last = history.first {
+            attachToAIChat(
+                title: L.tr("Latest transcript", "Последняя транскрипция"),
+                content: preferredAIChatText(for: last)
+            )
+            return
+        }
+
+        if let lastTranscription, !lastTranscription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            attachToAIChat(title: L.tr("Latest transcript", "Последняя транскрипция"), content: lastTranscription)
+        }
+    }
+
+    func attachLiveTranslationToAIChat() {
+        let manager = LiveTranslatorManager.shared
+        let segments = manager.transcriptSegments.suffix(12).map {
+            "\($0.originalText)\n-> \($0.translatedText)"
+        }
+        let fallback = [manager.originalText, manager.translatedText]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n-> ")
+        let content = segments.isEmpty ? fallback : segments.joined(separator: "\n\n")
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            aiChatError = L.tr("No live translation to attach.", "Нет live-перевода для прикрепления.")
+            return
+        }
+        attachToAIChat(title: L.tr("Live translation", "Live-перевод"), content: content)
+    }
+
+    func attachHistoryEntryToAIChat(_ entry: TranscriptionHistoryEntry) {
+        attachToAIChat(title: entry.modeName, content: preferredAIChatText(for: entry))
+    }
+
+    func sendAIChatMessage(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard settings.hasOpenAIAPIKey else {
+            aiChatError = L.tr("Add an OpenAI API key in Settings first.", "Сначала добавьте OpenAI API key в настройках.")
+            return
+        }
+
+        let conversationID = ensureSelectedAIChatConversation()
+        appendAIChatMessage(
+            AIChatMessage(role: .user, content: trimmed),
+            to: conversationID
+        )
+        runAIChatRequest(conversationID: conversationID)
+    }
+
+    func toggleAIChatVoiceMessage() {
+        if isAIChatVoiceRecording {
+            stopAIChatVoiceMessage()
+        } else {
+            startAIChatVoiceMessage()
+        }
+    }
+
+    private func attachToAIChat(title: String, content: String) {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let conversationID = ensureSelectedAIChatConversation()
+        appendAIChatMessage(
+            AIChatMessage(
+                role: .user,
+                content: "Attached context: \(title)\n\n\(trimmed)",
+                attachmentTitle: title
+            ),
+            to: conversationID
+        )
+    }
+
+    private func appendAIChatMessage(_ message: AIChatMessage, to conversationID: UUID) {
+        guard let index = aiChatConversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        aiChatConversations[index].messages.append(message)
+        aiChatConversations[index].updatedAt = Date()
+        updateAIChatTitleIfNeeded(at: index, using: message)
+        aiChatConversations.sort { $0.updatedAt > $1.updatedAt }
+        Storage.shared.saveAIChatConversations(aiChatConversations)
+    }
+
+    private func updateAIChatTitleIfNeeded(at index: Int, using message: AIChatMessage) {
+        guard aiChatConversations[index].messages.count == 1 else { return }
+        let words = message.content
+            .split(whereSeparator: { $0.isWhitespace })
+            .prefix(5)
+            .joined(separator: " ")
+        if !words.isEmpty {
+            aiChatConversations[index].title = String(words.prefix(44))
+        }
+    }
+
+    private func runAIChatRequest(conversationID: UUID) {
+        guard let conversation = aiChatConversations.first(where: { $0.id == conversationID }) else { return }
+        isAIChatSending = true
+        aiChatError = nil
+
+        Task {
+            do {
+                let result = try await AIChatService.send(
+                    messages: conversation.messages,
+                    model: self.settings.selectedAIChatModel,
+                    apiKey: self.settings.normalizedAPIKey
+                )
+                await MainActor.run {
+                    self.appendAIChatMessage(
+                        AIChatMessage(role: .assistant, content: result.text),
+                        to: conversationID
+                    )
+                    let usage = UsageLog(
+                        date: Date(),
+                        modeName: "AI Chat",
+                        engine: "openai",
+                        promptTokens: result.promptTokens,
+                        completionTokens: result.completionTokens,
+                        totalTokens: result.promptTokens + result.completionTokens,
+                        estimatedCost: UsageLog.estimateCost(prompt: result.promptTokens, completion: result.completionTokens, engine: .openai)
+                    )
+                    self.settings.usageLogs.append(usage)
+                    self.saveSettings()
+                    self.isAIChatSending = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.aiChatError = error.localizedDescription
+                    self.isAIChatSending = false
+                }
+            }
+        }
+    }
+
+    private func startAIChatVoiceMessage() {
+        guard state == .idle else {
+            aiChatError = L.tr("Finish the current recording first.", "Сначала завершите текущую запись.")
+            return
+        }
+
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        switch status {
+        case .authorized:
+            guard aiChatRecorder.startRecording(inputDeviceID: settings.selectedInputDeviceID) else {
+                aiChatError = aiChatRecorder.error ?? L.tr("Could not start voice message.", "Не удалось начать голосовое сообщение.")
+                return
+            }
+            isAIChatVoiceRecording = true
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        self?.startAIChatVoiceMessage()
+                    } else {
+                        self?.aiChatError = "Microphone access denied. Please enable it in System Settings -> Privacy & Security."
+                    }
+                }
+            }
+        case .denied, .restricted:
+            aiChatError = "Microphone access denied. Please enable it in System Settings -> Privacy & Security."
+        @unknown default:
+            aiChatError = "Microphone access denied. Please enable it in System Settings -> Privacy & Security."
+        }
+    }
+
+    private func stopAIChatVoiceMessage() {
+        isAIChatVoiceRecording = false
+        let (audioURL, _) = aiChatRecorder.stopRecording()
+        guard let audioURL else {
+            aiChatError = L.tr("Voice message is too short.", "Голосовое сообщение слишком короткое.")
+            return
+        }
+
+        guard validateTranscriptionPrerequisites(requiresMicrophone: false) else {
+            try? FileManager.default.removeItem(at: audioURL)
+            return
+        }
+
+        isAIChatSending = true
+        aiChatError = nil
+        let settingsSnapshot = settings
+
+        Task {
+            do {
+                let engine = TranscriptionEngineFactory.create(for: settingsSnapshot.engineType, settings: settingsSnapshot)
+                let text = try await engine.transcribe(
+                    audioURL: audioURL,
+                    language: settingsSnapshot.language == "auto" ? nil : settingsSnapshot.language,
+                    timeRange: nil,
+                    onProgress: nil
+                )
+                try? FileManager.default.removeItem(at: audioURL)
+                await MainActor.run {
+                    self.isAIChatSending = false
+                    self.sendAIChatMessage(text)
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: audioURL)
+                await MainActor.run {
+                    self.aiChatError = error.localizedDescription
+                    self.isAIChatSending = false
+                }
+            }
+        }
+    }
+
+    private func preferredAIChatText(for entry: TranscriptionHistoryEntry) -> String {
+        if let summary = entry.summaryText?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
+            return summary
+        }
+        let processed = entry.processedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !processed.isEmpty { return processed }
+        return entry.rawText
     }
 
     func requestFileTranscription(urls: [URL]) -> Bool {

@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private var setupWizardController: SetupWizardWindowController?
     private var settingsWindowController: SettingsWindowController?
     private var historyWindowController: HistoryWindowController?
+    private var aiChatWindowController: AIChatWindowController?
     private var fileTranscriptionController: FileTranscriptionWindowController?
     private var accessibilityDragHelperController: AccessibilityDragHelperWindowController?
 
@@ -117,6 +118,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             historyWindowController = HistoryWindowController()
         }
         historyWindowController?.show()
+    }
+
+    func showAIChat() {
+        if aiChatWindowController == nil {
+            aiChatWindowController = AIChatWindowController()
+        }
+        aiChatWindowController?.show()
     }
 
     func showFileTranscription() {
@@ -314,6 +322,43 @@ final class HistoryWindowController: NSObject {
         window.isReleasedWhenClosed = false
         window.backgroundColor = .clear
         window.isOpaque = false
+        applyAppWindowIcon(window)
+
+        self.window = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+@MainActor
+final class AIChatWindowController: NSObject {
+    private var window: NSWindow?
+
+    func show() {
+        if window != nil {
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let view = AIChatWindowView().environmentObject(AppState.shared)
+        let hostingView = NSHostingView(rootView: view)
+        let window = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.center()
+        window.contentView = hostingView
+        window.title = ""
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.isReleasedWhenClosed = false
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.level = .floating
         applyAppWindowIcon(window)
 
         self.window = window

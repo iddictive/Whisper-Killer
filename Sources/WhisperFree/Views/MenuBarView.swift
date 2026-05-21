@@ -10,7 +10,7 @@ struct MenuBarView: View {
 
     private var selectedInputDeviceName: String {
         appState.availableInputDevices.first(where: { $0.uniqueID == appState.settings.selectedInputDeviceID })?.localizedName
-            ?? L.tr("Default", "По умолчанию")
+            ?? L.tr("Default", "Системный")
     }
 
     var body: some View {
@@ -203,6 +203,9 @@ struct MenuBarView: View {
                 menuButton(icon: "clock", title: L.tr("History", "История")) {
                     AppDelegate.shared?.showHistory()
                 }
+                menuButton(icon: "bubble.left.and.text.bubble.right", title: "AI Chat") {
+                    AppDelegate.shared?.showAIChat()
+                }
                 menuButton(icon: "doc.badge.plus", title: L.tr("Transcribe File...", "Транскрибировать файл...")) {
                     AppDelegate.shared?.showFileTranscription()
                 }
@@ -257,14 +260,14 @@ struct MenuBarView: View {
     }
 
     private var headerControls: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             inputDeviceMenu
-                .layoutPriority(1)
 
             sourceMenu
-                .layoutPriority(1)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 6)
+
+            diarizationButton
 
             recordButton
 
@@ -364,6 +367,7 @@ struct MenuBarView: View {
                 Text(appState.settings.engineType.localizedShortTitle)
                     .font(.system(size: 10, weight: .medium))
                     .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 6))
             }
@@ -413,6 +417,8 @@ struct MenuBarView: View {
                     .font(.system(size: 10, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .frame(maxWidth: appState.settings.selectedInputDeviceID == nil ? 46 : 64, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 6))
             }
@@ -422,6 +428,38 @@ struct MenuBarView: View {
             .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private var diarizationButton: some View {
+        Button {
+            if appState.settings.canUseSpeakerDiarization || appState.settings.enableSpeakerDiarization {
+                appState.settings.enableSpeakerDiarization.toggle()
+                appState.saveSettings()
+            } else {
+                appState.showError(L.tr("Add an OpenAI API key to use diarization.", "Добавьте OpenAI API key, чтобы включить диаризацию."))
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: appState.settings.enableSpeakerDiarization ? "person.2.wave.2.fill" : "person.2.wave.2")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(appState.settings.enableSpeakerDiarization ? "Diar On" : "Diar")
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(appState.settings.enableSpeakerDiarization ? SW.accent : SW.primaryText)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous)
+                    .fill(appState.settings.enableSpeakerDiarization ? SW.accent.opacity(0.12) : SW.rowBackground)
+            )
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help(appState.settings.canUseSpeakerDiarization
+              ? L.tr("Toggle speaker diarization for transcription post-processing.", "Включить или выключить диаризацию спикеров для обработки транскрипций.")
+              : L.tr("OpenAI API key is required for diarization.", "Для диаризации нужен OpenAI API key."))
     }
 
     private var recordButton: some View {

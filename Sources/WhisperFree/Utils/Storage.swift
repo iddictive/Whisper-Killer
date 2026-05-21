@@ -7,6 +7,7 @@ final class Storage {
 
     private let settingsKey = "SuperWhisperSettings"
     private let historyKey = "SuperWhisperHistory"
+    private let aiChatConversationsKey = "WhisperKillerAIChatConversations"
 
     private let defaults = UserDefaults.standard
     private let encoder = JSONEncoder()
@@ -101,6 +102,27 @@ final class Storage {
             }
         }
         saveHistory([])
+    }
+
+    // MARK: - AI Chat
+
+    func loadAIChatConversations() -> [AIChatConversation] {
+        guard let data = defaults.data(forKey: aiChatConversationsKey),
+              let conversations = try? decoder.decode([AIChatConversation].self, from: data)
+        else {
+            return []
+        }
+        return conversations
+    }
+
+    func saveAIChatConversations(_ conversations: [AIChatConversation]) {
+        let trimmed = conversations
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(20)
+
+        if let data = try? encoder.encode(Array(trimmed)) {
+            defaults.set(data, forKey: aiChatConversationsKey)
+        }
     }
 
     func applyRetentionPolicy(_ policy: AudioRetentionPolicy) {
