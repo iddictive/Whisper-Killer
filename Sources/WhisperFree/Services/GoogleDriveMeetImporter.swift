@@ -438,23 +438,48 @@ final class GoogleDriveMeetImporter {
     private static func validateHTTPResponse(_ response: URLResponse, data: Data?) throws {
         guard let http = response as? HTTPURLResponse else { return }
         guard (200..<300).contains(http.statusCode) else {
-            let message = data.flatMap { String(data: $0, encoding: .utf8) } ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
-            throw GoogleDriveImportError.apiError(message)
+            throw GoogleDriveImportError.apiError(googleErrorMessage(statusCode: http.statusCode, data: data))
         }
+    }
+
+    private static func googleErrorMessage(statusCode: Int, data: Data?) -> String {
+        let fallback = HTTPURLResponse.localizedString(forStatusCode: statusCode)
+        guard let data else {
+            return L.tr(
+                "Google request failed: \(fallback).",
+                "Запрос Google не выполнен: \(fallback)."
+            )
+        }
+
+        if let decoded = try? JSONDecoder().decode(GoogleHTTPErrorResponse.self, from: data),
+           let message = decoded.displayMessage {
+            return message
+        }
+
+        let rawMessage = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let rawMessage, !rawMessage.isEmpty else {
+            return L.tr(
+                "Google request failed: \(fallback).",
+                "Запрос Google не выполнен: \(fallback)."
+            )
+        }
+        return L.tr(
+            "Google request failed: \(rawMessage)",
+            "Запрос Google не выполнен: \(rawMessage)"
+        )
     }
 
     private static func formURLEncoded(_ parameters: [String: String]) -> String {
         parameters
             .map { key, value in
-                "\(urlEncode(key))=\(urlEncode(value))"
+                "\(formURLEncode(key))=\(formURLEncode(value))"
             }
             .sorted()
             .joined(separator: "&")
     }
 
-    private static func urlEncode(_ value: String) -> String {
-        var allowed = CharacterSet.urlQueryAllowed
-        allowed.remove(charactersIn: "+&=")
+    private static func formURLEncode(_ value: String) -> String {
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
         return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
@@ -598,8 +623,8 @@ private final class GoogleOAuthLoopbackServer {
     private func sendResponse(on connection: NWConnection) {
         let body = """
         <html><body style="font: -apple-system-body; padding: 32px;">
-        <h2>Google connected</h2>
-        <p>You can return to WhisperKiller.</p>
+        <h2>Google response received</h2>
+        <p>Return to WhisperKiller to finish connecting.</p>
         </body></html>
         """
         let response = """
@@ -631,6 +656,69 @@ private struct TokenResponse: Decodable {
         case refreshToken = "refresh_token"
         case expiresIn = "expires_in"
     }
+}
+
+private struct GoogleHTTPErrorResponse: Decodable {
+    let error: GoogleHTTPErrorValue?
+    let errorDescription: String?
+
+    var displayMessage: String? {
+        let description = errorDescription?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let errorText = error?.message?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+
+        switch (errorText, description) {
+        case let (.some(errorText), .some(description)) where errorText != description:
+            return L.tr(
+                "Google request failed: \(errorText). \(description)",
+                "Запрос Google не выполнен: \(errorText). \(description)"
+            )
+        case let (.some(errorText), _):
+            return L.tr(
+                "Google request failed: \(errorText)",
+                "Запрос Google не выполнен: \(errorText)"
+            )
+        case let (_, .some(description)):
+            return L.tr(
+                "Google request failed: \(description)",
+                "Запрос Google не выполнен: \(description)"
+            )
+        default:
+            return nil
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case error
+        case errorDescription = "error_description"
+    }
+}
+
+private enum GoogleHTTPErrorValue: Decodable {
+    case text(String)
+    case object(GoogleHTTPErrorObject)
+
+    var message: String? {
+        switch self {
+        case .text(let value):
+            return value
+        case .object(let object):
+            return object.message ?? object.status
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(String.self) {
+            self = .text(value)
+            return
+        }
+        self = .object(try container.decode(GoogleHTTPErrorObject.self))
+    }
+}
+
+private struct GoogleHTTPErrorObject: Decodable {
+    let message: String?
+    let status: String?
 }
 
 private struct DriveFilesResponse: Decodable {
