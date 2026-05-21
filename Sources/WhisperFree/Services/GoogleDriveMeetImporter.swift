@@ -41,12 +41,16 @@ struct GoogleCalendarMeeting: Identifiable, Equatable {
     let endDate: Date?
     let meetURL: URL?
     let meetingCode: String?
-    var recording: GoogleDriveRecording?
+    var recordingStatus: GoogleMeetRecordingStatus
 
     var timeRangeLabel: String {
         let start = Self.timeFormatter.string(from: startDate)
         guard let endDate else { return start }
         return "\(start)-\(Self.timeFormatter.string(from: endDate))"
+    }
+
+    var recording: GoogleDriveRecording? {
+        recordingStatus.recording
     }
 
     var hasRecording: Bool {
@@ -59,6 +63,41 @@ struct GoogleCalendarMeeting: Identifiable, Equatable {
         formatter.dateStyle = .none
         return formatter
     }()
+}
+
+enum GoogleMeetRecordingStatus: Equatable {
+    case unavailable
+    case ready(GoogleDriveRecording)
+    case inaccessible(String)
+
+    var recording: GoogleDriveRecording? {
+        guard case .ready(let recording) = self else { return nil }
+        return recording
+    }
+}
+
+struct GoogleDriveDownloadProgress: Equatable {
+    let downloadedBytes: Int64
+    let totalBytes: Int64?
+
+    var fractionCompleted: Double? {
+        guard let totalBytes, totalBytes > 0 else { return nil }
+        return min(max(Double(downloadedBytes) / Double(totalBytes), 0), 1)
+    }
+
+    var percentLabel: String {
+        guard let fractionCompleted else {
+            return ByteCountFormatter.string(fromByteCount: downloadedBytes, countStyle: .file)
+        }
+        return "\(Int((fractionCompleted * 100).rounded()))%"
+    }
+
+    var byteLabel: String {
+        let downloaded = ByteCountFormatter.string(fromByteCount: downloadedBytes, countStyle: .file)
+        guard let totalBytes, totalBytes > 0 else { return downloaded }
+        let total = ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
+        return "\(downloaded) / \(total)"
+    }
 }
 
 enum GoogleDriveImportError: LocalizedError {
@@ -206,24 +245,35 @@ final class GoogleDriveMeetImporter {
                 endDate: endDate,
                 meetURL: meetURL,
                 meetingCode: meetingCode,
-                recording: nil
+                recordingStatus: .unavailable
             )
         }
 
         for index in meetings.indices {
             guard let meetingCode = meetings[index].meetingCode else { continue }
-            meetings[index].recording = try? await recordingForMeetingCode(
-                meetingCode,
-                start: bounds.start,
-                end: bounds.end,
-                accessToken: accessToken
-            )
+            do {
+                if let recording = try await recordingForMeetingCode(
+                    meetingCode,
+                    start: bounds.start,
+                    end: bounds.end,
+                    accessToken: accessToken
+                ) {
+                    meetings[index].recordingStatus = .ready(recording)
+                } else {
+                    meetings[index].recordingStatus = .unavailable
+                }
+            } catch {
+                meetings[index].recordingStatus = .inaccessible(error.localizedDescription)
+            }
         }
 
         return meetings.sorted { $0.startDate < $1.startDate }
     }
 
-    func downloadRecording(_ recording: GoogleDriveRecording) async throws -> URL {
+    func downloadRecording(
+        _ recording: GoogleDriveRecording,
+        onProgress: (@Sendable (GoogleDriveDownloadProgress) -> Void)? = nil
+    ) async throws -> URL {
         guard recording.canImportForTranscription else {
             throw GoogleDriveImportError.unsupportedFileType(recording.mimeType)
         }
@@ -236,7 +286,7 @@ final class GoogleDriveMeetImporter {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
-        let (temporaryURL, response) = try await URLSession.shared.download(for: request)
+        let (temporaryURL, response) = try await GoogleDriveDownload(request: request, onProgress: onProgress).start()
         try Self.validateHTTPResponse(response, data: nil)
 
         let destination = try destinationURL(for: recording)
@@ -570,6 +620,77 @@ private final class GoogleOAuthClientSecretStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
+    }
+}
+
+private final class GoogleDriveDownload: NSObject, URLSessionDownloadDelegate {
+    private let request: URLRequest
+    private let onProgress: (@Sendable (GoogleDriveDownloadProgress) -> Void)?
+    private let queue: OperationQueue
+    private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
+    private var downloadedURL: URL?
+
+    init(request: URLRequest, onProgress: (@Sendable (GoogleDriveDownloadProgress) -> Void)?) {
+        self.request = request
+        self.onProgress = onProgress
+        self.queue = OperationQueue()
+        self.queue.maxConcurrentOperationCount = 1
+        super.init()
+    }
+
+    func start() async throws -> (URL, URLResponse) {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            let session = URLSession(configuration: .default, delegate: self, delegateQueue: queue)
+            session.downloadTask(with: request).resume()
+            session.finishTasksAndInvalidate()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        let totalBytes = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : nil
+        onProgress?(GoogleDriveDownloadProgress(downloadedBytes: totalBytesWritten, totalBytes: totalBytes))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("download")
+
+        do {
+            try FileManager.default.moveItem(at: location, to: destination)
+            downloadedURL = destination
+        } catch {
+            continuation?.resume(throwing: error)
+            continuation = nil
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error {
+            continuation?.resume(throwing: error)
+            continuation = nil
+            return
+        }
+
+        guard let downloadedURL, let response = task.response else {
+            continuation?.resume(throwing: GoogleDriveImportError.callbackFailed)
+            continuation = nil
+            return
+        }
+
+        continuation?.resume(returning: (downloadedURL, response))
+        continuation = nil
     }
 }
 

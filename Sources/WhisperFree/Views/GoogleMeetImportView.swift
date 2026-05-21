@@ -9,6 +9,7 @@ final class GoogleMeetImportViewModel: ObservableObject {
     @Published var statusMessage: String?
     @Published var errorMessage: String?
     @Published var importingMeetingID: String?
+    @Published var downloadProgress: [String: GoogleDriveDownloadProgress] = [:]
 
     func connectAndRefresh() {
         Task {
@@ -57,14 +58,20 @@ final class GoogleMeetImportViewModel: ObservableObject {
 
         Task {
             importingMeetingID = meeting.id
+            downloadProgress[meeting.id] = GoogleDriveDownloadProgress(downloadedBytes: 0, totalBytes: meeting.recording?.sizeBytes)
             errorMessage = nil
             do {
-                let url = try await GoogleDriveMeetImporter.shared.downloadRecording(recording)
+                let url = try await GoogleDriveMeetImporter.shared.downloadRecording(recording) { [weak self] progress in
+                    Task { @MainActor in
+                        self?.downloadProgress[meeting.id] = progress
+                    }
+                }
                 onImport([url])
                 statusMessage = L.tr("Recording added to the queue.", "Запись добавлена в очередь.")
             } catch {
                 errorMessage = error.localizedDescription
             }
+            downloadProgress[meeting.id] = nil
             importingMeetingID = nil
         }
     }
@@ -222,6 +229,7 @@ struct GoogleMeetImportView: View {
                             GoogleCalendarMeetingRow(
                                 meeting: meeting,
                                 isImporting: viewModel.importingMeetingID == meeting.id,
+                                downloadProgress: viewModel.downloadProgress[meeting.id],
                                 onImport: {
                                     viewModel.importMeeting(meeting, onImport: onImport)
                                 }
@@ -339,6 +347,7 @@ private struct CalendarDayButton: View {
 private struct GoogleCalendarMeetingRow: View {
     let meeting: GoogleCalendarMeeting
     let isImporting: Bool
+    let downloadProgress: GoogleDriveDownloadProgress?
     let onImport: () -> Void
 
     var body: some View {
@@ -361,16 +370,36 @@ private struct GoogleCalendarMeetingRow: View {
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
-                    if let recording = meeting.recording {
+                    if let downloadProgress {
+                        SWStatusBadge(
+                            title: L.tr("Downloading \(downloadProgress.percentLabel)", "Скачивание \(downloadProgress.percentLabel)"),
+                            icon: "arrow.down.circle.fill",
+                            color: SW.accent
+                        )
+                        Text(downloadProgress.byteLabel)
+                            .font(.system(size: 10))
+                            .foregroundStyle(SW.secondaryText)
+                    } else if let recording = meeting.recording {
                         SWStatusBadge(title: L.tr("Recording ready", "Запись готова"), icon: "checkmark.circle.fill", color: SW.accent)
                         if !recording.displaySize.isEmpty {
                             Text(recording.displaySize)
                                 .font(.system(size: 10))
                                 .foregroundStyle(SW.secondaryText)
                         }
+                    } else if case .inaccessible(let message) = meeting.recordingStatus {
+                        SWStatusBadge(title: L.tr("Cannot check recording", "Нет доступа к записи"), icon: "lock.fill", color: SW.danger)
+                        Text(message)
+                            .font(.system(size: 10))
+                            .foregroundStyle(SW.secondaryText)
+                            .lineLimit(1)
                     } else {
                         SWStatusBadge(title: L.tr("No recording", "Нет записи"), icon: "clock", color: SW.secondaryText)
                     }
+                }
+                if let downloadProgress, let fraction = downloadProgress.fractionCompleted {
+                    ProgressView(value: fraction)
+                        .progressViewStyle(.linear)
+                        .controlSize(.small)
                 }
             }
 
@@ -386,9 +415,10 @@ private struct GoogleCalendarMeetingRow: View {
                     } else {
                         Image(systemName: "text.bubble")
                     }
-                    Text(L.tr("Transcribe", "Транскрибировать"))
+                    Text(isImporting ? L.tr("Downloading", "Скачивание") : L.tr("Transcribe", "Транскрибировать"))
                 }
                 .font(.system(size: 11, weight: .semibold))
+                .frame(minWidth: 108)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)

@@ -45,26 +45,30 @@ struct FileTranscriptionView: View {
         }
         .frame(minWidth: showGoogleMeetImporter ? 560 : 400, minHeight: showGoogleMeetImporter ? 500 : 320)
         .safeAreaInset(edge: .top, spacing: 0) {
-            WindowHeaderUnderlay()
+            if !showGoogleMeetImporter {
+                WindowHeaderUnderlay()
+            }
         }
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(L.tr("File Transcription", "Транскрибация файла"))
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 8) {
-                    if !queueItems.isEmpty && !hasRunningItems {
-                        Button(role: .destructive) {
-                            for item in queueItems { item.cancel() }
-                            queueItems.removeAll()
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.system(size: 11))
+            if !showGoogleMeetImporter {
+                ToolbarItem(placement: .principal) {
+                    Text(L.tr("File Transcription", "Транскрибация файла"))
+                        .font(.system(size: 13, weight: .semibold))
+                }
+
+                ToolbarItem(placement: .primaryAction) {
+                    HStack(spacing: 8) {
+                        if !queueItems.isEmpty && !hasRunningItems {
+                            Button(role: .destructive) {
+                                for item in queueItems { item.cancel() }
+                                queueItems.removeAll()
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 11))
+                            }
+                            .foregroundStyle(.red.opacity(0.8))
+                            .help(L.tr("Clear All Files", "Очистить все файлы"))
                         }
-                        .foregroundStyle(.red.opacity(0.8))
-                        .help(L.tr("Clear All Files", "Очистить все файлы"))
                     }
                 }
             }
