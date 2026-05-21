@@ -2,6 +2,8 @@ import SwiftUI
 
 @MainActor
 final class GoogleMeetImportViewModel: ObservableObject {
+    @Published var accounts: [GoogleOAuthAccount] = GoogleDriveMeetImporter.shared.accounts
+    @Published var selectedAccountID: String? = GoogleDriveMeetImporter.shared.selectedAccountID
     @Published var meetings: [GoogleCalendarMeeting] = []
     @Published var selectedDate = Date()
     @Published var isConnected = GoogleDriveMeetImporter.shared.isConnected
@@ -11,15 +13,31 @@ final class GoogleMeetImportViewModel: ObservableObject {
     @Published var importingMeetingID: String?
     @Published var downloadProgress: [String: GoogleDriveDownloadProgress] = [:]
 
+    var selectedAccount: GoogleOAuthAccount? {
+        guard let selectedAccountID else { return nil }
+        return accounts.first { $0.id == selectedAccountID }
+    }
+
     func connectAndRefresh() {
         Task {
             await runBusyTask { [self] in
-                try await GoogleDriveMeetImporter.shared.connect()
-                self.isConnected = true
-                self.meetings = try await GoogleDriveMeetImporter.shared.listCalendarMeetings(on: self.selectedDate)
+                let account = try await GoogleDriveMeetImporter.shared.connect()
+                self.refreshAccountState()
+                self.selectedAccountID = account.id
+                self.meetings = try await GoogleDriveMeetImporter.shared.listCalendarMeetings(on: self.selectedDate, accountID: account.id)
                 self.statusMessage = L.tr("Google Calendar connected.", "Google Calendar подключён.")
             }
         }
+    }
+
+    func addAccount() {
+        connectAndRefresh()
+    }
+
+    func selectAccount(_ accountID: String) {
+        GoogleDriveMeetImporter.shared.selectAccount(id: accountID)
+        refreshAccountState()
+        refresh()
     }
 
     func selectDate(_ date: Date) {
@@ -37,7 +55,8 @@ final class GoogleMeetImportViewModel: ObservableObject {
 
         Task {
             await runBusyTask { [self] in
-                self.meetings = try await GoogleDriveMeetImporter.shared.listCalendarMeetings(on: self.selectedDate)
+                self.refreshAccountState()
+                self.meetings = try await GoogleDriveMeetImporter.shared.listCalendarMeetings(on: self.selectedDate, accountID: self.selectedAccountID)
                 self.statusMessage = self.meetings.isEmpty
                     ? L.tr("No Meet meetings on this day.", "В этот день нет встреч Meet.")
                     : nil
@@ -46,10 +65,12 @@ final class GoogleMeetImportViewModel: ObservableObject {
     }
 
     func disconnect() {
-        GoogleDriveMeetImporter.shared.disconnect()
-        isConnected = false
+        GoogleDriveMeetImporter.shared.disconnect(accountID: selectedAccountID)
+        refreshAccountState()
         meetings = []
-        statusMessage = L.tr("Google disconnected.", "Google отключён.")
+        statusMessage = isConnected
+            ? L.tr("Google account removed.", "Google аккаунт удалён.")
+            : L.tr("Google disconnected.", "Google отключён.")
         errorMessage = nil
     }
 
@@ -61,7 +82,8 @@ final class GoogleMeetImportViewModel: ObservableObject {
             downloadProgress[meeting.id] = GoogleDriveDownloadProgress(downloadedBytes: 0, totalBytes: meeting.recording?.sizeBytes)
             errorMessage = nil
             do {
-                let url = try await GoogleDriveMeetImporter.shared.downloadRecording(recording) { [weak self] progress in
+                let accountID = selectedAccountID
+                let url = try await GoogleDriveMeetImporter.shared.downloadRecording(recording, accountID: accountID) { [weak self] progress in
                     Task { @MainActor in
                         self?.downloadProgress[meeting.id] = progress
                     }
@@ -86,6 +108,12 @@ final class GoogleMeetImportViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    func refreshAccountState() {
+        accounts = GoogleDriveMeetImporter.shared.accounts
+        selectedAccountID = GoogleDriveMeetImporter.shared.selectedAccountID
+        isConnected = GoogleDriveMeetImporter.shared.isConnected
     }
 }
 
@@ -126,6 +154,15 @@ struct GoogleMeetImportView: View {
                 HStack(spacing: 8) {
                     if viewModel.isConnected {
                         Button {
+                            viewModel.addAccount()
+                        } label: {
+                            Image(systemName: "person.crop.circle.badge.plus")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(viewModel.isLoading)
+                        .help(L.tr("Add Google account", "Добавить Google аккаунт"))
+
+                        Button {
                             viewModel.refresh()
                         } label: {
                             Image(systemName: "arrow.clockwise")
@@ -141,7 +178,7 @@ struct GoogleMeetImportView: View {
                         }
                         .buttonStyle(.borderless)
                         .disabled(viewModel.isLoading)
-                        .help(L.tr("Disconnect Google", "Отключить Google"))
+                        .help(L.tr("Remove selected Google account", "Удалить выбранный Google аккаунт"))
                     }
 
                     Button {
@@ -155,6 +192,7 @@ struct GoogleMeetImportView: View {
             }
         }
         .onAppear {
+            viewModel.refreshAccountState()
             if viewModel.isConnected && viewModel.meetings.isEmpty {
                 viewModel.refresh()
             }
@@ -274,6 +312,13 @@ struct GoogleMeetImportView: View {
             Divider()
                 .frame(height: 22)
 
+            if viewModel.accounts.count > 1 {
+                accountMenu
+
+                Divider()
+                    .frame(height: 22)
+            }
+
             Button {
                 viewModel.selectDate(Date())
             } label: {
@@ -287,6 +332,31 @@ struct GoogleMeetImportView: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
         .background(SW.windowBackground.opacity(0.35))
+    }
+
+    private var accountMenu: some View {
+        Menu {
+            ForEach(viewModel.accounts) { account in
+                Button {
+                    viewModel.selectAccount(account.id)
+                } label: {
+                    Label(account.displayName, systemImage: account.id == viewModel.selectedAccountID ? "checkmark.circle.fill" : "person.crop.circle")
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "person.crop.circle")
+                Text(viewModel.selectedAccount?.displayName ?? L.tr("Google", "Google"))
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+            }
+            .font(SW.compactFont)
+            .frame(maxWidth: 150)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(viewModel.isLoading)
     }
 
     private var visibleDays: [Date] {

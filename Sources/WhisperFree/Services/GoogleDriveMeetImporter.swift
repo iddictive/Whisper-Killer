@@ -100,6 +100,27 @@ struct GoogleDriveDownloadProgress: Equatable {
     }
 }
 
+struct GoogleOAuthAccount: Identifiable, Codable, Equatable {
+    let id: String
+    var email: String?
+    var name: String?
+    var connectedAt: Date
+
+    var displayName: String {
+        if let name = name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            return name
+        }
+        if let email = email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            return email
+        }
+        return L.tr("Google Account", "Google аккаунт")
+    }
+
+    var subtitle: String {
+        email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? L.tr("Connected Google account", "Подключённый Google аккаунт")
+    }
+}
+
 enum GoogleDriveImportError: LocalizedError {
     case authCancelled
     case callbackFailed
@@ -137,26 +158,49 @@ final class GoogleDriveMeetImporter {
 
     private let clientID = "866553546280-ubksm2acb20871vndcrtde0nhdtblg3k.apps.googleusercontent.com"
     private let scopes = [
+        "openid",
+        "email",
+        "profile",
         "https://www.googleapis.com/auth/calendar.readonly",
         "https://www.googleapis.com/auth/meetings.space.readonly",
         "https://www.googleapis.com/auth/drive.meet.readonly",
         "https://www.googleapis.com/auth/drive.readonly"
     ]
-    private let tokenStore = GoogleOAuthTokenStore()
+    private let accountStore = GoogleOAuthAccountStore()
     private let clientSecretStore = GoogleOAuthClientSecretStore()
     private let isoFormatter = ISO8601DateFormatter()
 
     private init() {}
 
+    var accounts: [GoogleOAuthAccount] {
+        accountStore.loadAccounts()
+    }
+
+    var selectedAccountID: String? {
+        accountStore.selectedAccountID()
+    }
+
+    var selectedAccount: GoogleOAuthAccount? {
+        accountStore.selectedAccount()
+    }
+
     var isConnected: Bool {
-        tokenStore.load()?.refreshToken?.isEmpty == false || tokenStore.load()?.accessToken.isEmpty == false
+        guard let selectedAccountID,
+              let token = accountStore.loadToken(for: selectedAccountID)
+        else { return false }
+        return token.refreshToken?.isEmpty == false || !token.accessToken.isEmpty
     }
 
-    func disconnect() {
-        tokenStore.delete()
+    func selectAccount(id: String) {
+        accountStore.selectAccount(id)
     }
 
-    func connect() async throws {
+    func disconnect(accountID: String? = nil) {
+        accountStore.deleteAccount(id: accountID ?? selectedAccountID)
+    }
+
+    @discardableResult
+    func connect() async throws -> GoogleOAuthAccount {
         let verifier = Self.randomURLSafeString(byteCount: 48)
         let challenge = Self.codeChallenge(for: verifier)
         let state = Self.randomURLSafeString(byteCount: 24)
@@ -170,7 +214,7 @@ final class GoogleDriveMeetImporter {
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "scope", value: scopes.joined(separator: " ")),
             URLQueryItem(name: "access_type", value: "offline"),
-            URLQueryItem(name: "prompt", value: "consent"),
+            URLQueryItem(name: "prompt", value: "consent select_account"),
             URLQueryItem(name: "code_challenge", value: challenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "state", value: state)
@@ -187,11 +231,14 @@ final class GoogleDriveMeetImporter {
         guard let code = params["code"], !code.isEmpty else { throw GoogleDriveImportError.invalidCallback }
 
         let token = try await exchangeAuthorizationCode(code, redirectURI: redirectURI, verifier: verifier)
-        tokenStore.save(token)
+        let account = try await googleAccount(accessToken: token.accessToken)
+        accountStore.save(account, token: token)
+        accountStore.selectAccount(account.id)
+        return account
     }
 
-    func listRecentMeetRecordings(limit: Int = 25) async throws -> [GoogleDriveRecording] {
-        let accessToken = try await validAccessToken()
+    func listRecentMeetRecordings(limit: Int = 25, accountID: String? = nil) async throws -> [GoogleDriveRecording] {
+        let accessToken = try await validAccessToken(for: accountID)
         var components = URLComponents(string: "https://www.googleapis.com/drive/v3/files")!
         components.queryItems = [
             URLQueryItem(
@@ -225,8 +272,8 @@ final class GoogleDriveMeetImporter {
         }
     }
 
-    func listCalendarMeetings(on date: Date) async throws -> [GoogleCalendarMeeting] {
-        let accessToken = try await validAccessToken()
+    func listCalendarMeetings(on date: Date, accountID: String? = nil) async throws -> [GoogleCalendarMeeting] {
+        let accessToken = try await validAccessToken(for: accountID)
         let bounds = dayBounds(for: date)
         let response = try await calendarEvents(start: bounds.start, end: bounds.end, accessToken: accessToken)
 
@@ -272,13 +319,14 @@ final class GoogleDriveMeetImporter {
 
     func downloadRecording(
         _ recording: GoogleDriveRecording,
+        accountID: String? = nil,
         onProgress: (@Sendable (GoogleDriveDownloadProgress) -> Void)? = nil
     ) async throws -> URL {
         guard recording.canImportForTranscription else {
             throw GoogleDriveImportError.unsupportedFileType(recording.mimeType)
         }
 
-        let accessToken = try await validAccessToken()
+        let accessToken = try await validAccessToken(for: accountID)
         var components = URLComponents(string: "https://www.googleapis.com/drive/v3/files/\(recording.id)")!
         components.queryItems = [URLQueryItem(name: "alt", value: "media")]
         guard let url = components.url else { throw GoogleDriveImportError.invalidCallback }
@@ -404,8 +452,10 @@ final class GoogleDriveMeetImporter {
         return (start, end)
     }
 
-    private func validAccessToken() async throws -> String {
-        guard var token = tokenStore.load() else { throw GoogleDriveImportError.tokenMissing }
+    private func validAccessToken(for accountID: String?) async throws -> String {
+        guard let accountID = accountID ?? selectedAccountID,
+              var token = accountStore.loadToken(for: accountID)
+        else { throw GoogleDriveImportError.tokenMissing }
         if token.expiresAt.timeIntervalSinceNow > 60 {
             return token.accessToken
         }
@@ -415,7 +465,7 @@ final class GoogleDriveMeetImporter {
         }
 
         token = try await refreshAccessToken(refreshToken)
-        tokenStore.save(token)
+        accountStore.saveToken(token, for: accountID)
         return token.accessToken
     }
 
@@ -457,6 +507,23 @@ final class GoogleDriveMeetImporter {
             accessToken: decoded.accessToken,
             refreshToken: decoded.refreshToken ?? existingRefreshToken,
             expiresAt: Date().addingTimeInterval(TimeInterval(decoded.expiresIn ?? 3600))
+        )
+    }
+
+    private func googleAccount(accessToken: String) async throws -> GoogleOAuthAccount {
+        var request = URLRequest(url: URL(string: "https://openidconnect.googleapis.com/v1/userinfo")!)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Self.validateHTTPResponse(response, data: data)
+
+        let decoded = try JSONDecoder().decode(GoogleUserInfoResponse.self, from: data)
+        let id = decoded.sub.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? UUID().uuidString
+        return GoogleOAuthAccount(
+            id: id,
+            email: decoded.email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            name: decoded.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            connectedAt: Date()
         )
     }
 
@@ -557,12 +624,58 @@ private struct GoogleOAuthToken: Codable {
     var expiresAt: Date
 }
 
-private final class GoogleOAuthTokenStore {
+private final class GoogleOAuthAccountStore {
     private let service = "WhisperKiller.GoogleDriveMeet"
-    private let account = "OAuthToken"
+    private let legacyAccount = "OAuthToken"
+    private let tokenAccountPrefix = "OAuthToken."
+    private let accountsKey = "WhisperKiller.GoogleDriveMeet.Accounts"
+    private let selectedAccountKey = "WhisperKiller.GoogleDriveMeet.SelectedAccountID"
+    private let defaults = UserDefaults.standard
 
-    func load() -> GoogleOAuthToken? {
-        var query = baseQuery()
+    func loadAccounts() -> [GoogleOAuthAccount] {
+        migrateLegacyTokenIfNeeded()
+        return loadCatalog()
+    }
+
+    func selectedAccount() -> GoogleOAuthAccount? {
+        guard let id = selectedAccountID() else { return nil }
+        return loadAccounts().first { $0.id == id }
+    }
+
+    func selectedAccountID() -> String? {
+        let accounts = loadAccounts()
+        guard !accounts.isEmpty else {
+            defaults.removeObject(forKey: selectedAccountKey)
+            return nil
+        }
+
+        if let selected = defaults.string(forKey: selectedAccountKey),
+           accounts.contains(where: { $0.id == selected }) {
+            return selected
+        }
+
+        let fallback = accounts[0].id
+        defaults.set(fallback, forKey: selectedAccountKey)
+        return fallback
+    }
+
+    func selectAccount(_ id: String) {
+        guard loadAccounts().contains(where: { $0.id == id }) else { return }
+        defaults.set(id, forKey: selectedAccountKey)
+    }
+
+    func save(_ account: GoogleOAuthAccount, token: GoogleOAuthToken) {
+        var accounts = loadCatalog().filter { $0.id != account.id }
+        accounts.append(account)
+        accounts.sort { lhs, rhs in
+            lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
+        saveCatalog(accounts)
+        saveToken(token, for: account.id)
+    }
+
+    func loadToken(for accountID: String) -> GoogleOAuthToken? {
+        var query = tokenQuery(accountID: accountID)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
@@ -572,25 +685,95 @@ private final class GoogleOAuthTokenStore {
         return try? JSONDecoder().decode(GoogleOAuthToken.self, from: data)
     }
 
-    func save(_ token: GoogleOAuthToken) {
+    func saveToken(_ token: GoogleOAuthToken, for accountID: String) {
         guard let data = try? JSONEncoder().encode(token) else { return }
-        delete()
+        deleteToken(for: accountID)
 
-        var query = baseQuery()
+        var query = tokenQuery(accountID: accountID)
         query[kSecValueData as String] = data
         query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(query as CFDictionary, nil)
     }
 
-    func delete() {
-        SecItemDelete(baseQuery() as CFDictionary)
+    func deleteAccount(id accountID: String?) {
+        guard let accountID else { return }
+        deleteToken(for: accountID)
+        if accountID == "legacy" {
+            SecItemDelete(legacyQuery() as CFDictionary)
+        }
+
+        let accounts = loadCatalog().filter { $0.id != accountID }
+        saveCatalog(accounts)
+
+        if defaults.string(forKey: selectedAccountKey) == accountID {
+            if let next = accounts.first?.id {
+                defaults.set(next, forKey: selectedAccountKey)
+            } else {
+                defaults.removeObject(forKey: selectedAccountKey)
+            }
+        }
     }
 
-    private func baseQuery() -> [String: Any] {
+    private func deleteToken(for accountID: String) {
+        SecItemDelete(tokenQuery(accountID: accountID) as CFDictionary)
+    }
+
+    private func migrateLegacyTokenIfNeeded() {
+        guard loadCatalog().isEmpty,
+              let token = loadLegacyToken()
+        else { return }
+
+        let account = GoogleOAuthAccount(
+            id: "legacy",
+            email: nil,
+            name: L.tr("Google Account", "Google аккаунт"),
+            connectedAt: Date()
+        )
+        saveCatalog([account])
+        saveToken(token, for: account.id)
+        defaults.set(account.id, forKey: selectedAccountKey)
+    }
+
+    private func loadLegacyToken() -> GoogleOAuthToken? {
+        var query = legacyQuery()
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return try? JSONDecoder().decode(GoogleOAuthToken.self, from: data)
+    }
+
+    private func loadCatalog() -> [GoogleOAuthAccount] {
+        guard let data = defaults.data(forKey: accountsKey),
+              let accounts = try? JSONDecoder().decode([GoogleOAuthAccount].self, from: data)
+        else { return [] }
+        return accounts
+    }
+
+    private func saveCatalog(_ accounts: [GoogleOAuthAccount]) {
+        if accounts.isEmpty {
+            defaults.removeObject(forKey: accountsKey)
+            return
+        }
+        guard let data = try? JSONEncoder().encode(accounts) else { return }
+        defaults.set(data, forKey: accountsKey)
+    }
+
+    private func tokenQuery(accountID: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: tokenAccountPrefix + accountID
+        ]
+    }
+
+    private func legacyQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: legacyAccount
         ]
     }
 }
@@ -811,6 +994,12 @@ private struct TokenResponse: Decodable {
         case refreshToken = "refresh_token"
         case expiresIn = "expires_in"
     }
+}
+
+private struct GoogleUserInfoResponse: Decodable {
+    let sub: String
+    let email: String?
+    let name: String?
 }
 
 private struct GoogleHTTPErrorResponse: Decodable {

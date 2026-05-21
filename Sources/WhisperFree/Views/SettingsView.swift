@@ -153,6 +153,8 @@ struct SettingsView: View {
                                 .tag("capture")
                             Label(L.tr("Engine & API", "Движок и API"), systemImage: "cpu.fill")
                                 .tag("engine")
+                            Label(L.tr("Integrations", "Интеграции"), systemImage: "link")
+                                .tag("integrations")
                             Label(L.tr("AI Modes", "AI-режимы"), systemImage: "sparkles")
                                 .tag("modes")
                             if AppState.liveTranslatorFeatureAvailable {
@@ -189,6 +191,7 @@ struct SettingsView: View {
                                     .onAppear { appState.recorder.startMonitoring() }
                                     .onDisappear { appState.recorder.stopMonitoring() }
                             case "engine": engineSection
+                            case "integrations": integrationsSection
                             case "modes": modesSection
                             case "liveTranslator":
                                 if AppState.liveTranslatorFeatureAvailable {
@@ -238,6 +241,7 @@ struct SettingsView: View {
         case "app": return L.tr("App Preferences", "Настройки приложения")
         case "capture": return L.tr("Capture & Automation", "Запись и автоматизация")
         case "engine": return L.tr("Engine & API", "Движок и API")
+        case "integrations": return L.tr("Integrations", "Интеграции")
         case "modes": return L.tr("AI Modes", "AI-режимы")
         case "liveTranslator": return L.tr("Live Translator", "Live Translator")
         case "info": return L.tr("Usage & About", "Использование и О программе")
@@ -702,6 +706,16 @@ struct SettingsView: View {
         appState.settings.enablePostProcessing ||
         appState.settings.enableSpeakerDiarization ||
         appState.settings.hasOpenAIAPIKey
+    }
+
+    private var integrationsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(L.tr("Google", "Google"))
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            GoogleAccountsSettingsCard()
+        }
     }
 
     private var localModelRows: some View {
@@ -1451,6 +1465,181 @@ struct OpenAIAPIKeySettingsCard: View {
         case .idle, .checking:
             return "info.circle.fill"
         }
+    }
+}
+
+struct GoogleAccountsSettingsCard: View {
+    @State private var accounts: [GoogleOAuthAccount] = GoogleDriveMeetImporter.shared.accounts
+    @State private var selectedAccountID: String? = GoogleDriveMeetImporter.shared.selectedAccountID
+    @State private var isConnecting = false
+    @State private var message: String?
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L.tr("Google Accounts", "Google аккаунты"))
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(L.tr("Connect any number of Google accounts for Meet Calendar imports.", "Подключайте любое число Google аккаунтов для импорта Meet Calendar."))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    addAccount()
+                } label: {
+                    HStack(spacing: 6) {
+                        if isConnecting {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "person.crop.circle.badge.plus")
+                        }
+                        Text(L.tr("Add Account", "Добавить аккаунт"))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isConnecting)
+            }
+
+            Divider()
+
+            if accounts.isEmpty {
+                HStack(spacing: 10) {
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .foregroundStyle(SW.secondaryText)
+                    Text(L.tr("No Google accounts connected.", "Google аккаунты не подключены."))
+                        .font(SW.compactFont)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(accounts) { account in
+                        GoogleAccountSettingsRow(
+                            account: account,
+                            isSelected: account.id == selectedAccountID,
+                            isBusy: isConnecting,
+                            onSelect: {
+                                GoogleDriveMeetImporter.shared.selectAccount(id: account.id)
+                                reload()
+                                message = L.tr("Default Google account updated.", "Google аккаунт по умолчанию обновлён.")
+                                error = nil
+                            },
+                            onRemove: {
+                                GoogleDriveMeetImporter.shared.disconnect(accountID: account.id)
+                                reload()
+                                message = L.tr("Google account removed.", "Google аккаунт удалён.")
+                                error = nil
+                            }
+                        )
+
+                        if account.id != accounts.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+
+            if let error {
+                settingsMessage(text: error, icon: "exclamationmark.triangle.fill", color: SW.danger)
+            } else if let message {
+                settingsMessage(text: message, icon: "checkmark.circle.fill", color: SW.accent)
+            }
+        }
+        .padding(16)
+        .background(Color.primary.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onAppear(perform: reload)
+    }
+
+    private func addAccount() {
+        isConnecting = true
+        message = nil
+        error = nil
+
+        Task {
+            do {
+                let account = try await GoogleDriveMeetImporter.shared.connect()
+                await MainActor.run {
+                    reload()
+                    selectedAccountID = account.id
+                    message = L.tr("Google account connected.", "Google аккаунт подключён.")
+                    isConnecting = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.error = error.localizedDescription
+                    isConnecting = false
+                }
+            }
+        }
+    }
+
+    private func reload() {
+        accounts = GoogleDriveMeetImporter.shared.accounts
+        selectedAccountID = GoogleDriveMeetImporter.shared.selectedAccountID
+    }
+
+    private func settingsMessage(text: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+            Text(text)
+                .lineLimit(2)
+            Spacer()
+        }
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(color)
+        .padding(8)
+        .background(color.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct GoogleAccountSettingsRow: View {
+    let account: GoogleOAuthAccount
+    let isSelected: Bool
+    let isBusy: Bool
+    let onSelect: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "person.crop.circle")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(isSelected ? SW.accent : SW.secondaryText)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(account.displayName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(SW.primaryText)
+                    .lineLimit(1)
+                Text(account.subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            if !isSelected {
+                Button(L.tr("Use", "Использовать"), action: onSelect)
+                    .buttonStyle(.bordered)
+                    .disabled(isBusy)
+            }
+
+            Button(role: .destructive, action: onRemove) {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .disabled(isBusy)
+            .help(L.tr("Remove Google account", "Удалить Google аккаунт"))
+        }
+        .padding(.vertical, 10)
     }
 }
 
