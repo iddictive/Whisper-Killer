@@ -285,6 +285,7 @@ struct GoogleMeetImportView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
         .background(SW.windowBackground.opacity(0.35))
     }
 

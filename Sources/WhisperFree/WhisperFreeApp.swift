@@ -343,7 +343,7 @@ final class FileTranscriptionWindowController: NSObject {
         )
         window.center()
         window.contentView = hostingView
-        window.title = L.tr("Transcribe File", "Транскрибировать файл")
+        window.title = ""
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
