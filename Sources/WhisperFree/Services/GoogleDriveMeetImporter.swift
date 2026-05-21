@@ -104,6 +104,7 @@ final class GoogleDriveMeetImporter {
         "https://www.googleapis.com/auth/drive.readonly"
     ]
     private let tokenStore = GoogleOAuthTokenStore()
+    private let clientSecretStore = GoogleOAuthClientSecretStore()
     private let isoFormatter = ISO8601DateFormatter()
 
     private init() {}
@@ -387,10 +388,15 @@ final class GoogleDriveMeetImporter {
     }
 
     private func tokenRequest(_ parameters: [String: String], existingRefreshToken: String?) async throws -> GoogleOAuthToken {
+        var requestParameters = parameters
+        if let clientSecret = clientSecretStore.load(), !clientSecret.isEmpty {
+            requestParameters["client_secret"] = clientSecret
+        }
+
         var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Self.formURLEncoded(parameters).data(using: .utf8)
+        request.httpBody = Self.formURLEncoded(requestParameters).data(using: .utf8)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         try Self.validateHTTPResponse(response, data: data)
@@ -528,6 +534,34 @@ private final class GoogleOAuthTokenStore {
 
     func delete() {
         SecItemDelete(baseQuery() as CFDictionary)
+    }
+
+    private func baseQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+    }
+}
+
+private final class GoogleOAuthClientSecretStore {
+    private let service = "WhisperKiller.GoogleOAuthClient"
+    private let account = "DesktopClientSecret"
+
+    func load() -> String? {
+        var query = baseQuery()
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let secret = String(data: data, encoding: .utf8)
+        else { return nil }
+
+        return secret.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
     private func baseQuery() -> [String: Any] {
