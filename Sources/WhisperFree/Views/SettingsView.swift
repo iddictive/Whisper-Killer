@@ -1530,6 +1530,9 @@ struct GoogleAccountsSettingsCard: View {
                                 message = L.tr("Default Google account updated.", "Google аккаунт по умолчанию обновлён.")
                                 error = nil
                             },
+                            onReconnect: {
+                                reconnectAccount(account)
+                            },
                             onRemove: {
                                 GoogleDriveMeetImporter.shared.disconnect(accountID: account.id)
                                 reload()
@@ -1554,7 +1557,10 @@ struct GoogleAccountsSettingsCard: View {
         .padding(16)
         .background(Color.primary.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .onAppear(perform: reload)
+        .onAppear {
+            reload()
+            refreshMissingIdentities()
+        }
     }
 
     private func addAccount() {
@@ -1576,6 +1582,43 @@ struct GoogleAccountsSettingsCard: View {
                     self.error = error.localizedDescription
                     isConnecting = false
                 }
+            }
+        }
+    }
+
+    private func reconnectAccount(_ oldAccount: GoogleOAuthAccount) {
+        isConnecting = true
+        message = nil
+        error = nil
+
+        Task {
+            do {
+                let account = try await GoogleDriveMeetImporter.shared.connect()
+                if !oldAccount.hasIdentity && oldAccount.id != account.id {
+                    GoogleDriveMeetImporter.shared.disconnect(accountID: oldAccount.id)
+                }
+                await MainActor.run {
+                    reload()
+                    selectedAccountID = account.id
+                    message = L.tr("Google account reconnected.", "Google аккаунт переподключён.")
+                    isConnecting = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.error = error.localizedDescription
+                    isConnecting = false
+                }
+            }
+        }
+    }
+
+    private func refreshMissingIdentities() {
+        guard accounts.contains(where: { !$0.hasIdentity }) else { return }
+
+        Task {
+            await GoogleDriveMeetImporter.shared.refreshMissingAccountIdentities()
+            await MainActor.run {
+                reload()
             }
         }
     }
@@ -1605,13 +1648,14 @@ private struct GoogleAccountSettingsRow: View {
     let isSelected: Bool
     let isBusy: Bool
     let onSelect: () -> Void
+    let onReconnect: () -> Void
     let onRemove: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "person.crop.circle")
+            Image(systemName: account.hasIdentity ? (isSelected ? "checkmark.circle.fill" : "person.crop.circle") : "exclamationmark.triangle.fill")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(isSelected ? SW.accent : SW.secondaryText)
+                .foregroundStyle(account.hasIdentity ? (isSelected ? SW.accent : SW.secondaryText) : SW.warning)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(account.displayName)
@@ -1626,7 +1670,11 @@ private struct GoogleAccountSettingsRow: View {
 
             Spacer()
 
-            if !isSelected {
+            if !account.hasIdentity {
+                Button(L.tr("Reconnect", "Переподключить"), action: onReconnect)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isBusy)
+            } else if !isSelected {
                 Button(L.tr("Use", "Использовать"), action: onSelect)
                     .buttonStyle(.bordered)
                     .disabled(isBusy)

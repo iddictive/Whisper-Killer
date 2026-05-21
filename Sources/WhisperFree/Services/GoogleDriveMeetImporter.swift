@@ -107,17 +107,28 @@ struct GoogleOAuthAccount: Identifiable, Codable, Equatable {
     var connectedAt: Date
 
     var displayName: String {
-        if let name = name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+        if let name = recognizableName {
             return name
         }
         if let email = email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
             return email
         }
-        return L.tr("Google Account", "Google аккаунт")
+        return L.tr("Google account needs reconnect", "Google аккаунт нужно переподключить")
     }
 
     var subtitle: String {
-        email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? L.tr("Connected Google account", "Подключённый Google аккаунт")
+        email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? L.tr("Email unavailable. Reconnect this account.", "Email недоступен. Переподключите этот аккаунт.")
+    }
+
+    var hasIdentity: Bool {
+        email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty != nil ||
+            recognizableName != nil
+    }
+
+    private var recognizableName: String? {
+        guard let value = name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else { return nil }
+        let genericNames = ["Google Account", "Google аккаунт"]
+        return genericNames.contains(value) ? nil : value
     }
 }
 
@@ -235,6 +246,20 @@ final class GoogleDriveMeetImporter {
         accountStore.save(account, token: token)
         accountStore.selectAccount(account.id)
         return account
+    }
+
+    @discardableResult
+    func refreshAccountIdentity(accountID: String) async throws -> GoogleOAuthAccount {
+        let accessToken = try await validAccessToken(for: accountID)
+        let account = try await googleAccount(accessToken: accessToken)
+        accountStore.replaceAccount(id: accountID, with: account)
+        return account
+    }
+
+    func refreshMissingAccountIdentities() async {
+        for account in accounts where !account.hasIdentity {
+            _ = try? await refreshAccountIdentity(accountID: account.id)
+        }
     }
 
     func listRecentMeetRecordings(limit: Int = 25, accountID: String? = nil) async throws -> [GoogleDriveRecording] {
@@ -714,6 +739,27 @@ private final class GoogleOAuthAccountStore {
         }
     }
 
+    func replaceAccount(id oldID: String, with account: GoogleOAuthAccount) {
+        guard let token = loadToken(for: oldID) else { return }
+        let connectedAt = loadCatalog().first { $0.id == oldID }?.connectedAt ?? account.connectedAt
+        let updated = GoogleOAuthAccount(
+            id: account.id,
+            email: account.email,
+            name: account.name,
+            connectedAt: connectedAt
+        )
+
+        deleteAccount(id: oldID)
+        var accounts = loadCatalog().filter { $0.id != updated.id }
+        accounts.append(updated)
+        accounts.sort { lhs, rhs in
+            lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
+        saveCatalog(accounts)
+        saveToken(token, for: updated.id)
+        defaults.set(updated.id, forKey: selectedAccountKey)
+    }
+
     private func deleteToken(for accountID: String) {
         SecItemDelete(tokenQuery(accountID: accountID) as CFDictionary)
     }
@@ -726,7 +772,7 @@ private final class GoogleOAuthAccountStore {
         let account = GoogleOAuthAccount(
             id: "legacy",
             email: nil,
-            name: L.tr("Google Account", "Google аккаунт"),
+            name: nil,
             connectedAt: Date()
         )
         saveCatalog([account])
