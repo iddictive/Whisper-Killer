@@ -27,27 +27,23 @@ struct FileTranscriptionView: View {
             VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                configBar
-                Divider()
-
-                if queueItems.isEmpty {
-                    dropZoneView
-                        .padding(.top, 20)
-                } else {
-                    queueListView
-                }
-
-                Spacer(minLength: 0)
-
-                if !queueItems.isEmpty {
-                    bottomBar
-                }
+            if showGoogleMeetImporter {
+                GoogleMeetImportView(
+                    onImport: { urls in
+                        addToQueue(urls)
+                        showGoogleMeetImporter = false
+                    },
+                    onClose: {
+                        showGoogleMeetImporter = false
+                    }
+                )
+            } else {
+                fileTranscriptionContent
             }
 
             errorOverlay
         }
-        .frame(minWidth: 400, minHeight: 320)
+        .frame(minWidth: showGoogleMeetImporter ? 560 : 400, minHeight: showGoogleMeetImporter ? 500 : 320)
         .safeAreaInset(edge: .top, spacing: 0) {
             WindowHeaderUnderlay()
         }
@@ -105,15 +101,29 @@ struct FileTranscriptionView: View {
                 self.error = err.localizedDescription
             }
         }
-        .sheet(isPresented: $showGoogleMeetImporter) {
-            GoogleMeetImportView { urls in
-                addToQueue(urls)
-                showGoogleMeetImporter = false
-            }
-        }
     }
 
     // MARK: - Header
+
+    private var fileTranscriptionContent: some View {
+        VStack(spacing: 0) {
+            configBar
+            Divider()
+
+            if queueItems.isEmpty {
+                dropZoneView
+                    .padding(.top, 20)
+            } else {
+                queueListView
+            }
+
+            Spacer(minLength: 0)
+
+            if !queueItems.isEmpty {
+                bottomBar
+            }
+        }
+    }
 
     private var headerView: some View {
         HStack {

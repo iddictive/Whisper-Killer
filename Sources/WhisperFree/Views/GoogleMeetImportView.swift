@@ -86,6 +86,7 @@ struct GoogleMeetImportView: View {
     @StateObject private var viewModel = GoogleMeetImportViewModel()
 
     let onImport: ([URL]) -> Void
+    let onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -104,8 +105,7 @@ struct GoogleMeetImportView: View {
                 messageBar(text: status, color: SW.accent, icon: "checkmark.circle.fill")
             }
         }
-        .frame(width: 620, height: 520)
-        .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow).ignoresSafeArea())
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             if viewModel.isConnected && viewModel.meetings.isEmpty {
                 viewModel.refresh()
@@ -141,6 +141,14 @@ struct GoogleMeetImportView: View {
                 .disabled(viewModel.isLoading)
                 .help(L.tr("Disconnect Google", "Отключить Google"))
             }
+
+            Button {
+                onClose()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .help(L.tr("Close", "Закрыть"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
