@@ -7,6 +7,7 @@ struct FileTranscriptionView: View {
     @EnvironmentObject var appState: AppState
     @State private var isDragging = false
     @State private var showFilePicker = false
+    @State private var showGoogleMeetImporter = false
     @State private var error: String?
 
     @State private var queueItems: [QueueItem] = []
@@ -97,6 +98,12 @@ struct FileTranscriptionView: View {
                 addToQueue(urls)
             case .failure(let err):
                 self.error = err.localizedDescription
+            }
+        }
+        .sheet(isPresented: $showGoogleMeetImporter) {
+            GoogleMeetImportView { urls in
+                addToQueue(urls)
+                showGoogleMeetImporter = false
             }
         }
     }
@@ -202,6 +209,22 @@ struct FileTranscriptionView: View {
             }
 
             Spacer()
+
+            Button {
+                showGoogleMeetImporter = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "video.badge.waveform")
+                    Text("Meet")
+                }
+                .font(SW.compactFont)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(SW.rowBackground)
+                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help(L.tr("Import Google Meet recording", "Импортировать запись Google Meet"))
 
             Menu {
                 Button {

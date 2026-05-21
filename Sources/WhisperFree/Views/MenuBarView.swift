@@ -206,6 +206,9 @@ struct MenuBarView: View {
                 menuButton(icon: "doc.badge.plus", title: L.tr("Transcribe File...", "Транскрибировать файл...")) {
                     AppDelegate.shared?.showFileTranscription()
                 }
+                menuButton(icon: "video.badge.waveform", title: L.tr("Import Meet Recording...", "Импортировать запись Meet...")) {
+                    AppDelegate.shared?.showFileTranscription()
+                }
 
                 menuButton(icon: "wand.and.stars", title: L.tr("Setup Wizard", "Мастер настройки")) {
                     AppDelegate.shared?.showSetupWizard()
