@@ -141,13 +141,8 @@ struct GoogleMeetImportView: View {
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                HStack(spacing: 8) {
-                    Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(SW.accent)
-                    Text(L.tr("Meet Calendar", "Календарь Meet"))
-                        .font(.system(size: 13, weight: .semibold))
-                }
+                Text(L.tr("Meet Calendar", "Календарь Meet"))
+                    .font(.system(size: 13, weight: .semibold))
             }
 
             ToolbarItem(placement: .primaryAction) {

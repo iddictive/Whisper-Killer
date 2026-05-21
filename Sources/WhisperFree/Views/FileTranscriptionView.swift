@@ -101,13 +101,8 @@ struct FileTranscriptionView: View {
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                HStack(spacing: 8) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(SW.accent)
-                    Text(L.tr("File Transcription", "Транскрибация файла"))
-                        .font(.system(size: 13, weight: .semibold))
-                }
+                Text(L.tr("File Transcription", "Транскрибация файла"))
+                    .font(.system(size: 13, weight: .semibold))
             }
 
             ToolbarItem(placement: .primaryAction) {
