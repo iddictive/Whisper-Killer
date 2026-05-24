@@ -130,6 +130,58 @@ final class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate
         return formatter.string(fromByteCount: Int64(fileSize))
     }
 
+    func isQwenModelDownloaded(_ model: QwenASRModel) -> Bool {
+        let hubDirectory = Storage.qwenASRCacheDirectory.appendingPathComponent("hub", isDirectory: true)
+        let modelDirectory = hubDirectory.appendingPathComponent("models--\(model.cacheDirectoryName)", isDirectory: true)
+        let snapshotsDirectory = modelDirectory.appendingPathComponent("snapshots", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: snapshotsDirectory.path),
+              let snapshots = try? FileManager.default.contentsOfDirectory(
+                at: snapshotsDirectory,
+                includingPropertiesForKeys: nil
+              )
+        else { return false }
+
+        return snapshots.contains { snapshot in
+            let config = snapshot.appendingPathComponent("config.json")
+            return FileManager.default.fileExists(atPath: config.path)
+        }
+    }
+
+    func deleteQwenModel(_ model: QwenASRModel) {
+        let hubDirectory = Storage.qwenASRCacheDirectory.appendingPathComponent("hub", isDirectory: true)
+        let modelDirectory = hubDirectory.appendingPathComponent("models--\(model.cacheDirectoryName)", isDirectory: true)
+        try? FileManager.default.removeItem(at: modelDirectory)
+        refreshDownloadedModels()
+    }
+
+    func qwenModelFileSize(_ model: QwenASRModel) -> String? {
+        let hubDirectory = Storage.qwenASRCacheDirectory.appendingPathComponent("hub", isDirectory: true)
+        let modelDirectory = hubDirectory.appendingPathComponent("models--\(model.cacheDirectoryName)", isDirectory: true)
+        guard let size = directorySize(at: modelDirectory), size > 0 else { return nil }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(size))
+    }
+
+    private func directorySize(at url: URL) -> UInt64? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: url,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        var total: UInt64 = 0
+        for case let fileURL as URL in enumerator {
+            guard let values = try? fileURL.resourceValues(forKeys: keys),
+                  values.isRegularFile == true
+            else { continue }
+            total += UInt64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0)
+        }
+        return total
+    }
+
     // MARK: - URLSessionDownloadDelegate
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,

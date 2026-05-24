@@ -240,6 +240,16 @@ struct FileTranscriptionView: View {
                 .disabled(appState.settings.apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
 
                 Button {
+                    appState.settings.engineType = .qwenASR
+                    appState.settings.qwenASRModel = QwenASRModel.recommended
+                    appState.saveSettings()
+                    updateVisibleCosts()
+                } label: {
+                    Label(L.tr("Local (Qwen3-ASR MLX)", "Локально (Qwen3-ASR MLX)"), systemImage: TranscriptionEngineType.qwenASR.icon)
+                }
+                .disabled(!QwenASRTranscriber.isAppleSilicon)
+
+                Button {
                     appState.settings.engineType = .gigaAM
                     appState.settings.language = "ru"
                     appState.saveSettings()
@@ -1196,6 +1206,7 @@ private extension TranscriptionEngineType {
         switch self {
         case .cloud: return "cloud.fill"
         case .local: return "cpu"
+        case .qwenASR: return icon
         case .gigaAM: return icon
         }
     }

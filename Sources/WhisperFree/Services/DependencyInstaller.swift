@@ -44,6 +44,8 @@ final class DependencyInstaller: ObservableObject {
     @Published var whisperCppStatus: String = ""
     @Published var isInstallingGigaAM = false
     @Published var gigaAMStatus: String = ""
+    @Published var isInstallingQwenASR = false
+    @Published var qwenASRStatus: String = ""
     
     private init() {}
 
@@ -59,6 +61,10 @@ final class DependencyInstaller: ObservableObject {
 
     var isGigaAMEnvironmentInstalled: Bool {
         FileManager.default.isExecutableFile(atPath: GigaAMTranscriber.virtualEnvironmentPythonPath)
+    }
+
+    var isQwenASRRuntimeInstalled: Bool {
+        QwenASRTranscriber.isRuntimeInstalled
     }
 
     func installHomebrew() {
@@ -156,6 +162,47 @@ final class DependencyInstaller: ObservableObject {
             gigaAMStatus = "Installing GigaAM runtime..."
         } else {
             gigaAMStatus = ""
+        }
+    }
+
+    func installQwenASRRuntime() {
+        guard !isInstallingQwenASR else { return }
+
+        guard QwenASRTranscriber.isAppleSilicon else {
+            qwenASRStatus = "Qwen3-ASR MLX requires Apple Silicon."
+            return
+        }
+
+        guard let python = QwenASRTranscriber.findBasePythonBinary() else {
+            qwenASRStatus = "Python 3.10+ runtime not found. Bundle Python with the app for fully self-contained installs."
+            return
+        }
+
+        isInstallingQwenASR = true
+        qwenASRStatus = "Installing Qwen3-ASR MLX runtime..."
+
+        Task(priority: .userInitiated) {
+            do {
+                try await QwenASRTranscriber.installRuntime(basePythonPath: python)
+                self.qwenASRStatus = "Qwen3-ASR runtime installed."
+            } catch {
+                self.qwenASRStatus = error.localizedDescription
+            }
+            self.isInstallingQwenASR = false
+        }
+    }
+
+    func refreshQwenASRStatus() {
+        if QwenASRTranscriber.isRuntimeInstalled {
+            qwenASRStatus = "Qwen3-ASR runtime detected."
+        } else if !QwenASRTranscriber.isAppleSilicon {
+            qwenASRStatus = "Qwen3-ASR MLX requires Apple Silicon."
+        } else if QwenASRTranscriber.findBasePythonBinary() == nil {
+            qwenASRStatus = "Python 3.10+ runtime not found."
+        } else if isInstallingQwenASR {
+            qwenASRStatus = "Installing Qwen3-ASR MLX runtime..."
+        } else {
+            qwenASRStatus = ""
         }
     }
 

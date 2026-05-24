@@ -787,6 +787,11 @@ final class AppState: ObservableObject {
             return false
         }
 
+        if settings.engineType == .qwenASR && !QwenASRTranscriber.isAppleSilicon {
+            showError("Qwen3-ASR MLX requires Apple Silicon. Choose another local engine in Settings.")
+            return false
+        }
+
         if settings.engineType == .gigaAM && GigaAMTranscriber.findPythonBinary() == nil {
             showError("Python 3 not found. Install Python 3, then install the GigaAM packages in Settings → Engine & API.")
             return false

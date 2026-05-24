@@ -328,12 +328,14 @@ enum LiveTranslationEngine: String, Codable, CaseIterable {
 enum TranscriptionEngineType: String, Codable, CaseIterable {
     case cloud = "Cloud (OpenAI)"
     case local = "Local (whisper.cpp)"
+    case qwenASR = "Local (Qwen3-ASR MLX)"
     case gigaAM = "Experimental GigaAM Russian"
 
     var icon: String {
         switch self {
         case .cloud: return "cloud"
         case .local: return "desktopcomputer"
+        case .qwenASR: return "waveform.and.magnifyingglass"
         case .gigaAM: return "waveform.badge.magnifyingglass"
         }
     }
@@ -439,6 +441,37 @@ enum LocalModelSize: String, Codable, CaseIterable {
         if ram >= 32 * 1024 * 1024 * 1024 { return .largeV3Turbo }
         if ram >= 16 * 1024 * 1024 * 1024 { return .medium }
         return .small
+    }
+}
+
+// MARK: - Qwen3-ASR Model
+
+enum QwenASRModel: String, Codable, CaseIterable {
+    case fast = "Fast"
+    case quality = "Quality"
+
+    var modelID: String {
+        switch self {
+        case .fast: return "Qwen/Qwen3-ASR-0.6B"
+        case .quality: return "Qwen/Qwen3-ASR-1.7B"
+        }
+    }
+
+    var cacheDirectoryName: String {
+        modelID.replacingOccurrences(of: "/", with: "--")
+    }
+
+    var sizeDescription: String {
+        switch self {
+        case .fast:
+            return "~1.2 GB RAM · Qwen3-ASR-0.6B"
+        case .quality:
+            return "~3.4 GB RAM · Qwen3-ASR-1.7B"
+        }
+    }
+
+    static var recommended: QwenASRModel {
+        ProcessInfo.processInfo.physicalMemory >= 24 * 1024 * 1024 * 1024 ? .quality : .fast
     }
 }
 
@@ -585,6 +618,7 @@ struct AppSettings: Codable {
     var recordingMode: RecordingMode = .hold
     var engineType: TranscriptionEngineType = .cloud
     var localModelSize: LocalModelSize = .base
+    var qwenASRModel: QwenASRModel = .fast
     var showOverlay: Bool = true
     var setupCompleted: Bool = false
     var hotkeyConfig: HotkeyConfig = HotkeyConfig()
@@ -619,7 +653,7 @@ struct AppSettings: Codable {
 
     enum CodingKeys: String, CodingKey {
         case apiKey, cloudTranscriptionModel, postProcessingEngine, autoTypeResult, enableProfanityFilter, language,
-             selectedModeName, customModes, recordingMode, engineType, localModelSize,
+             selectedModeName, customModes, recordingMode, engineType, localModelSize, qwenASRModel,
              showOverlay, setupCompleted, hotkeyConfig, insertionMethod,
              automaticallyChecksForUpdates, automaticallyDownloadsUpdates,
              enablePostProcessing, useMonochromeMenuIcon, usageLogs,
@@ -645,6 +679,7 @@ struct AppSettings: Codable {
         recordingMode = try container.decodeIfPresent(RecordingMode.self, forKey: .recordingMode) ?? .hold
         engineType = try container.decodeIfPresent(TranscriptionEngineType.self, forKey: .engineType) ?? .cloud
         localModelSize = try container.decodeIfPresent(LocalModelSize.self, forKey: .localModelSize) ?? .base
+        qwenASRModel = try container.decodeIfPresent(QwenASRModel.self, forKey: .qwenASRModel) ?? .fast
         showOverlay = try container.decodeIfPresent(Bool.self, forKey: .showOverlay) ?? true
         setupCompleted = try container.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? false
         hotkeyConfig = try container.decodeIfPresent(HotkeyConfig.self, forKey: .hotkeyConfig) ?? HotkeyConfig()

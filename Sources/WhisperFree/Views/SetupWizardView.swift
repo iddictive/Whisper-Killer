@@ -11,6 +11,7 @@ struct SetupWizardView: View {
     @State private var apiKey = ""
     @State private var selectedEngine: TranscriptionEngineType = .cloud
     @State private var selectedModel: LocalModelSize = .base
+    @State private var selectedQwenModel: QwenASRModel = .fast
     @State private var apiValidationState: OpenAIAPIKeyValidationState = .idle
     @State private var micGranted = false
     @State private var homebrewInstalled = false
@@ -94,6 +95,7 @@ struct SetupWizardView: View {
             apiKey = appState.settings.apiKey
             selectedEngine = appState.settings.engineType
             selectedModel = LocalModelSize.recommended
+            selectedQwenModel = appState.settings.qwenASRModel
             animateGlow = true
         }
         .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
@@ -529,6 +531,7 @@ struct SetupWizardView: View {
             HStack(spacing: 10) {
                 enginePill(type: .cloud, icon: "cloud.fill", label: "Cloud")
                 enginePill(type: .local, icon: "desktopcomputer", label: "Local")
+                enginePill(type: .qwenASR, icon: TranscriptionEngineType.qwenASR.icon, label: "Qwen")
                 enginePill(type: .gigaAM, icon: TranscriptionEngineType.gigaAM.icon, label: "GigaAM")
             }
 
@@ -537,6 +540,8 @@ struct SetupWizardView: View {
                 cloudEngineCard
             } else if selectedEngine == .local {
                 localEngineCard
+            } else if selectedEngine == .qwenASR {
+                qwenEngineCard
             } else {
                 gigaAMEngineCard
             }
@@ -622,6 +627,47 @@ struct SetupWizardView: View {
             ])
 
             Text(L.tr("Russian-focused recognition for comparison runs.", "Распознавание под русский для сравнительных прогонов."))
+                .font(.system(size: 11))
+                .foregroundStyle(textSecondary)
+        }
+        .padding(16)
+        .background(bgCard)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
+    }
+
+    private var qwenEngineCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 6) {
+                Image(systemName: "lock.shield.fill").foregroundStyle(Color.accentColor).font(.system(size: 11))
+                Text(L.tr("Private · MLX · Apple Silicon", "Приватно · MLX · Apple Silicon"))
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(textSecondary)
+            }
+
+            tagRow(items: [
+                ("waveform.and.magnifyingglass", selectedQwenModel.modelID, Color.accentColor),
+                ("arrow.down.circle", "Auto-downloads model cache", .orange),
+                ("memorychip", selectedQwenModel.sizeDescription, textSecondary),
+            ])
+
+            HStack(spacing: 8) {
+                ForEach(QwenASRModel.allCases, id: \.self) { model in
+                    Button {
+                        selectedQwenModel = model
+                    } label: {
+                        Text(model.localizedTitle)
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(selectedQwenModel == model ? accentGold.opacity(0.15) : Color.white.opacity(0.05))
+                            .foregroundStyle(selectedQwenModel == model ? accentGold : textSecondary)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Text(L.tr("Runtime and model weights are stored inside Application Support. No cloud transcription fallback is enabled.", "Runtime и веса модели хранятся в Application Support. Облачный fallback для транскрибации не включается."))
                 .font(.system(size: 11))
                 .foregroundStyle(textSecondary)
         }
@@ -992,6 +1038,10 @@ struct SetupWizardView: View {
                     } else {
                         readyRow("\(L.tr("Model", "Модель")): \(selectedModel.rawValue)", ok: false)
                     }
+                } else if selectedEngine == .qwenASR {
+                    readyRow("Apple Silicon", ok: QwenASRTranscriber.isAppleSilicon)
+                    readyRow("Qwen3-ASR runtime", ok: QwenASRTranscriber.isRuntimeInstalled)
+                    readyRow("\(L.tr("Model", "Модель")): \(selectedQwenModel.modelID)", ok: modelManager.isQwenModelDownloaded(selectedQwenModel))
                 } else {
                     readyRow("Python 3", ok: GigaAMTranscriber.findPythonBinary() != nil)
                     readyRow("GigaAM-v3", ok: true)
@@ -1192,6 +1242,7 @@ struct SetupWizardView: View {
         appState.settings.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         appState.settings.engineType = selectedEngine
         appState.settings.localModelSize = selectedModel
+        appState.settings.qwenASRModel = selectedQwenModel
 
         // If no API key is provided, default to Raw mode to avoid AI processing errors
         if appState.settings.apiKey.isEmpty {

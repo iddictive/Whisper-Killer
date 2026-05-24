@@ -63,6 +63,8 @@ struct TranscriptionEngineFactory {
             return CloudWhisper(apiKey: settings.normalizedAPIKey, model: settings.cloudTranscriptionModel)
         case .local:
             return LocalWhisper(modelSize: settings.localModelSize)
+        case .qwenASR:
+            return QwenASRTranscriber(model: settings.qwenASRModel)
         case .gigaAM:
             return GigaAMTranscriber()
         }

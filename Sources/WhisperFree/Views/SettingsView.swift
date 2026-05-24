@@ -622,6 +622,12 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
+                .onChange(of: appState.settings.engineType) { _, newValue in
+                    if newValue == .qwenASR {
+                        appState.settings.qwenASRModel = QwenASRModel.recommended
+                    }
+                    appState.saveSettings()
+                }
 
                 Divider().padding(.horizontal)
 
@@ -676,6 +682,11 @@ struct SettingsView: View {
                                 localModelRows
                             }
                         }
+                    }
+
+                    if appState.settings.engineType == .qwenASR {
+                        qwenASRSettingsCard
+                            .padding(.horizontal)
                     }
 
                     if appState.settings.engineType == .gigaAM {
@@ -787,6 +798,118 @@ struct SettingsView: View {
             .padding(.vertical, 12)
             if size != LocalModelSize.allCases.last { Divider().padding(.horizontal) }
         }
+    }
+
+    private var qwenASRSettingsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: TranscriptionEngineType.qwenASR.icon)
+                    .foregroundStyle(SW.accent)
+                Text(L.tr("Local Qwen3-ASR", "Локальный Qwen3-ASR"))
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Text(L.tr("Local only", "Только локально"))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+            }
+
+            Text(L.tr("Runs Qwen3-ASR through an app-managed MLX runtime. Model weights are cached under Application Support and never use a cloud transcription fallback.", "Запускает Qwen3-ASR через MLX runtime приложения. Веса модели кэшируются в Application Support, без облачного fallback для транскрибации."))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                Image(systemName: dependencyInstaller.isQwenASRRuntimeInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(dependencyInstaller.isQwenASRRuntimeInstalled ? Color.accentColor : .orange)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(dependencyInstaller.isQwenASRRuntimeInstalled ? L.tr("Qwen3-ASR runtime detected", "Qwen3-ASR runtime найден") : L.tr("Qwen3-ASR runtime not installed", "Qwen3-ASR runtime не установлен"))
+                        .font(.system(size: 13, weight: .semibold))
+
+                    if dependencyInstaller.isInstallingQwenASR {
+                        Text(L.tr("Installing pinned MLX runtime...", "Устанавливаю закреплённый MLX runtime..."))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    } else if !QwenASRTranscriber.isAppleSilicon {
+                        Text(L.tr("Apple Silicon is required.", "Нужен Apple Silicon."))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    } else if !dependencyInstaller.qwenASRStatus.isEmpty {
+                        Text(dependencyInstaller.qwenASRStatus)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                    } else {
+                        Text(L.tr("First transcription can also prepare the runtime automatically.", "Первая транскрибация тоже может подготовить runtime автоматически."))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                if dependencyInstaller.isInstallingQwenASR {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if dependencyInstaller.isQwenASRRuntimeInstalled {
+                    Button(L.tr("Refresh", "Обновить")) {
+                        dependencyInstaller.refreshQwenASRStatus()
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button(L.tr("Install", "Установить")) {
+                        dependencyInstaller.installQwenASRRuntime()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!QwenASRTranscriber.isAppleSilicon || QwenASRTranscriber.findBasePythonBinary() == nil)
+                }
+            }
+
+            Divider()
+
+            ForEach(QwenASRModel.allCases, id: \.self) { model in
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(model.localizedTitle)
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(model.sizeDescription)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        if let size = modelManager.qwenModelFileSize(model) {
+                            Text(L.tr("Cached: \(size)", "В кэше: \(size)"))
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    if appState.settings.qwenASRModel == model {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.accentColor)
+                            .font(.title3)
+                    } else {
+                        Button(L.tr("Use", "Использовать")) {
+                            appState.settings.qwenASRModel = model
+                            appState.saveSettings()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    if modelManager.isQwenModelDownloaded(model) {
+                        Button(role: .destructive) {
+                            modelManager.deleteQwenModel(model)
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundStyle(.red.opacity(0.7))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var whisperCppStatusRow: some View {

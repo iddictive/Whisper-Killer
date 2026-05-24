@@ -160,6 +160,25 @@ final class Storage {
         return dir
     }
 
+    static var qwenASRDirectory: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let dir = appSupport.appendingPathComponent("WhisperKiller/QwenASR", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    static var qwenASRRuntimeDirectory: URL {
+        let dir = qwenASRDirectory.appendingPathComponent("Runtime", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    static var qwenASRCacheDirectory: URL {
+        let dir = qwenASRDirectory.appendingPathComponent("Cache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
     static var recordingsDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let dir = appSupport.appendingPathComponent("WhisperKiller/Recordings", isDirectory: true)

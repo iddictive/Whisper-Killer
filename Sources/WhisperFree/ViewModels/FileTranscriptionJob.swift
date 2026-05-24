@@ -72,6 +72,8 @@ struct TranscriptionRunProvenance: Equatable {
         switch engineType {
         case .local:
             return TranscriptionEngineType.local.localizedShortTitle
+        case .qwenASR:
+            return TranscriptionEngineType.qwenASR.localizedShortTitle
         case .gigaAM:
             return TranscriptionEngineType.gigaAM.localizedShortTitle
         case .cloud:

@@ -135,6 +135,7 @@ extension TranscriptionEngineType {
         switch self {
         case .cloud: return L.tr("Cloud (OpenAI)", "Облако (OpenAI)")
         case .local: return L.tr("Local (whisper.cpp)", "Локально (whisper.cpp)")
+        case .qwenASR: return L.tr("Local (Qwen3-ASR MLX)", "Локально (Qwen3-ASR MLX)")
         case .gigaAM: return L.tr("GigaAM Russian", "GigaAM русский")
         }
     }
@@ -143,7 +144,17 @@ extension TranscriptionEngineType {
         switch self {
         case .cloud: return L.tr("Cloud", "Облако")
         case .local: return L.tr("Local", "Локально")
+        case .qwenASR: return "Qwen3-ASR"
         case .gigaAM: return "GigaAM"
+        }
+    }
+}
+
+extension QwenASRModel {
+    var localizedTitle: String {
+        switch self {
+        case .fast: return L.tr("Fast", "Быстро")
+        case .quality: return L.tr("Quality", "Качество")
         }
     }
 }
