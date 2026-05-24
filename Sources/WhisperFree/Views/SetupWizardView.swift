@@ -646,7 +646,7 @@ struct SetupWizardView: View {
 
             tagRow(items: [
                 ("waveform.and.magnifyingglass", selectedQwenModel.modelID, Color.accentColor),
-                ("arrow.down.circle", "Auto-downloads model cache", .orange),
+                ("arrow.down.circle", "Downloads once", .orange),
                 ("memorychip", selectedQwenModel.sizeDescription, textSecondary),
             ])
 
@@ -667,7 +667,7 @@ struct SetupWizardView: View {
                 }
             }
 
-            Text(L.tr("Runtime and model weights are stored inside Application Support. No cloud transcription fallback is enabled.", "Runtime и веса модели хранятся в Application Support. Облачный fallback для транскрибации не включается."))
+            Text(L.tr("Runs fully on this Mac. No cloud transcription fallback is enabled.", "Работает полностью на этом Mac. Облачный fallback для транскрибации не включается."))
                 .font(.system(size: 11))
                 .foregroundStyle(textSecondary)
         }
@@ -1040,7 +1040,7 @@ struct SetupWizardView: View {
                     }
                 } else if selectedEngine == .qwenASR {
                     readyRow("Apple Silicon", ok: QwenASRTranscriber.isAppleSilicon)
-                    readyRow("Qwen3-ASR runtime", ok: QwenASRTranscriber.isRuntimeInstalled)
+                    readyRow("Qwen3-ASR setup", ok: QwenASRTranscriber.isRuntimeInstalled)
                     readyRow("\(L.tr("Model", "Модель")): \(selectedQwenModel.modelID)", ok: modelManager.isQwenModelDownloaded(selectedQwenModel))
                 } else {
                     readyRow("Python 3", ok: GigaAMTranscriber.findPythonBinary() != nil)

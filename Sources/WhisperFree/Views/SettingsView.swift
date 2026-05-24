@@ -813,7 +813,7 @@ struct SettingsView: View {
                     .foregroundStyle(Color.accentColor)
             }
 
-            Text(L.tr("Runs Qwen3-ASR through an app-managed MLX runtime. Model weights are cached under Application Support and never use a cloud transcription fallback.", "Запускает Qwen3-ASR через MLX runtime приложения. Веса модели кэшируются в Application Support, без облачного fallback для транскрибации."))
+            Text(L.tr("Private on-device transcription. Models download once and stay on this Mac.", "Приватная транскрибация на устройстве. Модели скачиваются один раз и остаются на этом Mac."))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
@@ -822,11 +822,11 @@ struct SettingsView: View {
                     .foregroundStyle(dependencyInstaller.isQwenASRRuntimeInstalled ? Color.accentColor : .orange)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(dependencyInstaller.isQwenASRRuntimeInstalled ? L.tr("Qwen3-ASR runtime detected", "Qwen3-ASR runtime найден") : L.tr("Qwen3-ASR runtime not installed", "Qwen3-ASR runtime не установлен"))
+                    Text(dependencyInstaller.isQwenASRRuntimeInstalled ? L.tr("Qwen3-ASR ready", "Qwen3-ASR готов") : L.tr("Qwen3-ASR not ready", "Qwen3-ASR не готов"))
                         .font(.system(size: 13, weight: .semibold))
 
                     if dependencyInstaller.isInstallingQwenASR {
-                        Text(L.tr("Installing pinned MLX runtime...", "Устанавливаю закреплённый MLX runtime..."))
+                        Text(L.tr("Preparing local transcription...", "Подготавливаю локальную транскрибацию..."))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     } else if !QwenASRTranscriber.isAppleSilicon {
@@ -839,7 +839,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(3)
                     } else {
-                        Text(L.tr("First transcription can also prepare the runtime automatically.", "Первая транскрибация тоже может подготовить runtime автоматически."))
+                        Text(L.tr("Install once before the first Qwen transcription.", "Установите один раз перед первой Qwen-транскрибацией."))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -860,7 +860,7 @@ struct SettingsView: View {
                         dependencyInstaller.installQwenASRRuntime()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!QwenASRTranscriber.isAppleSilicon || QwenASRTranscriber.findBasePythonBinary() == nil)
+                    .disabled(!QwenASRTranscriber.isAppleSilicon)
                 }
             }
 

@@ -173,18 +173,13 @@ final class DependencyInstaller: ObservableObject {
             return
         }
 
-        guard let python = QwenASRTranscriber.findBasePythonBinary() else {
-            qwenASRStatus = "Python 3.10+ runtime not found. Bundle Python with the app for fully self-contained installs."
-            return
-        }
-
         isInstallingQwenASR = true
-        qwenASRStatus = "Installing Qwen3-ASR MLX runtime..."
+        qwenASRStatus = "Preparing Qwen3-ASR..."
 
         Task(priority: .userInitiated) {
             do {
-                try await QwenASRTranscriber.installRuntime(basePythonPath: python)
-                self.qwenASRStatus = "Qwen3-ASR runtime installed."
+                try await QwenASRTranscriber.installRuntime()
+                self.qwenASRStatus = "Qwen3-ASR is ready."
             } catch {
                 self.qwenASRStatus = error.localizedDescription
             }
@@ -194,13 +189,11 @@ final class DependencyInstaller: ObservableObject {
 
     func refreshQwenASRStatus() {
         if QwenASRTranscriber.isRuntimeInstalled {
-            qwenASRStatus = "Qwen3-ASR runtime detected."
+            qwenASRStatus = "Qwen3-ASR is ready."
         } else if !QwenASRTranscriber.isAppleSilicon {
             qwenASRStatus = "Qwen3-ASR MLX requires Apple Silicon."
-        } else if QwenASRTranscriber.findBasePythonBinary() == nil {
-            qwenASRStatus = "Python 3.10+ runtime not found."
         } else if isInstallingQwenASR {
-            qwenASRStatus = "Installing Qwen3-ASR MLX runtime..."
+            qwenASRStatus = "Preparing Qwen3-ASR..."
         } else {
             qwenASRStatus = ""
         }

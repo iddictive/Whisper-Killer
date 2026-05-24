@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import CoreMedia
 import Darwin
+import CryptoKit
 
 /// Local Qwen3-ASR inference through an app-managed MLX runtime.
 final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
@@ -164,11 +165,21 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
             .path
     }
 
+    private static var standalonePythonPath: String {
+        Storage.qwenASRRuntimeDirectory
+            .appendingPathComponent("Python/bin/python3", isDirectory: false)
+            .path
+    }
+
     static var isRuntimeInstalled: Bool {
         FileManager.default.isExecutableFile(atPath: runtimePythonPath)
     }
 
     static func findBasePythonBinary() -> String? {
+        if FileManager.default.isExecutableFile(atPath: standalonePythonPath) {
+            return standalonePythonPath
+        }
+
         let possiblePaths = [
             "/opt/homebrew/bin/python3.13",
             "/usr/local/bin/python3.13",
@@ -208,18 +219,14 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
             return runtimePythonPath
         }
 
-        guard let basePython = findBasePythonBinary() else {
-            throw TranscriptionError.transcriptionFailed("Qwen3-ASR runtime is not installed and Python 3.10+ was not found. Bundle a Python runtime with the app or install the Qwen runtime from Settings.")
-        }
-
-        try await installRuntime(basePythonPath: basePython)
+        try await installRuntime()
         return runtimePythonPath
     }
 
-    static func installRuntime(basePythonPath: String) async throws {
+    static func installRuntime() async throws {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let result = installRuntimeSync(basePythonPath: basePythonPath)
+                let result = installRuntimeSync()
                 switch result {
                 case .success:
                     continuation.resume()
@@ -230,7 +237,15 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
         }
     }
 
-    private static func installRuntimeSync(basePythonPath: String) -> Result<Void, TranscriptionError> {
+    private static func installRuntimeSync() -> Result<Void, TranscriptionError> {
+        let basePython: String
+        switch ensureStandalonePythonSync() {
+        case .success(let python):
+            basePython = python
+        case .failure(let error):
+            return .failure(error)
+        }
+
         let venvDirectory = Storage.qwenASRRuntimeDirectory.appendingPathComponent("venv", isDirectory: true).path
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
@@ -239,7 +254,7 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
             """
             set -e
             mkdir -p \(shellQuoted(Storage.qwenASRRuntimeDirectory.path))
-            \(shellQuoted(basePythonPath)) -m venv \(shellQuoted(venvDirectory))
+            \(shellQuoted(basePython)) -m venv \(shellQuoted(venvDirectory))
             \(shellQuoted(runtimePythonPath)) -m pip install --upgrade pip
             \(shellQuoted(runtimePythonPath)) -m pip install --disable-pip-version-check mlx-qwen3-asr==0.3.5
             """
@@ -250,6 +265,114 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
         _ = FileManager.default.createFile(atPath: outputURL.path, contents: nil)
         guard let outputHandle = try? FileHandle(forWritingTo: outputURL) else {
             return .failure(.transcriptionFailed("Could not create Qwen3-ASR install log."))
+        }
+        defer {
+            try? outputHandle.close()
+            try? FileManager.default.removeItem(at: outputURL)
+        }
+
+        process.standardOutput = outputHandle
+        process.standardError = outputHandle
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                let output = (try? String(contentsOf: outputURL, encoding: .utf8))?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return .failure(.transcriptionFailed(installFailureMessage(output: output, status: process.terminationStatus)))
+            }
+
+            return .success(())
+        } catch {
+            return .failure(.transcriptionFailed(error.localizedDescription))
+        }
+    }
+
+    private static func ensureStandalonePythonSync() -> Result<String, TranscriptionError> {
+        if FileManager.default.isExecutableFile(atPath: standalonePythonPath) {
+            return .success(standalonePythonPath)
+        }
+
+        let downloadURL = URL(string: "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13%2B20260510-aarch64-apple-darwin-install_only_stripped.tar.gz")!
+        let expectedSHA256 = "55bc1a5edbc8ac4da0081f4f5731ed2d1ed10c57cb37a820b2a0dbc7cad742e9"
+        let workDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("qwen_asr_python_\(UUID().uuidString)", isDirectory: true)
+        let archiveURL = workDirectory.appendingPathComponent("python.tar.gz")
+        let extractDirectory = workDirectory.appendingPathComponent("extract", isDirectory: true)
+        let targetDirectory = Storage.qwenASRRuntimeDirectory.appendingPathComponent("Python", isDirectory: true)
+
+        do {
+            try FileManager.default.createDirectory(at: extractDirectory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: workDirectory) }
+
+            let semaphore = DispatchSemaphore(value: 0)
+            final class DownloadBox: @unchecked Sendable {
+                var result: Result<URL, Error>?
+            }
+            let box = DownloadBox()
+            let task = URLSession.shared.downloadTask(with: downloadURL) { location, _, error in
+                if let error {
+                    box.result = .failure(error)
+                } else if let location {
+                    box.result = .success(location)
+                } else {
+                    box.result = .failure(TranscriptionError.transcriptionFailed("Python runtime download did not return a file."))
+                }
+                semaphore.signal()
+            }
+            task.resume()
+            semaphore.wait()
+
+            guard let downloadResult = box.result else {
+                return .failure(.transcriptionFailed("Python runtime download did not complete."))
+            }
+
+            let downloadedURL = try downloadResult.get()
+            try FileManager.default.moveItem(at: downloadedURL, to: archiveURL)
+
+            let archiveData = try Data(contentsOf: archiveURL)
+            let actualSHA256 = SHA256.hash(data: archiveData).map { String(format: "%02x", $0) }.joined()
+            guard actualSHA256 == expectedSHA256 else {
+                return .failure(.transcriptionFailed("Python runtime integrity check failed. Retry the runtime install."))
+            }
+
+            let extractResult = runProcess(
+                executable: "/usr/bin/tar",
+                arguments: ["-xzf", archiveURL.path, "-C", extractDirectory.path],
+                outputName: "qwen_asr_python_extract"
+            )
+            if case .failure(let error) = extractResult {
+                return .failure(error)
+            }
+
+            let extractedPythonDirectory = extractDirectory.appendingPathComponent("python", isDirectory: true)
+            if FileManager.default.fileExists(atPath: targetDirectory.path) {
+                try FileManager.default.removeItem(at: targetDirectory)
+            }
+            try FileManager.default.moveItem(at: extractedPythonDirectory, to: targetDirectory)
+
+            guard FileManager.default.isExecutableFile(atPath: standalonePythonPath) else {
+                return .failure(.transcriptionFailed("Python runtime was installed but is not executable."))
+            }
+
+            return .success(standalonePythonPath)
+        } catch {
+            return .failure(.transcriptionFailed(error.localizedDescription))
+        }
+    }
+
+    private static func runProcess(executable: String, arguments: [String], outputName: String) -> Result<Void, TranscriptionError> {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(outputName)_\(UUID().uuidString).log")
+        _ = FileManager.default.createFile(atPath: outputURL.path, contents: nil)
+        guard let outputHandle = try? FileHandle(forWritingTo: outputURL) else {
+            return .failure(.transcriptionFailed("Could not create runtime log."))
         }
         defer {
             try? outputHandle.close()
