@@ -9,6 +9,7 @@ echo "🔍 Starting Permissions & Deployment Fix..."
 APP_NAME="WhisperKiller"
 BUNDLE_ID="com.whisperkiller.app"
 DEST_DIR="/Applications"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 # Helper for non-sudo operations with sudo fallbacks
 safe_rm() {
@@ -42,6 +43,22 @@ safe_codesign() {
         sudo codesign --force --options runtime --deep --entitlements "$entitlements" --sign - "$app_path" >/dev/null 2>&1
 }
 
+unregister_app_bundle() {
+    local app_path="$1"
+
+    if [ -x "$LSREGISTER" ] && [ -d "$app_path" ]; then
+        "$LSREGISTER" -u "$app_path" >/dev/null 2>&1 || true
+    fi
+}
+
+register_app_bundle() {
+    local app_path="$1"
+
+    if [ -x "$LSREGISTER" ] && [ -d "$app_path" ]; then
+        "$LSREGISTER" -f "$app_path" >/dev/null 2>&1 || true
+    fi
+}
+
 # 1. Preserve TCC permissions during install/update.
 # Do not reset current or legacy bundle IDs here; users may keep valid grants
 # while testing migration builds side by side.
@@ -55,6 +72,9 @@ pkill -9 -x "WhisperFlow" 2>/dev/null
 
 # 3. Clean up /Applications
 echo "🧹 Cleaning up /Applications folder..."
+unregister_app_bundle "$DEST_DIR/WhisperKiller.app"
+unregister_app_bundle "$DEST_DIR/WhisperFree.app"
+unregister_app_bundle "$DEST_DIR/WhisperFlow.app"
 safe_rm "$DEST_DIR/WhisperKiller.app"
 safe_rm "$DEST_DIR/WhisperFree.app"
 safe_rm "$DEST_DIR/WhisperFlow.app"
@@ -99,6 +119,8 @@ if [ -d "$SOURCE_APP" ]; then
     safe_chown "$(whoami):admin" "$DEST_DIR/$APP_NAME.app"
     safe_xattr "$DEST_DIR/$APP_NAME.app"
     safe_codesign "$DEST_DIR/$APP_NAME.app"
+    register_app_bundle "$DEST_DIR/$APP_NAME.app"
+    unregister_app_bundle "$SOURCE_APP"
 
     echo "🏃 Launching from /Applications..."
     open "$DEST_DIR/$APP_NAME.app"
