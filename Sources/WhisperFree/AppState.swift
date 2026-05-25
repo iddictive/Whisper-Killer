@@ -1171,7 +1171,14 @@ final class AppState: ObservableObject {
             let engine = TranscriptionEngineFactory.create(for: settings.engineType, settings: settings)
             currentEngine = engine
             let lang = settings.language == "auto" ? nil : settings.language
-            rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil, onProgress: nil)
+            let engineType = settings.engineType
+            rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil) { [weak self] progress, _ in
+                guard engineType == .qwenASR else { return }
+                let stage: ProcessingStage = progress < 0.25 ? .preparing : .transcribing
+                Task { @MainActor in
+                    self?.updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: stage)
+                }
+            }
             updateActiveProcessingText(for: jobID, rawText: rawText, processedText: nil, stage: nil)
             if currentProcessingToken == jobID {
                 currentEngine = nil

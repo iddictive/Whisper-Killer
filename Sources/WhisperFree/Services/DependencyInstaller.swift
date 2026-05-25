@@ -179,7 +179,7 @@ final class DependencyInstaller: ObservableObject {
         Task(priority: .userInitiated) {
             do {
                 try await QwenASRTranscriber.installRuntime()
-                self.qwenASRStatus = "Qwen3-ASR is ready."
+                self.qwenASRStatus = "Qwen3-ASR runtime is ready."
             } catch {
                 self.qwenASRStatus = error.localizedDescription
             }
@@ -189,7 +189,7 @@ final class DependencyInstaller: ObservableObject {
 
     func refreshQwenASRStatus() {
         if QwenASRTranscriber.isRuntimeInstalled {
-            qwenASRStatus = "Qwen3-ASR is ready."
+            qwenASRStatus = "Qwen3-ASR runtime is ready."
         } else if !QwenASRTranscriber.isAppleSilicon {
             qwenASRStatus = "Qwen3-ASR MLX requires Apple Silicon."
         } else if isInstallingQwenASR {

@@ -95,7 +95,7 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
                 outputAccumulator.append(chunk)
                 guard let text = String(data: chunk, encoding: .utf8) else { return }
                 for progress in Self.parseProgress(from: text) {
-                    let totalProgress = 0.20 + progress * 0.78
+                    let totalProgress = progress
                     let elapsed = Date().timeIntervalSince(startedAt)
                     let remaining: TimeInterval? = totalProgress > 0.25 ? max(0, elapsed / Double(totalProgress) - elapsed) : nil
                     onProgress?(totalProgress, remaining)
@@ -108,7 +108,7 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
                 errorAccumulator.append(chunk)
             }
 
-            let timeoutSeconds: Double = 3600
+            let timeoutSeconds: Double = 1800
             let timedOut = ThreadSafeFlag(false)
             let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
             timer.schedule(deadline: .now() + timeoutSeconds)
@@ -147,7 +147,6 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
 
             do {
                 try process.run()
-                onProgress?(0.20, nil)
             } catch {
                 timer.cancel()
                 continuation.resume(throwing: TranscriptionError.transcriptionFailed(error.localizedDescription))
@@ -434,10 +433,15 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
             guard line.hasPrefix(marker) else { return nil }
             let payload = String(line.dropFirst(marker.count))
             guard let data = payload.data(using: .utf8),
-                  let event = try? JSONDecoder().decode(QwenProgress.self, from: data),
-                  let progress = event.progress
+                  let event = try? JSONDecoder().decode(QwenProgress.self, from: data)
             else { return nil }
-            return min(max(progress, 0), 1)
+
+            if let overallProgress = event.overallProgress {
+                return min(max(overallProgress, 0), 1)
+            }
+
+            guard let progress = event.progress else { return nil }
+            return min(max(0.25 + progress * 0.73, 0), 1)
         }
     }
 
@@ -584,12 +588,19 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
 
     private struct QwenProgress: Decodable {
         let progress: Float?
+        let overallProgress: Float?
+
+        enum CodingKeys: String, CodingKey {
+            case progress
+            case overallProgress = "overall_progress"
+        }
     }
 
     private static let pythonHelper = #"""
 import argparse
 import json
 import sys
+import time
 
 def emit_progress(event):
     try:
@@ -605,11 +616,42 @@ def main():
     parser.add_argument("--language")
     args = parser.parse_args()
 
+    from huggingface_hub import snapshot_download
+    from tqdm.auto import tqdm
     from mlx_qwen3_asr import transcribe
+
+    class QwenDownloadProgress(tqdm):
+        last_emit_at = 0.0
+
+        def update(self, n=1):
+            super().update(n)
+            total = self.total or 0
+            if total <= 0:
+                return
+            now = time.time()
+            if now - self.last_emit_at < 0.5 and self.n < total:
+                return
+            self.last_emit_at = now
+            progress = max(0.0, min(1.0, float(self.n) / float(total)))
+            emit_progress({
+                "stage": "download",
+                "progress": progress,
+                "overall_progress": 0.12 + progress * 0.12,
+            })
+
+    emit_progress({"stage": "download", "progress": 0.0, "overall_progress": 0.12})
+    model_path = snapshot_download(
+        repo_id=args.model,
+        allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model"],
+        etag_timeout=20,
+        max_workers=4,
+        tqdm_class=QwenDownloadProgress,
+    )
+    emit_progress({"stage": "model_ready", "progress": 1.0, "overall_progress": 0.24})
 
     result = transcribe(
         args.audio,
-        model=args.model,
+        model=model_path,
         language=args.language,
         on_progress=emit_progress,
         verbose=True,

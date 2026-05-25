@@ -492,7 +492,7 @@ struct SettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(L.tr("Output Text", "Текст результата"))
                     .font(.headline)
                     .foregroundStyle(.secondary)
@@ -631,7 +631,7 @@ struct SettingsView: View {
 
                 Divider().padding(.horizontal)
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     if appState.settings.engineType == .cloud {
                         VStack(alignment: .leading, spacing: 8) {
                             Picker(L.tr("Cloud model", "Облачная модель"), selection: $appState.settings.cloudTranscriptionModel) {
@@ -695,7 +695,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            .padding(.vertical)
+            .padding(.vertical, 12)
             .background(Color.primary.opacity(0.03))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
@@ -801,7 +801,13 @@ struct SettingsView: View {
     }
 
     private var qwenASRSettingsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let runtimeReady = dependencyInstaller.isQwenASRRuntimeInstalled
+        let selectedModel = appState.settings.qwenASRModel
+        let selectedModelReady = modelManager.isQwenModelDownloaded(selectedModel)
+        let selectedModelPartial = modelManager.hasPartialQwenModelDownload(selectedModel)
+        let qwenReady = runtimeReady && selectedModelReady
+
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: TranscriptionEngineType.qwenASR.icon)
                     .foregroundStyle(SW.accent)
@@ -818,11 +824,11 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 10) {
-                Image(systemName: dependencyInstaller.isQwenASRRuntimeInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(dependencyInstaller.isQwenASRRuntimeInstalled ? Color.accentColor : .orange)
+                Image(systemName: qwenReady ? "checkmark.circle.fill" : (selectedModelPartial ? "exclamationmark.circle.fill" : "xmark.circle.fill"))
+                    .foregroundStyle(qwenReady ? Color.accentColor : .orange)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(dependencyInstaller.isQwenASRRuntimeInstalled ? L.tr("Qwen3-ASR ready", "Qwen3-ASR готов") : L.tr("Qwen3-ASR not ready", "Qwen3-ASR не готов"))
+                    Text(qwenStatusTitle(runtimeReady: runtimeReady, modelReady: selectedModelReady, partial: selectedModelPartial))
                         .font(.system(size: 13, weight: .semibold))
 
                     if dependencyInstaller.isInstallingQwenASR {
@@ -833,13 +839,13 @@ struct SettingsView: View {
                         Text(L.tr("Apple Silicon is required.", "Нужен Apple Silicon."))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                    } else if !dependencyInstaller.qwenASRStatus.isEmpty {
+                    } else if !dependencyInstaller.qwenASRStatus.isEmpty && !runtimeReady {
                         Text(dependencyInstaller.qwenASRStatus)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .lineLimit(3)
                     } else {
-                        Text(L.tr("Install once before the first Qwen transcription.", "Установите один раз перед первой Qwen-транскрибацией."))
+                        Text(qwenStatusSubtitle(runtimeReady: runtimeReady, modelReady: selectedModelReady, partial: selectedModelPartial, model: selectedModel))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -850,7 +856,12 @@ struct SettingsView: View {
                 if dependencyInstaller.isInstallingQwenASR {
                     ProgressView()
                         .controlSize(.small)
-                } else if dependencyInstaller.isQwenASRRuntimeInstalled {
+                } else if selectedModelPartial {
+                    Button(L.tr("Delete partial", "Удалить partial")) {
+                        modelManager.deleteQwenModel(selectedModel)
+                    }
+                    .buttonStyle(.bordered)
+                } else if runtimeReady {
                     Button(L.tr("Refresh", "Обновить")) {
                         dependencyInstaller.refreshQwenASRStatus()
                     }
@@ -875,9 +886,10 @@ struct SettingsView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                         if let size = modelManager.qwenModelFileSize(model) {
-                            Text(L.tr("Cached: \(size)", "В кэше: \(size)"))
+                            let partial = modelManager.hasPartialQwenModelDownload(model)
+                            Text(partial ? L.tr("Partial: \(size)", "Частично: \(size)") : L.tr("Cached: \(size)", "В кэше: \(size)"))
                                 .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(partial ? .orange : .secondary)
                         }
                     }
 
@@ -895,7 +907,7 @@ struct SettingsView: View {
                         .buttonStyle(.bordered)
                     }
 
-                    if modelManager.isQwenModelDownloaded(model) {
+                    if modelManager.isQwenModelDownloaded(model) || modelManager.hasPartialQwenModelDownload(model) {
                         Button(role: .destructive) {
                             modelManager.deleteQwenModel(model)
                         } label: {
@@ -907,9 +919,35 @@ struct SettingsView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(10)
         .background(Color.primary.opacity(0.035))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func qwenStatusTitle(runtimeReady: Bool, modelReady: Bool, partial: Bool) -> String {
+        if runtimeReady && modelReady {
+            return L.tr("Qwen3-ASR ready", "Qwen3-ASR готов")
+        }
+        if partial {
+            return L.tr("Model download incomplete", "Модель скачана не полностью")
+        }
+        if runtimeReady {
+            return L.tr("Model not installed", "Модель не установлена")
+        }
+        return L.tr("Qwen3-ASR runtime not ready", "Runtime Qwen3-ASR не готов")
+    }
+
+    private func qwenStatusSubtitle(runtimeReady: Bool, modelReady: Bool, partial: Bool, model: QwenASRModel) -> String {
+        if runtimeReady && modelReady {
+            return L.tr("\(model.localizedTitle) is cached locally.", "\(model.localizedTitle) сохранена локально.")
+        }
+        if partial {
+            return L.tr("Delete the partial download or retry transcription.", "Удалите partial-загрузку или повторите транскрибацию.")
+        }
+        if runtimeReady {
+            return L.tr("\(model.localizedTitle) will download on first use.", "\(model.localizedTitle) скачается при первом запуске.")
+        }
+        return L.tr("Install the local runtime first.", "Сначала установите локальный runtime.")
     }
 
     private var whisperCppStatusRow: some View {

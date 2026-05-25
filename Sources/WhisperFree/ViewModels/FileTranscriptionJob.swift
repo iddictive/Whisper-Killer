@@ -4,6 +4,7 @@ import CoreMedia
 enum QueueItemStatus: Equatable {
     case queued
     case extracting
+    case preparing
     case uploading
     case transcribing
     case postProcessing
@@ -15,6 +16,7 @@ enum QueueItemStatus: Equatable {
         switch self {
         case .queued: return L.tr("Queued", "В очереди")
         case .extracting: return L.tr("Preparing", "Подготовка")
+        case .preparing: return L.tr("Preparing model", "Подготовка модели")
         case .uploading: return L.tr("Uploading", "Загрузка")
         case .transcribing: return L.tr("Transcribing", "Транскрибация")
         case .postProcessing: return L.tr("Processing", "Обработка")
@@ -28,6 +30,7 @@ enum QueueItemStatus: Equatable {
         switch self {
         case .queued: return "clock"
         case .extracting: return "waveform"
+        case .preparing: return "arrow.down.circle"
         case .uploading: return "arrow.up.circle"
         case .transcribing: return "text.bubble"
         case .postProcessing: return "sparkles"
@@ -40,7 +43,7 @@ enum QueueItemStatus: Equatable {
     var color: Color {
         switch self {
         case .queued: return SW.secondaryText
-        case .extracting, .uploading, .transcribing, .postProcessing: return SW.accent
+        case .extracting, .preparing, .uploading, .transcribing, .postProcessing: return SW.accent
         case .done: return SW.success
         case .error: return SW.danger
         case .cancelled: return SW.warning
@@ -227,7 +230,9 @@ final class QueueItem: ObservableObject, Identifiable {
                         self.progress = p
                         let isLocalRuntime = runSettings.engineType != .cloud
 
-                        if p < (isLocalRuntime ? 0.15 : 0.10) {
+                        if runSettings.engineType == .qwenASR && p < 0.25 {
+                            self.status = .preparing
+                        } else if p < (isLocalRuntime ? 0.15 : 0.10) {
                             self.status = .extracting
                         } else if !isLocalRuntime && p < 0.30 {
                             self.status = .uploading

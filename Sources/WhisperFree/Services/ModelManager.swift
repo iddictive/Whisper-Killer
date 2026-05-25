@@ -175,6 +175,18 @@ final class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate
         refreshDownloadedModels()
     }
 
+    func hasPartialQwenModelDownload(_ model: QwenASRModel) -> Bool {
+        let hubDirectory = Storage.qwenASRCacheDirectory.appendingPathComponent("hub", isDirectory: true)
+        let blobsDirectory = hubDirectory
+            .appendingPathComponent("models--\(model.cacheDirectoryName)", isDirectory: true)
+            .appendingPathComponent("blobs", isDirectory: true)
+        guard let blobFiles = try? FileManager.default.contentsOfDirectory(
+            at: blobsDirectory,
+            includingPropertiesForKeys: nil
+        ) else { return false }
+        return blobFiles.contains { $0.lastPathComponent.hasSuffix(".incomplete") }
+    }
+
     func qwenModelFileSize(_ model: QwenASRModel) -> String? {
         let hubDirectory = Storage.qwenASRCacheDirectory.appendingPathComponent("hub", isDirectory: true)
         let modelDirectory = hubDirectory.appendingPathComponent("models--\(model.cacheDirectoryName)", isDirectory: true)
