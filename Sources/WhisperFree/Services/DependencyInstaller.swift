@@ -46,6 +46,8 @@ final class DependencyInstaller: ObservableObject {
     @Published var gigaAMStatus: String = ""
     @Published var isInstallingQwenASR = false
     @Published var qwenASRStatus: String = ""
+    @Published var downloadingQwenASRModel: QwenASRModel?
+    @Published var qwenASRModelDownloadProgress: Float = 0
     
     private init() {}
 
@@ -196,6 +198,37 @@ final class DependencyInstaller: ObservableObject {
             qwenASRStatus = "Preparing Qwen3-ASR..."
         } else {
             qwenASRStatus = ""
+        }
+    }
+
+    func downloadQwenASRModel(_ model: QwenASRModel, modelManager: ModelManager, onComplete: (() -> Void)? = nil) {
+        guard downloadingQwenASRModel == nil else { return }
+
+        guard QwenASRTranscriber.isAppleSilicon else {
+            qwenASRStatus = "Qwen3-ASR MLX requires Apple Silicon."
+            return
+        }
+
+        downloadingQwenASRModel = model
+        qwenASRModelDownloadProgress = 0
+        qwenASRStatus = "Downloading \(model.localizedTitle)..."
+
+        Task(priority: .userInitiated) {
+            do {
+                try await QwenASRTranscriber.downloadModel(model) { progress, _ in
+                    Task { @MainActor in
+                        guard self.downloadingQwenASRModel == model else { return }
+                        self.qwenASRModelDownloadProgress = progress
+                    }
+                }
+                modelManager.refreshDownloadedModels()
+                self.qwenASRStatus = "\(model.localizedTitle) downloaded."
+                onComplete?()
+            } catch {
+                self.qwenASRStatus = error.localizedDescription
+            }
+            self.downloadingQwenASRModel = nil
+            self.qwenASRModelDownloadProgress = 0
         }
     }
 

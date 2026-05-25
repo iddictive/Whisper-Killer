@@ -57,30 +57,65 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
 
         let scriptURL = try Self.writeHelperScript()
         let languageName = Self.qwenLanguageName(for: language)
+
+        var args = [
+            scriptURL.path,
+            "--audio", wavURL.path,
+            "--model", model.modelID
+        ]
+        if let languageName {
+            args += ["--language", languageName]
+        }
+
+        let stdout = try await Self.runHelperProcess(
+            python: python,
+            arguments: args,
+            timeoutDescription: "Qwen3-ASR transcription",
+            onProcessStart: { [weak self] process in self?.currentProcess = process },
+            onProcessEnd: { [weak self] in self?.currentProcess = nil },
+            onProgress: onProgress
+        )
+        let text = try Self.parseTranscript(from: stdout)
+        onProgress?(1.0, nil)
+        return text
+    }
+
+    static func downloadModel(_ model: QwenASRModel, onProgress: ((Float, TimeInterval?) -> Void)?) async throws {
+        guard isAppleSilicon else {
+            throw TranscriptionError.transcriptionFailed("Qwen3-ASR MLX requires Apple Silicon.")
+        }
+
+        onProgress?(0.03, nil)
+        let python = try await ensureRuntimeInstalled()
+        onProgress?(0.10, nil)
+
+        let scriptURL = try writeHelperScript()
+        _ = try await runHelperProcess(
+            python: python,
+            arguments: [scriptURL.path, "--model", model.modelID, "--download-only"],
+            timeoutDescription: "Qwen3-ASR model download",
+            onProcessStart: nil,
+            onProcessEnd: nil,
+            onProgress: onProgress
+        )
+        onProgress?(1.0, nil)
+    }
+
+    private static func runHelperProcess(
+        python: String,
+        arguments: [String],
+        timeoutDescription: String,
+        onProcessStart: ((Process) -> Void)?,
+        onProcessEnd: (() -> Void)?,
+        onProgress: ((Float, TimeInterval?) -> Void)?
+    ) async throws -> String {
         let startedAt = Date()
 
         return try await withCheckedThrowingContinuation { continuation in
             let process = Process()
-            self.currentProcess = process
             process.executableURL = URL(fileURLWithPath: python)
-            var args = [
-                scriptURL.path,
-                "--audio", wavURL.path,
-                "--model", model.modelID
-            ]
-            if let languageName {
-                args += ["--language", languageName]
-            }
-            process.arguments = args
-
-            var environment = ProcessInfo.processInfo.environment
-            environment["PYTHONUNBUFFERED"] = "1"
-            environment["HF_HOME"] = Storage.qwenASRCacheDirectory.path
-            environment["HF_HUB_DISABLE_XET"] = "1"
-            environment["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
-            environment["TOKENIZERS_PARALLELISM"] = "false"
-            environment["NO_COLOR"] = "1"
-            process.environment = environment
+            process.arguments = arguments
+            process.environment = qwenProcessEnvironment()
 
             let outputPipe = Pipe()
             let errorPipe = Pipe()
@@ -94,11 +129,10 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
                 guard !chunk.isEmpty else { return }
                 outputAccumulator.append(chunk)
                 guard let text = String(data: chunk, encoding: .utf8) else { return }
-                for progress in Self.parseProgress(from: text) {
-                    let totalProgress = progress
+                for progress in parseProgress(from: text) {
                     let elapsed = Date().timeIntervalSince(startedAt)
-                    let remaining: TimeInterval? = totalProgress > 0.25 ? max(0, elapsed / Double(totalProgress) - elapsed) : nil
-                    onProgress?(totalProgress, remaining)
+                    let remaining: TimeInterval? = progress > 0.25 ? max(0, elapsed / Double(progress) - elapsed) : nil
+                    onProgress?(progress, remaining)
                 }
             }
 
@@ -120,8 +154,8 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
             }
             timer.resume()
 
-            process.terminationHandler = { [weak self] p in
-                self?.currentProcess = nil
+            process.terminationHandler = { p in
+                onProcessEnd?()
                 timer.cancel()
                 outputPipe.fileHandleForReading.readabilityHandler = nil
                 errorPipe.fileHandleForReading.readabilityHandler = nil
@@ -130,15 +164,9 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
                 let stderr = String(data: errorAccumulator.getData(), encoding: .utf8) ?? ""
 
                 if p.terminationStatus == 0 {
-                    do {
-                        let text = try Self.parseTranscript(from: stdout)
-                        onProgress?(1.0, nil)
-                        continuation.resume(returning: text)
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
+                    continuation.resume(returning: stdout)
                 } else if timedOut.get() {
-                    continuation.resume(throwing: TranscriptionError.transcriptionFailed("Qwen3-ASR transcription timed out after \(Int(timeoutSeconds)) seconds."))
+                    continuation.resume(throwing: TranscriptionError.transcriptionFailed("\(timeoutDescription) timed out after \(Int(timeoutSeconds)) seconds."))
                 } else {
                     let message = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
                     continuation.resume(throwing: TranscriptionError.transcriptionFailed(message.isEmpty ? "Qwen3-ASR exited with code \(p.terminationStatus)." : message))
@@ -147,11 +175,23 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
 
             do {
                 try process.run()
+                onProcessStart?(process)
             } catch {
                 timer.cancel()
                 continuation.resume(throwing: TranscriptionError.transcriptionFailed(error.localizedDescription))
             }
         }
+    }
+
+    private static func qwenProcessEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        environment["PYTHONUNBUFFERED"] = "1"
+        environment["HF_HOME"] = Storage.qwenASRCacheDirectory.path
+        environment["HF_HUB_DISABLE_XET"] = "1"
+        environment["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+        environment["TOKENIZERS_PARALLELISM"] = "false"
+        environment["NO_COLOR"] = "1"
+        return environment
     }
 
     static var isAppleSilicon: Bool {
@@ -611,9 +651,10 @@ def emit_progress(event):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--audio", required=True)
+    parser.add_argument("--audio")
     parser.add_argument("--model", required=True)
     parser.add_argument("--language")
+    parser.add_argument("--download-only", action="store_true")
     args = parser.parse_args()
 
     from huggingface_hub import snapshot_download
@@ -648,6 +689,13 @@ def main():
         tqdm_class=QwenDownloadProgress,
     )
     emit_progress({"stage": "model_ready", "progress": 1.0, "overall_progress": 0.24})
+
+    if args.download_only:
+        print("__WHISPERFREE_QWEN_RESULT__" + json.dumps({"text": ""}, ensure_ascii=False), flush=True)
+        return
+
+    if not args.audio:
+        parser.error("--audio is required unless --download-only is set")
 
     result = transcribe(
         args.audio,

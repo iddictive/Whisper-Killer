@@ -610,24 +610,48 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
+    private var engineSelector: some View {
+        HStack(spacing: 0) {
+            ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
+                Button {
+                    appState.settings.engineType = type
+                    if type == .qwenASR {
+                        appState.settings.qwenASRModel = QwenASRModel.recommended
+                    }
+                    appState.saveSettings()
+                } label: {
+                    Text(type.localizedTitle)
+                        .font(.system(size: 12, weight: appState.settings.engineType == type ? .semibold : .regular))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .frame(maxWidth: .infinity, minHeight: 30)
+                        .padding(.horizontal, 6)
+                        .foregroundStyle(appState.settings.engineType == type ? .primary : .secondary)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(appState.settings.engineType == type ? Color(nsColor: .controlBackgroundColor).opacity(0.92) : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                if type != TranscriptionEngineType.allCases.last {
+                    Divider()
+                        .frame(height: 18)
+                }
+            }
+        }
+        .padding(3)
+        .background(Color.primary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
     @ViewBuilder
     private var engineSection: some View {
         VStack(alignment: .leading, spacing: 16) {
 
             VStack(alignment: .leading, spacing: 16) {
-                Picker(L.tr("Model Source", "Источник модели"), selection: $appState.settings.engineType) {
-                    ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
-                        Label(type.localizedTitle, systemImage: type.icon).tag(type)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .onChange(of: appState.settings.engineType) { _, newValue in
-                    if newValue == .qwenASR {
-                        appState.settings.qwenASRModel = QwenASRModel.recommended
-                    }
-                    appState.saveSettings()
-                }
+                engineSelector
+                    .padding(.horizontal)
 
                 Divider().padding(.horizontal)
 
@@ -805,6 +829,7 @@ struct SettingsView: View {
         let selectedModel = appState.settings.qwenASRModel
         let selectedModelReady = modelManager.isQwenModelDownloaded(selectedModel)
         let selectedModelPartial = modelManager.hasPartialQwenModelDownload(selectedModel)
+        let selectedModelDownloading = dependencyInstaller.downloadingQwenASRModel == selectedModel
         let qwenReady = runtimeReady && selectedModelReady
 
         return VStack(alignment: .leading, spacing: 10) {
@@ -828,10 +853,14 @@ struct SettingsView: View {
                     .foregroundStyle(qwenReady ? Color.accentColor : .orange)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(qwenStatusTitle(runtimeReady: runtimeReady, modelReady: selectedModelReady, partial: selectedModelPartial))
+                    Text(selectedModelDownloading ? L.tr("Downloading model", "Скачивание модели") : qwenStatusTitle(runtimeReady: runtimeReady, modelReady: selectedModelReady, partial: selectedModelPartial))
                         .font(.system(size: 13, weight: .semibold))
 
-                    if dependencyInstaller.isInstallingQwenASR {
+                    if selectedModelDownloading {
+                        ProgressView(value: Double(dependencyInstaller.qwenASRModelDownloadProgress))
+                            .progressViewStyle(.linear)
+                            .frame(maxWidth: 240)
+                    } else if dependencyInstaller.isInstallingQwenASR {
                         Text(L.tr("Preparing local transcription...", "Подготавливаю локальную транскрибацию..."))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
@@ -856,11 +885,17 @@ struct SettingsView: View {
                 if dependencyInstaller.isInstallingQwenASR {
                     ProgressView()
                         .controlSize(.small)
-                } else if selectedModelPartial {
-                    Button(L.tr("Delete partial", "Удалить partial")) {
-                        modelManager.deleteQwenModel(selectedModel)
+                } else if selectedModelDownloading {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if runtimeReady && !selectedModelReady {
+                    Button(selectedModelPartial ? L.tr("Retry", "Повторить") : L.tr("Download", "Скачать")) {
+                        if selectedModelPartial {
+                            modelManager.deleteQwenModel(selectedModel)
+                        }
+                        dependencyInstaller.downloadQwenASRModel(selectedModel, modelManager: modelManager)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
                 } else if runtimeReady {
                     Button(L.tr("Refresh", "Обновить")) {
                         dependencyInstaller.refreshQwenASRStatus()
@@ -878,6 +913,10 @@ struct SettingsView: View {
             Divider()
 
             ForEach(QwenASRModel.allCases, id: \.self) { model in
+                let modelReady = modelManager.isQwenModelDownloaded(model)
+                let modelPartial = modelManager.hasPartialQwenModelDownload(model)
+                let modelDownloading = dependencyInstaller.downloadingQwenASRModel == model
+
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(model.localizedTitle)
@@ -886,28 +925,47 @@ struct SettingsView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                         if let size = modelManager.qwenModelFileSize(model) {
-                            let partial = modelManager.hasPartialQwenModelDownload(model)
-                            Text(partial ? L.tr("Partial: \(size)", "Частично: \(size)") : L.tr("Cached: \(size)", "В кэше: \(size)"))
+                            Text(modelPartial ? L.tr("Partial: \(size)", "Частично: \(size)") : L.tr("Cached: \(size)", "В кэше: \(size)"))
                                 .font(.system(size: 10))
-                                .foregroundStyle(partial ? .orange : .secondary)
+                                .foregroundStyle(modelPartial ? .orange : .secondary)
+                        } else if modelDownloading {
+                            Text(L.tr("Downloading...", "Скачивается..."))
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
                         }
                     }
 
                     Spacer()
 
-                    if appState.settings.qwenASRModel == model {
+                    if modelDownloading {
+                        ProgressView(value: Double(dependencyInstaller.qwenASRModelDownloadProgress))
+                            .progressViewStyle(.linear)
+                            .frame(width: 82)
+                    } else if appState.settings.qwenASRModel == model && modelReady {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(Color.accentColor)
                             .font(.title3)
-                    } else {
+                    } else if modelReady {
                         Button(L.tr("Use", "Использовать")) {
                             appState.settings.qwenASRModel = model
                             appState.saveSettings()
                         }
                         .buttonStyle(.bordered)
+                    } else {
+                        Button(modelPartial ? L.tr("Retry", "Повторить") : L.tr("Download", "Скачать")) {
+                            if modelPartial {
+                                modelManager.deleteQwenModel(model)
+                            }
+                            dependencyInstaller.downloadQwenASRModel(model, modelManager: modelManager) {
+                                self.appState.settings.qwenASRModel = model
+                                self.appState.saveSettings()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(dependencyInstaller.downloadingQwenASRModel != nil)
                     }
 
-                    if modelManager.isQwenModelDownloaded(model) || modelManager.hasPartialQwenModelDownload(model) {
+                    if modelReady || modelPartial {
                         Button(role: .destructive) {
                             modelManager.deleteQwenModel(model)
                         } label: {
