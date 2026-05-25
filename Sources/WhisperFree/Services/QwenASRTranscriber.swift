@@ -76,6 +76,8 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
             var environment = ProcessInfo.processInfo.environment
             environment["PYTHONUNBUFFERED"] = "1"
             environment["HF_HOME"] = Storage.qwenASRCacheDirectory.path
+            environment["HF_HUB_DISABLE_XET"] = "1"
+            environment["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
             environment["TOKENIZERS_PARALLELISM"] = "false"
             environment["NO_COLOR"] = "1"
             process.environment = environment

@@ -13,6 +13,7 @@ enum AppRecordingState: Equatable {
 
 enum ProcessingStage: String {
     case converting = "Converting..."
+    case preparing = "Preparing local engine..."
     case transcribing = "Transcribing..."
     case postProcessing = "Post-processing..."
     case none = ""
@@ -839,6 +840,16 @@ final class AppState: ObservableObject {
         return true
     }
 
+    private func initialTranscriptionStage(for settings: AppSettings) -> ProcessingStage {
+        guard settings.engineType == .qwenASR else {
+            return .transcribing
+        }
+
+        let runtimeReady = QwenASRTranscriber.isRuntimeInstalled
+        let modelReady = modelManager.isQwenModelDownloaded(settings.qwenASRModel)
+        return runtimeReady && modelReady ? .transcribing : .preparing
+    }
+
     func startRecording() {
         guard state == .idle else { return }
         guard validateTranscriptionPrerequisites(requiresMicrophone: true) else {
@@ -964,7 +975,7 @@ final class AppState: ObservableObject {
 
         lastError = nil
         state = .processing
-        processingStage = .transcribing
+        processingStage = initialTranscriptionStage(for: settings)
 
         defer {
             currentEngine = nil
@@ -978,6 +989,7 @@ final class AppState: ObservableObject {
             let fileSize = fileAttrs?[.size] as? Int64 ?? 0
             print("whisper_debug: 🔁 Retranscribing audio file: \(audioURL.lastPathComponent), size: \(fileSize) bytes")
 
+            processingStage = initialTranscriptionStage(for: settings)
             let engine = TranscriptionEngineFactory.create(for: settings.engineType, settings: settings)
             currentEngine = engine
 
@@ -1155,6 +1167,7 @@ final class AppState: ObservableObject {
                 print("whisper_debug: ⚠️ WARNING: Audio file is suspiciously small (\(fileSize) bytes)!")
             }
 
+            updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: initialTranscriptionStage(for: settings))
             let engine = TranscriptionEngineFactory.create(for: settings.engineType, settings: settings)
             currentEngine = engine
             let lang = settings.language == "auto" ? nil : settings.language

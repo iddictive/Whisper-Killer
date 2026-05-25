@@ -17,7 +17,7 @@ safe_rm() {
 }
 
 safe_cp() {
-    cp -R "$1" "$2" 2>/dev/null || sudo cp -R "$1" "$2"
+    ditto --norsrc --noextattr "$1" "$2/$(basename "$1")" 2>/dev/null || sudo ditto --norsrc --noextattr "$1" "$2/$(basename "$1")"
 }
 
 safe_chown() {

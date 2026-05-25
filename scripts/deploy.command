@@ -84,42 +84,59 @@ if [ $? -eq 0 ]; then
         cp "$ICON_FILE" "$BUNDLE_NAME/Contents/Resources/AppIcon.icns"
     fi
 
+    APP_BUNDLE_PATH="$BUNDLE_NAME"
     ENTITLEMENTS="Sources/WhisperFree/Resources/WhisperKiller.entitlements"
-    echo "🔑 Signing $BUNDLE_NAME with entitlements..."
-    rm -rf "$BUNDLE_NAME/Contents/_CodeSignature"
-    dot_clean -m "$BUNDLE_NAME" 2>/dev/null || true
-    find "$BUNDLE_NAME" -name '._*' -delete
-    find "$BUNDLE_NAME" -print0 | xargs -0 xattr -c 2>/dev/null || true
+    echo "🔑 Signing $APP_BUNDLE_PATH with entitlements..."
+    rm -rf "$APP_BUNDLE_PATH/Contents/_CodeSignature"
+    dot_clean -m "$APP_BUNDLE_PATH" 2>/dev/null || true
+    find "$APP_BUNDLE_PATH" -name '._*' -delete
+    find "$APP_BUNDLE_PATH" -print0 | xargs -0 xattr -c 2>/dev/null || true
     SIGNING_IDENTITY=$(resolve_signing_identity)
     if [ -n "$SIGNING_IDENTITY" ]; then
         echo "✅ Using signing identity: $SIGNING_IDENTITY"
-        SIGN_COMMAND=(codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$BUNDLE_NAME")
+        SIGN_COMMAND=(codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$APP_BUNDLE_PATH")
     else
         echo "⚠️  Developer ID Application identity not found. Falling back to ad-hoc signing."
         echo "⚠️  Ad-hoc signed builds may cause macOS to treat each install as a new app and ask for permissions again."
-        SIGN_COMMAND=(codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "-" "$BUNDLE_NAME")
+        SIGN_COMMAND=(codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "-" "$APP_BUNDLE_PATH")
     fi
 
     if ! "${SIGN_COMMAND[@]}"; then
         echo "⚠️  First signing pass failed after xattr cleanup. Retrying once..."
-        rm -rf "$BUNDLE_NAME/Contents/_CodeSignature"
-        dot_clean -m "$BUNDLE_NAME" 2>/dev/null || true
-        find "$BUNDLE_NAME" -name '._*' -delete
-        find "$BUNDLE_NAME" -print0 | xargs -0 xattr -c 2>/dev/null || true
-        "${SIGN_COMMAND[@]}"
+        rm -rf "$APP_BUNDLE_PATH/Contents/_CodeSignature"
+        dot_clean -m "$APP_BUNDLE_PATH" 2>/dev/null || true
+        find "$APP_BUNDLE_PATH" -name '._*' -delete
+        find "$APP_BUNDLE_PATH" -print0 | xargs -0 xattr -c 2>/dev/null || true
+        if ! "${SIGN_COMMAND[@]}"; then
+            echo "⚠️  Repo-root signing still failed. Retrying from clean temp staging..."
+            STAGE_ROOT="$(mktemp -d)"
+            STAGED_BUNDLE="$STAGE_ROOT/$BUNDLE_NAME"
+            ditto --norsrc --noextattr "$APP_BUNDLE_PATH" "$STAGED_BUNDLE"
+            rm -rf "$STAGED_BUNDLE/Contents/_CodeSignature"
+            dot_clean -m "$STAGED_BUNDLE" 2>/dev/null || true
+            find "$STAGED_BUNDLE" -name '._*' -delete
+            find "$STAGED_BUNDLE" -print0 | xargs -0 xattr -c 2>/dev/null || true
+            if [ -n "$SIGNING_IDENTITY" ]; then
+                codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$STAGED_BUNDLE"
+            else
+                codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "-" "$STAGED_BUNDLE"
+            fi
+            codesign --verify --deep --strict "$STAGED_BUNDLE"
+            APP_BUNDLE_PATH="$STAGED_BUNDLE"
+        fi
     fi
 
-    dot_clean -m "$BUNDLE_NAME" 2>/dev/null || true
-    find "$BUNDLE_NAME" -name '._*' -delete
-    find "$BUNDLE_NAME" -print0 | xargs -0 xattr -c 2>/dev/null || true
-    codesign --verify --deep --strict "$BUNDLE_NAME"
+    dot_clean -m "$APP_BUNDLE_PATH" 2>/dev/null || true
+    find "$APP_BUNDLE_PATH" -name '._*' -delete
+    find "$APP_BUNDLE_PATH" -print0 | xargs -0 xattr -c 2>/dev/null || true
+    codesign --verify --deep --strict "$APP_BUNDLE_PATH"
 
     # 5. Build a classic drag-to-Applications DMG for releases
     echo "💿 Creating drag-to-Applications DMG..."
     mkdir -p "$DIST_DIR"
     DMG_ROOT="$(mktemp -d)"
     DMG_PATH="$DIST_DIR/$APP_NAME-$VERSION.dmg"
-    ditto --norsrc --noextattr "$BUNDLE_NAME" "$DMG_ROOT/$BUNDLE_NAME"
+    ditto --norsrc --noextattr "$APP_BUNDLE_PATH" "$DMG_ROOT/$BUNDLE_NAME"
     dot_clean -m "$DMG_ROOT/$BUNDLE_NAME" 2>/dev/null || true
     find "$DMG_ROOT/$BUNDLE_NAME" -name '._*' -delete
     find "$DMG_ROOT/$BUNDLE_NAME" -print0 | xargs -0 xattr -c 2>/dev/null || true
@@ -136,6 +153,11 @@ if [ $? -eq 0 ]; then
 
     # 6. Fix Permissions & Relocate
     echo "🏗️ Relocating to /Applications and fixing permissions..."
+    if [ "$APP_BUNDLE_PATH" != "$BUNDLE_NAME" ]; then
+        rm -rf "$BUNDLE_NAME"
+        ditto --norsrc --noextattr "$APP_BUNDLE_PATH" "$BUNDLE_NAME"
+        rm -rf "$(dirname "$APP_BUNDLE_PATH")"
+    fi
     if [ -f "./scripts/fix_accessibility.sh" ]; then
         bash ./scripts/fix_accessibility.sh
     else

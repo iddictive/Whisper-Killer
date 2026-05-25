@@ -134,6 +134,15 @@ final class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate
         let hubDirectory = Storage.qwenASRCacheDirectory.appendingPathComponent("hub", isDirectory: true)
         let modelDirectory = hubDirectory.appendingPathComponent("models--\(model.cacheDirectoryName)", isDirectory: true)
         let snapshotsDirectory = modelDirectory.appendingPathComponent("snapshots", isDirectory: true)
+        let blobsDirectory = modelDirectory.appendingPathComponent("blobs", isDirectory: true)
+
+        if let blobFiles = try? FileManager.default.contentsOfDirectory(
+            at: blobsDirectory,
+            includingPropertiesForKeys: nil
+        ), blobFiles.contains(where: { $0.lastPathComponent.hasSuffix(".incomplete") }) {
+            return false
+        }
+
         guard FileManager.default.fileExists(atPath: snapshotsDirectory.path),
               let snapshots = try? FileManager.default.contentsOfDirectory(
                 at: snapshotsDirectory,
@@ -142,8 +151,20 @@ final class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate
         else { return false }
 
         return snapshots.contains { snapshot in
-            let config = snapshot.appendingPathComponent("config.json")
-            return FileManager.default.fileExists(atPath: config.path)
+            guard let files = try? FileManager.default.contentsOfDirectory(
+                at: snapshot,
+                includingPropertiesForKeys: nil
+            ) else { return false }
+
+            let hasConfig = files.contains { $0.lastPathComponent == "config.json" }
+            let hasWeights = files.contains { file in
+                let name = file.lastPathComponent.lowercased()
+                return name.hasSuffix(".safetensors")
+                    || name.hasSuffix(".bin")
+                    || name.hasSuffix(".npz")
+                    || name.contains("model")
+            }
+            return hasConfig && hasWeights
         }
     }
 

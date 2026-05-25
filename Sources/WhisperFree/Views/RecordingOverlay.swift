@@ -162,6 +162,7 @@ struct RecordingOverlayContent: View {
     private var localizedProcessingStage: String {
         switch appState.processingStage {
         case .converting: return L.tr("Converting...", "Конвертация...")
+        case .preparing: return L.tr("Preparing local model...", "Подготовка локальной модели...")
         case .transcribing: return L.tr("Transcribing...", "Транскрибация...")
         case .postProcessing: return L.tr("Post-processing...", "Постобработка...")
         case .none: return L.tr("Processing...", "Обработка...")
