@@ -140,9 +140,6 @@ final class CloudWhisper: TranscriptionEngine {
         var body = Data()
         body.appendMultipart(boundary: boundary, name: "model", value: model.apiName)
         
-        let suppressionPrompt = "Return only spoken participant speech. Ignore subtitle/editor credits, title cards, and unrelated silence repetitions. Вернуть только речь участников; игнорировать титры, подписи редакторов, заставки и несвязанные повторы во время тишины."
-        body.appendMultipart(boundary: boundary, name: "prompt", value: suppressionPrompt)
-        
         if let lang = language, lang != "auto" {
             body.appendMultipart(boundary: boundary, name: "language", value: lang)
         }
