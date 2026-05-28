@@ -118,9 +118,12 @@ struct RecordingOverlayContent: View {
         .padding(.vertical, 10)
         .fixedSize()
         .background(
-            ZStack {
+            ZStack(alignment: .leading) {
                 Capsule().fill(.ultraThinMaterial)
                 Capsule().fill(Color.black.opacity(0.45))
+                if appState.isProcessingActive {
+                    processingProgressFill(cornerRadius: SW.radiusLarge, opacity: 0.10)
+                }
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: SW.radiusLarge, style: .continuous))
@@ -192,13 +195,36 @@ struct RecordingOverlayContent: View {
         .foregroundStyle(SW.warning)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).fill(SW.warning.opacity(0.15)))
+        .background(
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous)
+                    .fill(SW.warning.opacity(0.15))
+                processingProgressFill(cornerRadius: SW.radiusSmall, opacity: 0.12)
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
     }
 
     private var backgroundProcessingLabel: String {
         appState.backgroundProcessingCount > 1
             ? L.tr("Processing \(appState.backgroundProcessingCount)", "Обработка \(appState.backgroundProcessingCount)")
             : L.tr("Processing", "Обработка")
+    }
+
+    private var visibleProcessingProgress: CGFloat {
+        guard appState.isProcessingActive else { return 0 }
+        return CGFloat(max(0.04, min(appState.processingProgress, 1)))
+    }
+
+    private func processingProgressFill(cornerRadius: CGFloat, opacity: Double) -> some View {
+        GeometryReader { proxy in
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(opacity))
+                .frame(width: proxy.size.width * visibleProcessingProgress)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+        .allowsHitTesting(false)
+        .animation(.easeOut(duration: 0.24), value: appState.processingProgress)
     }
 
     private var cancelButton: some View {

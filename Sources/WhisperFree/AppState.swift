@@ -28,6 +28,7 @@ private struct RecordingProcessingJob {
     var rawText: String = ""
     var processedText: String = ""
     var stage: ProcessingStage = .transcribing
+    var progress: Float = 0
 }
 
 
@@ -45,6 +46,7 @@ final class AppState: ObservableObject {
     @Published var fileTranscriptionImportRequest: FileTranscriptionImportRequest?
     @Published var googleMeetImportRequestID: UUID?
     @Published private(set) var backgroundProcessingCount: Int = 0
+    @Published private(set) var processingProgress: Float = 0
     @Published var aiChatConversations: [AIChatConversation] = []
     @Published var availableAIChatModels: [String] = []
     @Published var isLoadingAIChatModels = false
@@ -976,11 +978,13 @@ final class AppState: ObservableObject {
         lastError = nil
         state = .processing
         processingStage = initialTranscriptionStage(for: settings)
+        processingProgress = 0
 
         defer {
             currentEngine = nil
             state = .idle
             processingStage = .none
+            processingProgress = 0
         }
 
         do {
@@ -994,7 +998,11 @@ final class AppState: ObservableObject {
             currentEngine = engine
 
             let lang = settings.language == "auto" ? nil : settings.language
-            let rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil, onProgress: nil)
+            let rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil) { [weak self] progress, _ in
+                Task { @MainActor in
+                    self?.processingProgress = Self.clampedProcessingProgress(progress)
+                }
+            }
 
             guard !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 showError("No speech detected. Try a different recording.")
@@ -1015,10 +1023,12 @@ final class AppState: ObservableObject {
                 print("ℹ️ Using native OpenAI diarization; skipping standard AI refinement.")
             } else if shouldRunStandardPostProcessing {
                 processingStage = .postProcessing
+                processingProgress = max(processingProgress, 0.86)
                 do {
                     let processor = PostProcessor(settings: settings)
                     let result = try await processor.process(text: rawText, mode: settings.selectedMode)
                     processedText = result.text
+                    processingProgress = max(processingProgress, 0.96)
 
                     let totalTokens = result.promptTokens + result.completionTokens
                     if totalTokens > 0 {
@@ -1110,6 +1120,7 @@ final class AppState: ObservableObject {
 
         var job = processingQueue.removeFirst()
         job.stage = .transcribing
+        job.progress = 0
         activeProcessingRecording = job
         currentProcessingToken = job.id
         refreshBackgroundProcessingState()
@@ -1147,13 +1158,20 @@ final class AppState: ObservableObject {
             let lang = settings.language == "auto" ? nil : settings.language
             let engineType = settings.engineType
             rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil) { [weak self] progress, _ in
-                guard engineType == .qwenASR else { return }
-                let stage: ProcessingStage = progress < 0.25 ? .preparing : .transcribing
+                let stage: ProcessingStage? = engineType == .qwenASR
+                    ? (progress < 0.25 ? .preparing : .transcribing)
+                    : nil
                 Task { @MainActor in
-                    self?.updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: stage)
+                    self?.updateActiveProcessingText(
+                        for: jobID,
+                        rawText: nil,
+                        processedText: nil,
+                        stage: stage,
+                        progress: Self.clampedProcessingProgress(progress)
+                    )
                 }
             }
-            updateActiveProcessingText(for: jobID, rawText: rawText, processedText: nil, stage: nil)
+            updateActiveProcessingText(for: jobID, rawText: rawText, processedText: nil, stage: nil, progress: 0.82)
             if currentProcessingToken == jobID {
                 currentEngine = nil
             }
@@ -1191,13 +1209,13 @@ final class AppState: ObservableObject {
             if shouldUseNativeDiarization {
                 print("ℹ️ Using native OpenAI diarization; skipping standard AI refinement.")
             } else if shouldRunStandardPostProcessing {
-                updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: .postProcessing)
+                updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: .postProcessing, progress: 0.86)
                 do {
                     let processor = PostProcessor(settings: settings)
                     let result = try await processor.process(text: rawText, mode: settings.selectedMode)
                     try Task.checkCancellation()
                     processedText = result.text
-                    updateActiveProcessingText(for: jobID, rawText: nil, processedText: processedText, stage: nil)
+                    updateActiveProcessingText(for: jobID, rawText: nil, processedText: processedText, stage: nil, progress: 0.96)
 
                     let totalTokens = result.promptTokens + result.completionTokens
                     if totalTokens > 0 {
@@ -1320,10 +1338,12 @@ final class AppState: ObservableObject {
     private func refreshBackgroundProcessingState() {
         backgroundProcessingCount = processingQueue.count + (activeProcessingRecording == nil ? 0 : 1)
 
-        if let stage = activeProcessingRecording?.stage {
-            processingStage = stage
+        if let activeProcessingRecording {
+            processingStage = activeProcessingRecording.stage
+            processingProgress = activeProcessingRecording.progress
         } else if backgroundProcessingCount == 0 && state != .processing {
             processingStage = .none
+            processingProgress = 0
         }
 
         showOverlayWindow = shouldShowOverlay
@@ -1342,7 +1362,7 @@ final class AppState: ObservableObject {
         startNextProcessingJobIfNeeded()
     }
 
-    private func updateActiveProcessingText(for jobID: UUID, rawText: String?, processedText: String?, stage: ProcessingStage?) {
+    private func updateActiveProcessingText(for jobID: UUID, rawText: String?, processedText: String?, stage: ProcessingStage?, progress: Float? = nil) {
         guard var recording = activeProcessingRecording, recording.id == jobID else { return }
         if let rawText {
             recording.rawText = rawText
@@ -1353,8 +1373,15 @@ final class AppState: ObservableObject {
         if let stage {
             recording.stage = stage
         }
+        if let progress {
+            recording.progress = Self.clampedProcessingProgress(progress)
+        }
         activeProcessingRecording = recording
         refreshBackgroundProcessingState()
+    }
+
+    private static func clampedProcessingProgress(_ progress: Float) -> Float {
+        min(max(progress, 0), 1)
     }
 
     private func saveCancelledRecordingHistoryEntry(
