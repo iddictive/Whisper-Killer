@@ -168,6 +168,8 @@ extension CloudTranscriptionModel {
             return "GPT-4o Mini Transcribe"
         case .gpt4oTranscribe:
             return "GPT-4o Transcribe"
+        case .gpt4oTranscribeDiarize:
+            return "GPT-4o Transcribe Diarize"
         }
     }
 
@@ -179,6 +181,8 @@ extension CloudTranscriptionModel {
             return L.tr("Newer speech-to-text model with better recognition than Whisper-1 at lower cost than full GPT-4o Transcribe.", "Новая speech-to-text модель с лучшим распознаванием, чем у Whisper-1, и более низкой ценой, чем у полного GPT-4o Transcribe.")
         case .gpt4oTranscribe:
             return L.tr("Highest accuracy OpenAI transcription model in this app.", "Самая точная OpenAI-модель транскрибации в этом приложении.")
+        case .gpt4oTranscribeDiarize:
+            return L.tr("OpenAI transcription model with native speaker diarization.", "OpenAI-модель транскрибации с нативной диаризацией спикеров.")
         }
     }
 }

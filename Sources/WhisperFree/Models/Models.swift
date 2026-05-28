@@ -345,9 +345,18 @@ enum CloudTranscriptionModel: String, Codable, CaseIterable {
     case whisper1 = "whisper-1"
     case gpt4oMiniTranscribe = "gpt-4o-mini-transcribe"
     case gpt4oTranscribe = "gpt-4o-transcribe"
+    case gpt4oTranscribeDiarize = "gpt-4o-transcribe-diarize"
+
+    static var allCases: [CloudTranscriptionModel] {
+        [.whisper1, .gpt4oMiniTranscribe, .gpt4oTranscribe]
+    }
 
     var apiName: String {
         rawValue
+    }
+
+    var usesNativeDiarization: Bool {
+        self == .gpt4oTranscribeDiarize
     }
 
     var pricePerMinute: Double {
@@ -357,6 +366,8 @@ enum CloudTranscriptionModel: String, Codable, CaseIterable {
         case .gpt4oMiniTranscribe:
             return 0.003
         case .gpt4oTranscribe:
+            return 0.006
+        case .gpt4oTranscribeDiarize:
             return 0.006
         }
     }
@@ -730,7 +741,15 @@ struct AppSettings: Codable {
     }
 
     var canUseSpeakerDiarization: Bool {
-        hasOpenAIAPIKey
+        engineType == .cloud && hasOpenAIAPIKey
+    }
+
+    var usesNativeCloudSpeakerDiarization: Bool {
+        enableSpeakerDiarization && canUseSpeakerDiarization
+    }
+
+    var effectiveCloudTranscriptionModel: CloudTranscriptionModel {
+        usesNativeCloudSpeakerDiarization ? .gpt4oTranscribeDiarize : cloudTranscriptionModel
     }
 
     func isModeEnabled(_ mode: TranscriptionMode) -> Bool {
@@ -753,6 +772,12 @@ struct AppSettings: Codable {
 
     mutating func normalizeBeforeSaving() {
         apiKey = normalizedAPIKey
+        if cloudTranscriptionModel.usesNativeDiarization {
+            cloudTranscriptionModel = .gpt4oTranscribe
+        }
+        if !canUseSpeakerDiarization {
+            enableSpeakerDiarization = false
+        }
         selectedModeName = validatedModeName(currentName: selectedModeName)
     }
 

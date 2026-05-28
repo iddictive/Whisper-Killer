@@ -60,7 +60,7 @@ struct TranscriptionEngineFactory {
     static func create(for type: TranscriptionEngineType, settings: AppSettings) -> TranscriptionEngine {
         switch type {
         case .cloud:
-            return CloudWhisper(apiKey: settings.normalizedAPIKey, model: settings.cloudTranscriptionModel)
+            return CloudWhisper(apiKey: settings.normalizedAPIKey, model: settings.effectiveCloudTranscriptionModel)
         case .local:
             return LocalWhisper(modelSize: settings.localModelSize)
         case .qwenASR:

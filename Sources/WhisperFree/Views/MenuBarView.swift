@@ -433,11 +433,11 @@ struct MenuBarView: View {
 
     private var diarizationButton: some View {
         Button {
-            if appState.settings.canUseSpeakerDiarization || appState.settings.enableSpeakerDiarization {
+            if appState.settings.canUseSpeakerDiarization {
                 appState.settings.enableSpeakerDiarization.toggle()
                 appState.saveSettings()
             } else {
-                appState.showError(L.tr("Add an OpenAI API key to use diarization.", "Добавьте OpenAI API key, чтобы включить диаризацию."))
+                appState.showError(L.tr("Use Cloud (OpenAI) and add an OpenAI API key to use diarization.", "Для диаризации выберите Облако (OpenAI) и добавьте OpenAI API key."))
             }
         } label: {
             HStack(spacing: 5) {
@@ -458,8 +458,8 @@ struct MenuBarView: View {
         .buttonStyle(.plain)
         .fixedSize()
         .help(appState.settings.canUseSpeakerDiarization
-              ? L.tr("Toggle speaker diarization for transcription post-processing.", "Включить или выключить диаризацию спикеров для обработки транскрипций.")
-              : L.tr("OpenAI API key is required for diarization.", "Для диаризации нужен OpenAI API key."))
+              ? L.tr("Toggle native OpenAI speaker diarization.", "Включить или выключить нативную OpenAI-диаризацию спикеров.")
+              : L.tr("Cloud (OpenAI) and an OpenAI API key are required for diarization.", "Для диаризации нужны Облако (OpenAI) и OpenAI API key."))
     }
 
     private var recordButton: some View {

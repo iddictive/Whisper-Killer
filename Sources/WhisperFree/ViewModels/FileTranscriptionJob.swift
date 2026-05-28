@@ -66,7 +66,7 @@ struct TranscriptionRunProvenance: Equatable {
 
     init(settings: AppSettings) {
         self.engineType = settings.engineType
-        self.cloudModel = settings.engineType == .cloud ? settings.cloudTranscriptionModel : nil
+        self.cloudModel = settings.engineType == .cloud ? settings.effectiveCloudTranscriptionModel : nil
         self.language = settings.language
         self.modeName = settings.selectedMode.name
     }
@@ -170,7 +170,7 @@ final class QueueItem: ObservableObject, Identifiable {
         }
 
         guard settings.engineType == .cloud else { return nil }
-        return CostEstimate.audio(durationSeconds: selectedDuration, model: settings.cloudTranscriptionModel)
+        return CostEstimate.audio(durationSeconds: selectedDuration, model: settings.effectiveCloudTranscriptionModel)
     }
 
     func saveResultAsMarkdown() {
@@ -246,14 +246,14 @@ final class QueueItem: ObservableObject, Identifiable {
                 var totalPromptTokens = 0
                 var totalCompletionTokens = 0
                 var usage: UsageLog? = nil
-                let shouldRunDiarization = runSettings.enableSpeakerDiarization && runSettings.canUseSpeakerDiarization
-                let shouldRunStandardPostProcessing = !shouldRunDiarization
+                let shouldUseNativeDiarization = runSettings.usesNativeCloudSpeakerDiarization
+                let shouldRunStandardPostProcessing = !shouldUseNativeDiarization
                     && runSettings.enablePostProcessing
                     && runSettings.selectedMode.name != "Raw"
                     && !runSettings.selectedMode.systemPrompt.isEmpty
 
-                if shouldRunDiarization {
-                    print("Skipping standard AI refinement because diarization is active.")
+                if shouldUseNativeDiarization {
+                    print("Using native OpenAI diarization; skipping standard AI refinement.")
                 } else if shouldRunStandardPostProcessing {
                     await MainActor.run { self.status = .postProcessing }
                     do {
@@ -267,24 +267,11 @@ final class QueueItem: ObservableObject, Identifiable {
                     }
                 }
 
-                if shouldRunDiarization {
-                    await MainActor.run { self.status = .postProcessing }
-                    do {
-                        let processor = PostProcessor(settings: runSettings)
-                        let diarizationResult = try await processor.diarize(text: processedText)
-                        processedText = diarizationResult.text
-                        totalPromptTokens += diarizationResult.promptTokens
-                        totalCompletionTokens += diarizationResult.completionTokens
-                    } catch {
-                        print("File diarization failed: \(error)")
-                    }
-                }
-
                 if totalPromptTokens + totalCompletionTokens > 0 {
-                    let usageEngine: PostProcessingEngine = shouldRunDiarization ? .openai : runSettings.postProcessingEngine
+                    let usageEngine: PostProcessingEngine = runSettings.postProcessingEngine
                     usage = UsageLog(
                         date: Date(),
-                        modeName: shouldRunDiarization ? "Diarization" : runSettings.selectedMode.name,
+                        modeName: runSettings.selectedMode.name,
                         engine: usageEngine.rawValue,
                         promptTokens: totalPromptTokens,
                         completionTokens: totalCompletionTokens,
@@ -320,7 +307,7 @@ final class QueueItem: ObservableObject, Identifiable {
                         processedText: filteredProcessedText,
                         modeName: runSettings.selectedMode.name,
                         duration: self.selectedDuration,
-                        engineUsed: provenance.displayName + (totalPromptTokens + totalCompletionTokens > 0 ? " + AI" : ""),
+                        engineUsed: provenance.displayName + (totalPromptTokens + totalCompletionTokens > 0 ? " + AI" : "") + (shouldUseNativeDiarization ? " + Diarization" : ""),
                         usage: usage,
                         isFromFileImport: true,
                         audioFilePath: self.url.path,

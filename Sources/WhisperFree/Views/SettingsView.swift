@@ -1579,7 +1579,7 @@ struct AIConfigView: View {
     var onSave: () -> Void
 
     private var shouldShowDiarizationControls: Bool {
-        settings.engineType == .cloud || settings.enableSpeakerDiarization || settings.hasOpenAIAPIKey
+        settings.engineType == .cloud || settings.enableSpeakerDiarization
     }
 
     var body: some View {
@@ -1597,12 +1597,13 @@ struct AIConfigView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle(L.tr("Speaker Diarization (AI-powered)", "Диаризация спикеров (AI)"), isOn: $settings.enableSpeakerDiarization)
+                        .disabled(!settings.canUseSpeakerDiarization)
                         .onChange(of: settings.enableSpeakerDiarization) { _, _ in
                             onSave()
                         }
 
-                    if settings.enableSpeakerDiarization && !settings.canUseSpeakerDiarization {
-                        Text(L.tr("Add an OpenAI API key to enable diarization.", "Добавьте OpenAI API key, чтобы включить диаризацию."))
+                    if !settings.canUseSpeakerDiarization {
+                        Text(L.tr("Use Cloud (OpenAI) and add an OpenAI API key to enable diarization.", "Для диаризации выберите Облако (OpenAI) и добавьте OpenAI API key."))
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }

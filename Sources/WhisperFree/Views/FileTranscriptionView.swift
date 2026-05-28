@@ -51,7 +51,12 @@ struct FileTranscriptionView: View {
         .onChange(of: appState.settings.cloudTranscriptionModel) { _, _ in
             updateVisibleCosts()
         }
+        .onChange(of: appState.settings.enableSpeakerDiarization) { _, _ in
+            appState.saveSettings()
+            updateVisibleCosts()
+        }
         .onChange(of: appState.settings.engineType) { _, _ in
+            appState.saveSettings()
             updateVisibleCosts()
         }
         .onChange(of: appState.fileTranscriptionImportRequest) { _, request in
@@ -194,13 +199,17 @@ struct FileTranscriptionView: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
 
-            if appState.settings.engineType == .cloud || appState.settings.canUseSpeakerDiarization || appState.settings.enableSpeakerDiarization {
+            if appState.settings.engineType == .cloud || appState.settings.enableSpeakerDiarization {
                 Toggle(isOn: $appState.settings.enableSpeakerDiarization) {
                     Text(L.tr("Diarization", "Диаризация"))
                         .font(.system(size: 10, weight: .medium))
                 }
                 .toggleStyle(.checkbox)
                 .padding(.leading, 4)
+                .disabled(!appState.settings.canUseSpeakerDiarization)
+                .help(appState.settings.canUseSpeakerDiarization
+                      ? L.tr("Use native OpenAI speaker diarization.", "Использовать нативную OpenAI-диаризацию спикеров.")
+                      : L.tr("Cloud (OpenAI) and an OpenAI API key are required for diarization.", "Для диаризации нужны Облако (OpenAI) и OpenAI API key."))
             }
 
             Spacer()

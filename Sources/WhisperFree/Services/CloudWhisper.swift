@@ -143,10 +143,12 @@ final class CloudWhisper: TranscriptionEngine {
         if let lang = language, lang != "auto" {
             body.appendMultipart(boundary: boundary, name: "language", value: lang)
         }
-        switch model {
-        case .whisper1:
+        if model.usesNativeDiarization {
+            body.appendMultipart(boundary: boundary, name: "response_format", value: "diarized_json")
+            body.appendMultipart(boundary: boundary, name: "chunking_strategy", value: "auto")
+        } else if model == .whisper1 {
             body.appendMultipart(boundary: boundary, name: "response_format", value: "text")
-        case .gpt4oMiniTranscribe, .gpt4oTranscribe:
+        } else {
             body.appendMultipart(boundary: boundary, name: "response_format", value: "json")
             body.appendMultipart(boundary: boundary, name: "chunking_strategy", value: "auto")
         }
@@ -180,19 +182,64 @@ final class CloudWhisper: TranscriptionEngine {
             throw TranscriptionError.networkError("HTTP \(httpResponse.statusCode): \(errorText)")
         }
 
-        switch model {
-        case .whisper1:
+        if model == .whisper1 {
             guard let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
                 throw TranscriptionError.invalidResponse
             }
             return text
-        case .gpt4oMiniTranscribe, .gpt4oTranscribe:
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let text = json["text"] as? String else {
-                throw TranscriptionError.invalidResponse
-            }
-            return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw TranscriptionError.invalidResponse
+        }
+
+        if model.usesNativeDiarization {
+            let diarizedText = Self.diarizedText(from: json)
+            if !diarizedText.isEmpty {
+                return diarizedText
+            }
+        }
+
+        guard let text = json["text"] as? String else {
+            throw TranscriptionError.invalidResponse
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func diarizedText(from json: [String: Any]) -> String {
+        guard let segments = json["segments"] as? [[String: Any]] else {
+            return ""
+        }
+
+        var lines: [String] = []
+        var currentSpeaker: String?
+        var currentText = ""
+
+        func flush() {
+            let text = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            let speaker = currentSpeaker?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = speaker?.isEmpty == false ? speaker! : "Speaker"
+            lines.append("\(label): \(text)")
+            currentText = ""
+        }
+
+        for segment in segments {
+            guard let text = segment["text"] as? String else { continue }
+            let speaker = (segment["speaker"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if speaker != currentSpeaker {
+                flush()
+                currentSpeaker = speaker
+            }
+
+            if !currentText.isEmpty {
+                currentText += " "
+            }
+            currentText += text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        flush()
+        return lines.joined(separator: "\n")
     }
 
     private func openAIErrorMessage(from data: Data) -> String? {

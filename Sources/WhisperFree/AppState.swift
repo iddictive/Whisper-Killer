@@ -1005,14 +1005,14 @@ final class AppState: ObservableObject {
             var usage: UsageLog? = nil
             var processingErrorMessage: String?
 
-            let shouldRunDiarization = settings.enableSpeakerDiarization && settings.canUseSpeakerDiarization
-            let shouldRunStandardPostProcessing = !shouldRunDiarization
+            let shouldUseNativeDiarization = settings.usesNativeCloudSpeakerDiarization
+            let shouldRunStandardPostProcessing = !shouldUseNativeDiarization
                 && settings.enablePostProcessing
                 && settings.selectedMode.name != "Raw"
                 && !settings.selectedMode.systemPrompt.isEmpty
 
-            if shouldRunDiarization {
-                print("ℹ️ Skipping standard AI refinement because Diarization is active.")
+            if shouldUseNativeDiarization {
+                print("ℹ️ Using native OpenAI diarization; skipping standard AI refinement.")
             } else if shouldRunStandardPostProcessing {
                 processingStage = .postProcessing
                 do {
@@ -1040,32 +1040,6 @@ final class AppState: ObservableObject {
                 }
             }
 
-            if shouldRunDiarization {
-                processingStage = .postProcessing
-                do {
-                    let processor = PostProcessor(settings: settings)
-                    let diarizationResult = try await processor.diarize(text: processedText)
-                    processedText = diarizationResult.text
-
-                    let currentTokens = (usage?.totalTokens ?? 0) + diarizationResult.promptTokens + diarizationResult.completionTokens
-                    let currentPromptTokens = (usage?.promptTokens ?? 0) + diarizationResult.promptTokens
-                    let currentCompletionTokens = (usage?.completionTokens ?? 0) + diarizationResult.completionTokens
-
-                    usage = UsageLog(
-                        date: Date(),
-                        modeName: "Diarization",
-                        engine: PostProcessingEngine.openai.rawValue,
-                        promptTokens: currentPromptTokens,
-                        completionTokens: currentCompletionTokens,
-                        totalTokens: currentTokens,
-                        estimatedCost: UsageLog.estimateCost(prompt: currentPromptTokens, completion: currentCompletionTokens, engine: .openai)
-                    )
-                } catch {
-                    print("⚠️ Diarization failed during retranscription: \(error)")
-                    processingErrorMessage = error.localizedDescription
-                }
-            }
-
             let filteredRawText = ProfanityFilter.apply(to: rawText, settings: settings)
             let filteredProcessedText = ProfanityFilter.apply(to: processedText, settings: settings)
 
@@ -1078,7 +1052,7 @@ final class AppState: ObservableObject {
             history[index].modeName = settings.selectedMode.name
             history[index].engineUsed = settings.engineType.rawValue
                 + (shouldRunStandardPostProcessing ? " + AI" : "")
-                + (shouldRunDiarization ? " + Diarization" : "")
+                + (shouldUseNativeDiarization ? " + Diarization" : "")
             history[index].usage = usage
 
             Storage.shared.updateTranscriptionHistoryEntry(history[index])
@@ -1208,14 +1182,14 @@ final class AppState: ObservableObject {
             processedText = rawText
             updateActiveProcessingText(for: jobID, rawText: nil, processedText: processedText, stage: nil)
 
-            let shouldRunDiarization = settings.enableSpeakerDiarization && settings.canUseSpeakerDiarization
-            let shouldRunStandardPostProcessing = !shouldRunDiarization
+            let shouldUseNativeDiarization = settings.usesNativeCloudSpeakerDiarization
+            let shouldRunStandardPostProcessing = !shouldUseNativeDiarization
                 && settings.enablePostProcessing
                 && settings.selectedMode.name != "Raw"
                 && !settings.selectedMode.systemPrompt.isEmpty
 
-            if shouldRunDiarization {
-                print("ℹ️ Skipping standard AI refinement because Diarization is active.")
+            if shouldUseNativeDiarization {
+                print("ℹ️ Using native OpenAI diarization; skipping standard AI refinement.")
             } else if shouldRunStandardPostProcessing {
                 updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: .postProcessing)
                 do {
@@ -1243,34 +1217,6 @@ final class AppState: ObservableObject {
                     processingErrorMessage = error.localizedDescription
                     self.showError(postProcessingFallbackMessage(for: error))
                     updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: .transcribing)
-                }
-            }
-
-            if shouldRunDiarization {
-                updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: .postProcessing)
-                do {
-                    let processor = PostProcessor(settings: settings)
-                    let diarizationResult = try await processor.diarize(text: processedText)
-                    try Task.checkCancellation()
-                    processedText = diarizationResult.text
-                    updateActiveProcessingText(for: jobID, rawText: nil, processedText: processedText, stage: nil)
-
-                    let currentTokens = (usage?.totalTokens ?? 0) + diarizationResult.promptTokens + diarizationResult.completionTokens
-                    let currentPromptTokens = (usage?.promptTokens ?? 0) + diarizationResult.promptTokens
-                    let currentCompletionTokens = (usage?.completionTokens ?? 0) + diarizationResult.completionTokens
-
-                    usage = UsageLog(
-                        date: Date(),
-                        modeName: "Diarization",
-                        engine: PostProcessingEngine.openai.rawValue,
-                        promptTokens: currentPromptTokens,
-                        completionTokens: currentCompletionTokens,
-                        totalTokens: currentTokens,
-                        estimatedCost: UsageLog.estimateCost(prompt: currentPromptTokens, completion: currentCompletionTokens, engine: .openai)
-                    )
-                } catch {
-                    print("⚠️ Diarization failed: \(error)")
-                    processingErrorMessage = error.localizedDescription
                 }
             }
 
@@ -1309,7 +1255,7 @@ final class AppState: ObservableObject {
                 processingError: processingErrorMessage,
                 modeName: selectedModeName,
                 duration: recordingDuration,
-                engineUsed: selectedEngine + (shouldRunStandardPostProcessing ? " + AI" : "") + (shouldRunDiarization ? " + Diarization" : ""),
+                engineUsed: selectedEngine + (shouldRunStandardPostProcessing ? " + AI" : "") + (shouldUseNativeDiarization ? " + Diarization" : ""),
                 usage: usage,
                 audioFilePath: persistentAudioPath,
                 ownsAudioFile: persistentAudioPath != nil
