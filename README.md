@@ -18,8 +18,6 @@ It can run locally through `whisper.cpp`, use OpenAI Whisper for cloud transcrip
 
 Current release: **3.0**
 
-> The repository is still named `Whisper-Killer`, and some app bundle/UI strings still say `WhisperKiller`. The public product name is moving toward `WhisperFree`, so both names may appear in scripts, releases, and older builds.
-
 ## What it does
 
 - Dictate from the menu bar with a global shortcut. Default: `Option + Space`.
@@ -88,8 +86,6 @@ WhisperFree превращает shortcut в macOS menu bar в диктовку,
 Приложение может работать локально через `whisper.cpp`, отправлять аудио в OpenAI Whisper или использовать GigaAM для экспериментального русского ASR. Облачные функции работают через ваш OpenAI API key; отдельная подписка на приложение не нужна.
 
 Текущий релиз: **3.0**
-
-> Репозиторий всё ещё называется `Whisper-Killer`, а часть bundle/UI строк использует имя `WhisperKiller`. Публичное имя постепенно переезжает на `WhisperFree`, поэтому в скриптах, релизах и старых сборках могут встречаться оба названия.
 
 ## Что умеет приложение
 
