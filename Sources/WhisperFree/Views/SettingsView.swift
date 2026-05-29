@@ -1630,11 +1630,11 @@ struct OpenAIAPIKeySettingsCard: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 10) {
-                SecureField("sk-...", text: $apiKey)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: apiKey) { _, _ in
-                        onChanged()
-                    }
+                MaskedAPIKeyField(
+                    apiKey: $apiKey,
+                    presentation: .roundedBorder,
+                    onChanged: onChanged
+                )
 
                 Button(action: onValidate) {
                     Group {

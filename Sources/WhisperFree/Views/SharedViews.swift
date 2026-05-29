@@ -60,6 +60,110 @@ struct TextEditorCustom: View {
     }
 }
 
+enum APIKeyFieldPresentation {
+    case roundedBorder
+    case setupCard
+}
+
+struct MaskedAPIKeyField: View {
+    @Binding var apiKey: String
+    let presentation: APIKeyFieldPresentation
+    let onChanged: () -> Void
+    @State private var isEditing = false
+
+    private var normalizedKey: String {
+        apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var shouldShowMaskedValue: Bool {
+        !normalizedKey.isEmpty && !isEditing
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            fieldContent
+
+            if !normalizedKey.isEmpty {
+                Button {
+                    isEditing.toggle()
+                } label: {
+                    Image(systemName: isEditing ? "eye.slash" : "pencil")
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.plain)
+                .help(isEditing
+                    ? L.tr("Hide API key", "Скрыть API key")
+                    : L.tr("Edit API key", "Изменить API key")
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var fieldContent: some View {
+        if shouldShowMaskedValue {
+            Text(maskedKey(normalizedKey))
+                .font(.system(.body, design: .monospaced))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    isEditing = true
+                }
+                .modifier(APIKeyFieldPresentationModifier(presentation: presentation))
+        } else {
+            SecureField("sk-...", text: $apiKey)
+                .onChange(of: apiKey) { _, _ in
+                    isEditing = true
+                    onChanged()
+                }
+                .modifier(APIKeyFieldPresentationModifier(presentation: presentation))
+        }
+    }
+
+    private func maskedKey(_ key: String) -> String {
+        let suffixLength = min(4, key.count)
+        let suffix = String(key.suffix(suffixLength))
+
+        if key.hasPrefix("sk-") {
+            return "sk-...\(suffix)"
+        }
+
+        let prefix = String(key.prefix(min(3, key.count)))
+        return "\(prefix)...\(suffix)"
+    }
+}
+
+private struct APIKeyFieldPresentationModifier: ViewModifier {
+    let presentation: APIKeyFieldPresentation
+
+    func body(content: Content) -> some View {
+        switch presentation {
+        case .roundedBorder:
+            content
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color(NSColor.controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
+                )
+        case .setupCard:
+            content
+                .textFieldStyle(.plain)
+                .padding(10)
+                .background(Color.white.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        }
+    }
+}
+
 struct WindowHeaderUnderlay: View {
     var height: CGFloat = 0
 

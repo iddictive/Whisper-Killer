@@ -932,18 +932,13 @@ struct SetupWizardView: View {
                     .foregroundStyle(textPrimary)
 
                 HStack(spacing: 8) {
-                    SecureField("sk-...", text: $apiKey)
-                        .textFieldStyle(.plain)
-                        .padding(10)
-                        .background(Color.white.opacity(0.06))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-                        )
-                        .onChange(of: apiKey) { _, _ in
+                    MaskedAPIKeyField(
+                        apiKey: $apiKey,
+                        presentation: .setupCard,
+                        onChanged: {
                             apiValidationState = .idle
                         }
+                    )
 
                     Button {
                         testAPI()
