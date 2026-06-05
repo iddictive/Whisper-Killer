@@ -10,6 +10,7 @@ final class AudioRecorder: ObservableObject {
     @Published var isTooQuiet = false
     @Published var isTooNoisy = false
     @Published var isMicrophoneDenied = false
+    private(set) var lastStopFailureMessage: String?
 
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
@@ -20,6 +21,8 @@ final class AudioRecorder: ObservableObject {
     private var recentLevels: [Float] = []
     private var smoothedDisplayLevel: Float = 0
     private var estimatedNoiseFloorDb: Float = -55
+    private var recordingPeak: Float = 0
+    private let minimumCapturedSignalPeak: Float = 0.0001
     
     // Lightweight monitor mode (for Settings live meter)
     private var monitorEngine: AVAudioEngine?
@@ -33,6 +36,7 @@ final class AudioRecorder: ObservableObject {
         stopMonitoring()
         
         error = nil
+        lastStopFailureMessage = nil
         isTooQuiet = false
         isTooNoisy = false
         isMicrophoneDenied = false
@@ -161,6 +165,7 @@ final class AudioRecorder: ObservableObject {
             for i in 0..<frames {
                 maxPeak = max(maxPeak, abs(channelData?[i] ?? 0))
             }
+            self.recordingPeak = max(self.recordingPeak, maxPeak)
 
             if framesCaptured % 100 == 0 {
                 print("whisper_debug: Frames: \(framesCaptured), Peak: \(maxPeak), Level: \(level)")
@@ -255,6 +260,7 @@ final class AudioRecorder: ObservableObject {
     }
 
     func stopRecording() -> (URL?, TimeInterval) {
+        lastStopFailureMessage = nil
         timer?.invalidate()
         timer = nil
         
@@ -270,11 +276,13 @@ final class AudioRecorder: ObservableObject {
         isRecording = false
 
         let duration = recordingDuration
+        let peak = recordingPeak
         recordingDuration = 0
         audioLevels = Array(repeating: 0, count: levelHistoryCount)
         isTooQuiet = false
         isTooNoisy = false
         recentLevels.removeAll()
+        resetLevelTracking()
 
         // Return nil if recording was too short (< 0.3s)
         guard duration >= 0.3 else {
@@ -289,10 +297,31 @@ final class AudioRecorder: ObservableObject {
             let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
             let size = attributes?[.size] as? Int64 ?? 0
             print("whisper_debug: Recording stopped. File size: \(size) bytes, duration: \(duration)s")
+
+            guard Self.hasReadableAudioFrames(at: url) else {
+                print("whisper_debug: Recording file contains no readable audio frames")
+                lastStopFailureMessage = Self.noMicrophoneInputMessage
+                try? FileManager.default.removeItem(at: url)
+                return (nil, 0)
+            }
+
+            guard peak >= minimumCapturedSignalPeak else {
+                print("whisper_debug: Recording captured no input signal (peak: \(peak))")
+                lastStopFailureMessage = Self.noMicrophoneInputMessage
+                try? FileManager.default.removeItem(at: url)
+                return (nil, 0)
+            }
         }
 
         return (recordingURL, duration)
     }
+
+    private static func hasReadableAudioFrames(at url: URL) -> Bool {
+        guard let file = try? AVAudioFile(forReading: url) else { return false }
+        return file.length > 0
+    }
+
+    private static let noMicrophoneInputMessage = "No microphone input detected. Check the selected microphone, microphone permission, or whether another app is using the input."
 
     // MARK: - Monitor Mode (lightweight, no file writing)
     
@@ -427,6 +456,7 @@ final class AudioRecorder: ObservableObject {
     private func resetLevelTracking() {
         smoothedDisplayLevel = 0
         estimatedNoiseFloorDb = -55
+        recordingPeak = 0
     }
 
     private func findDeviceID(uniqueID: String) -> AudioDeviceID? {

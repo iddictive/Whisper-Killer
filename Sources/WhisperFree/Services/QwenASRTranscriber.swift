@@ -34,6 +34,7 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
             throw TranscriptionError.transcriptionFailed("Qwen3-ASR MLX requires Apple Silicon.")
         }
 
+        try await Self.validateInputAudio(audioURL, timeRange: timeRange)
         onProgress?(0.03, nil)
         let python = try await Self.ensureRuntimeInstalled()
         onProgress?(0.10, nil)
@@ -54,6 +55,7 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
                 try? FileManager.default.removeItem(at: wavURL)
             }
         }
+        try Self.validatePreparedAudioFile(wavURL)
 
         let scriptURL = try Self.writeHelperScript()
         let languageName = Self.qwenLanguageName(for: language)
@@ -169,7 +171,7 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
                     continuation.resume(throwing: TranscriptionError.transcriptionFailed("\(timeoutDescription) timed out after \(Int(timeoutSeconds)) seconds."))
                 } else {
                     let message = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-                    continuation.resume(throwing: TranscriptionError.transcriptionFailed(message.isEmpty ? "Qwen3-ASR exited with code \(p.terminationStatus)." : message))
+                    continuation.resume(throwing: TranscriptionError.transcriptionFailed(qwenFailureMessage(from: message, status: p.terminationStatus)))
                 }
             }
 
@@ -485,6 +487,48 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
         }
     }
 
+    private static func qwenFailureMessage(from stderr: String, status: Int32) -> String {
+        guard !stderr.isEmpty else {
+            return "Qwen3-ASR exited with code \(status)."
+        }
+
+        if stderr.localizedCaseInsensitiveContains("Cannot compute mel spectrogram of empty audio") {
+            return emptyAudioMessage
+        }
+
+        return stderr
+    }
+
+    private static func validateInputAudio(_ url: URL, timeRange: CMTimeRange?) async throws {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw TranscriptionError.transcriptionFailed("Qwen3-ASR input audio file is missing.")
+        }
+
+        if url.pathExtension.lowercased() == "wav", let file = try? AVAudioFile(forReading: url) {
+            guard file.length > 0 else {
+                throw TranscriptionError.transcriptionFailed(emptyAudioMessage)
+            }
+            return
+        }
+
+        let asset = AVURLAsset(url: url)
+        let duration = try await effectiveDuration(for: asset, timeRange: timeRange)
+        guard duration.isFinite, duration > 0 else {
+            throw TranscriptionError.transcriptionFailed(emptyAudioMessage)
+        }
+
+        guard try await !asset.loadTracks(withMediaType: .audio).isEmpty else {
+            throw TranscriptionError.transcriptionFailed("Could not load audio track")
+        }
+    }
+
+    private static func effectiveDuration(for asset: AVURLAsset, timeRange: CMTimeRange?) async throws -> Double {
+        if let timeRange {
+            return timeRange.duration.seconds
+        }
+        return try await asset.load(.duration).seconds
+    }
+
     private static func qwenLanguageName(for code: String?) -> String? {
         guard let code, !code.isEmpty, code != "auto" else { return nil }
         let names: [String: String] = [
@@ -531,6 +575,9 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
         } else {
             actualDuration = try await asset.load(.duration).seconds
         }
+        guard actualDuration.isFinite, actualDuration > 0 else {
+            throw TranscriptionError.transcriptionFailed(Self.emptyAudioMessage)
+        }
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
             throw TranscriptionError.transcriptionFailed("Could not load audio track")
         }
@@ -564,20 +611,22 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
 
         final class ConversionContext: @unchecked Sendable {
             let reader: AVAssetReader
+            let writer: AVAssetWriter
             let writerInput: AVAssetWriterInput
             let trackOutput: AVAssetReaderTrackOutput
             let duration: Double
             var isResumed = false
 
-            init(reader: AVAssetReader, writerInput: AVAssetWriterInput, trackOutput: AVAssetReaderTrackOutput, duration: Double) {
+            init(reader: AVAssetReader, writer: AVAssetWriter, writerInput: AVAssetWriterInput, trackOutput: AVAssetReaderTrackOutput, duration: Double) {
                 self.reader = reader
+                self.writer = writer
                 self.writerInput = writerInput
                 self.trackOutput = trackOutput
                 self.duration = duration
             }
         }
 
-        let context = ConversionContext(reader: reader, writerInput: writerInput, trackOutput: trackOutput, duration: actualDuration)
+        let context = ConversionContext(reader: reader, writer: writer, writerInput: writerInput, trackOutput: trackOutput, duration: actualDuration)
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let queue = DispatchQueue(label: "qwenASRAudioConvertQueue")
@@ -594,7 +643,7 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
                         if !context.isResumed {
                             context.isResumed = true
                             context.writerInput.markAsFinished()
-                            if let error = context.reader.error {
+                            if let error = context.reader.error ?? context.writer.error {
                                 continuation.resume(throwing: error)
                             } else {
                                 continuation.resume()
@@ -611,16 +660,35 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
         return outputURL
     }
 
+    private static func validatePreparedAudioFile(_ url: URL) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw TranscriptionError.transcriptionFailed("Qwen3-ASR input audio file is missing.")
+        }
+
+        do {
+            let file = try AVAudioFile(forReading: url)
+            guard file.length > 0 else {
+                throw TranscriptionError.transcriptionFailed(emptyAudioMessage)
+            }
+        } catch let error as TranscriptionError {
+            throw error
+        } catch {
+            throw TranscriptionError.transcriptionFailed("Qwen3-ASR input audio could not be read: \(error.localizedDescription)")
+        }
+    }
+
     private func isAlready16kHzWav(_ url: URL) -> Bool {
         guard url.pathExtension.lowercased() == "wav" else { return false }
         guard let file = try? AVAudioFile(forReading: url) else { return false }
         let format = file.processingFormat
-        return abs(format.sampleRate - 16000) < 100 && format.channelCount == 1
+        return abs(format.sampleRate - 16000) < 100 && format.channelCount == 1 && file.length > 0
     }
 
     private static func shellQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
+
+    private static let emptyAudioMessage = "Qwen3-ASR input audio is empty. Try recording again or choose a file with an audio track."
 
     private struct QwenResult: Decodable {
         let text: String

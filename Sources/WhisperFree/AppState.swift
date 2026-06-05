@@ -503,7 +503,7 @@ final class AppState: ObservableObject {
         isAIChatVoiceRecording = false
         let (audioURL, _) = aiChatRecorder.stopRecording()
         guard let audioURL else {
-            aiChatError = L.tr("Voice message is too short.", "Голосовое сообщение слишком короткое.")
+            aiChatError = aiChatRecorder.lastStopFailureMessage ?? L.tr("Voice message is too short.", "Голосовое сообщение слишком короткое.")
             return
         }
 
@@ -1090,6 +1090,9 @@ final class AppState: ObservableObject {
         let (audioURLOptional, recordingDuration) = recorder.stopRecording()
         guard let audioURL = audioURLOptional else {
             // Recording too short or failed
+            if let message = recorder.lastStopFailureMessage {
+                showError(message)
+            }
             state = .idle
             refreshBackgroundProcessingState()
             return
