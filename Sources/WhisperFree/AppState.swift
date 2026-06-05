@@ -232,6 +232,26 @@ final class AppState: ObservableObject {
             position: .unspecified
         )
         self.availableInputDevices = session.devices
+        repairUnavailableInputDeviceSelections()
+    }
+
+    private func repairUnavailableInputDeviceSelections() {
+        let availableIDs = Set(availableInputDevices.map(\.uniqueID))
+        var changed = false
+
+        if let selectedID = settings.selectedInputDeviceID, !availableIDs.contains(selectedID) {
+            settings.selectedInputDeviceID = nil
+            changed = true
+        }
+
+        if let selectedID = settings.liveTranslatorInputDeviceID, !availableIDs.contains(selectedID) {
+            settings.liveTranslatorInputDeviceID = nil
+            changed = true
+        }
+
+        if changed {
+            Storage.shared.saveSettings(settings)
+        }
     }
 
     private func checkTranslocation() {
@@ -859,6 +879,7 @@ final class AppState: ObservableObject {
             return
         }
         cancelPendingStopTask()
+        refreshAvailableDevices()
 
         lastError = nil
 

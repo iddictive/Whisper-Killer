@@ -70,35 +70,19 @@ final class AudioRecorder: ObservableObject {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
 
-        // If a specific device is selected, try to set it
-        if let deviceID = inputDeviceID {
-            if let coreAudioID = findDeviceID(uniqueID: deviceID) {
-                var devID = coreAudioID
-                let inputNode = engine.inputNode
-                if let audioUnit = inputNode.audioUnit {
-                    let status = AudioUnitSetProperty(
-                        audioUnit,
-                        kAudioOutputUnitProperty_CurrentDevice,
-                        kAudioUnitScope_Global,
-                        0,
-                        &devID,
-                        UInt32(MemoryLayout<AudioDeviceID>.size)
-                    )
-                    if status != noErr {
-                        print("⚠️ Error setting input device: \(status)")
-                    } else {
-                        print("✅ Successfully set input device to \(deviceID) (ID: \(coreAudioID))")
-                    }
-                }
-            }
+        if !configureInputDevice(inputDeviceID: inputDeviceID, inputNode: inputNode) {
+            cleanupFailedStart(engine: engine, inputNode: inputNode, tapInstalled: false)
+            return false
         }
+
         let recordingFormat = inputNode.outputFormat(forBus: 0)
         let inputFormat = inputNode.inputFormat(forBus: 0)
         print("whisper_debug: Input Node Format - Input: \(inputFormat), Output: \(recordingFormat)")
 
         if recordingFormat.sampleRate == 0 {
             print("❌ Error: Input node has invalid sample rate (0)")
-            self.error = "Hardware busy or unavailable. Try restarting the app."
+            self.error = Self.inputUnavailableMessage
+            cleanupFailedStart(engine: engine, inputNode: inputNode, tapInstalled: false)
             return false
         }
 
@@ -237,6 +221,66 @@ final class AudioRecorder: ObservableObject {
             cleanupFailedStart(engine: engine, inputNode: inputNode, tapInstalled: true)
             return false
         }
+    }
+
+    private func configureInputDevice(inputDeviceID: String?, inputNode: AVAudioInputNode) -> Bool {
+        let requestedDeviceID = inputDeviceID.flatMap { findDeviceID(uniqueID: $0) }
+        if inputDeviceID != nil && requestedDeviceID == nil {
+            print("whisper_debug: Selected input device is no longer available; falling back to system default")
+        }
+
+        guard let defaultDeviceID = Self.defaultInputDeviceID() else {
+            error = "No system input microphone found. Check Sound Settings -> Input."
+            return false
+        }
+
+        let primaryDeviceID = requestedDeviceID ?? defaultDeviceID
+        if setInputDevice(primaryDeviceID, inputNode: inputNode) {
+            return true
+        }
+
+        guard primaryDeviceID != defaultDeviceID else {
+            error = Self.inputUnavailableMessage
+            return false
+        }
+
+        print("whisper_debug: Falling back to system default input device after selected device failed")
+        if setInputDevice(defaultDeviceID, inputNode: inputNode) {
+            return true
+        }
+
+        error = Self.inputUnavailableMessage
+        return false
+    }
+
+    private func setInputDevice(_ deviceID: AudioDeviceID, inputNode: AVAudioInputNode) -> Bool {
+        guard Self.deviceHasInputChannels(deviceID) else {
+            print("whisper_debug: CoreAudio device \(deviceID) has no input channels")
+            return false
+        }
+
+        guard let audioUnit = inputNode.audioUnit else {
+            print("whisper_debug: Input node has no audio unit")
+            return false
+        }
+
+        var mutableDeviceID = deviceID
+        let status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &mutableDeviceID,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+
+        if status != noErr {
+            print("whisper_debug: Failed to bind input device \(deviceID): \(status)")
+            return false
+        }
+
+        print("whisper_debug: Bound input device \(deviceID)")
+        return true
     }
 
     private func cleanupFailedStart(engine: AVAudioEngine, inputNode: AVAudioInputNode, tapInstalled: Bool) {
@@ -490,6 +534,58 @@ final class AudioRecorder: ObservableObject {
         }
         return nil
     }
+
+    private static func defaultInputDeviceID() -> AudioDeviceID? {
+        var deviceID = AudioDeviceID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size,
+            &deviceID
+        )
+
+        guard status == noErr, deviceID != AudioDeviceID(kAudioObjectUnknown) else {
+            print("whisper_debug: Could not resolve system default input device: \(status)")
+            return nil
+        }
+
+        return deviceID
+    }
+
+    private static func deviceHasInputChannels(_ deviceID: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreamConfiguration,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var dataSize: UInt32 = 0
+        let sizeStatus = AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &dataSize)
+        guard sizeStatus == noErr, dataSize > 0 else { return false }
+
+        let rawPointer = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(dataSize),
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { rawPointer.deallocate() }
+        let bufferListPointer = rawPointer.bindMemory(to: AudioBufferList.self, capacity: 1)
+
+        let dataStatus = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, bufferListPointer)
+        guard dataStatus == noErr else { return false }
+
+        let bufferList = UnsafeMutableAudioBufferListPointer(bufferListPointer)
+        return bufferList.contains { $0.mNumberChannels > 0 }
+    }
+
+    private static let inputUnavailableMessage = "Microphone input is unavailable. Check Sound Settings -> Input, microphone permission, or close apps that may be holding the device."
     
     deinit {
         _ = stopRecording()

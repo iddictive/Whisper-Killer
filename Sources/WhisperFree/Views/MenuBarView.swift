@@ -403,6 +403,9 @@ struct MenuBarView: View {
                 } label: {
                     HStack {
                         Text(device.localizedName)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: 280, alignment: .leading)
                         if appState.settings.selectedInputDeviceID == device.uniqueID {
                             Image(systemName: "checkmark")
                         }
@@ -416,9 +419,9 @@ struct MenuBarView: View {
                 Text(selectedInputDeviceName)
                     .font(.system(size: 10, weight: .medium))
                     .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: appState.settings.selectedInputDeviceID == nil ? 46 : 64, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 138, alignment: .leading)
+                    .layoutPriority(1)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 6))
             }
@@ -428,7 +431,7 @@ struct MenuBarView: View {
             .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .help(selectedInputDeviceName)
     }
 
     private var diarizationButton: some View {
