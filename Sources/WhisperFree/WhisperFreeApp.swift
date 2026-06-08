@@ -96,6 +96,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if !appState.settings.setupCompleted {
             print("🪄 Showing Setup Wizard...")
             showSetupWizard()
+        } else if appState.settings.appPresenceMode.showsDockIcon {
+            showMainMenu()
         }
 
         print("✨ Launch sequence complete")

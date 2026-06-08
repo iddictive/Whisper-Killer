@@ -326,6 +326,9 @@ struct SettingsView: View {
                 .onChange(of: appState.settings.appPresenceMode) { _, _ in
                     appState.saveSettings()
                     AppDelegate.shared?.applyConfiguredActivationPolicy(activateIfRegular: appState.settings.appPresenceMode.showsDockIcon)
+                    if appState.settings.appPresenceMode.showsDockIcon {
+                        AppDelegate.shared?.showMainMenu()
+                    }
                 }
 
                 Divider().padding(.horizontal)
