@@ -127,6 +127,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return true
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard AppState.shared.settings.setupCompleted,
+              AppState.shared.settings.appPresenceMode.showsDockIcon,
+              mainMenuWindowController?.isVisible != true
+        else { return }
+
+        showMainMenu()
+    }
+
     private func configureApplicationIcon() {
         let iconURLs = [
             Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
@@ -314,6 +323,10 @@ final class SetupWizardWindowController: NSObject {
 @MainActor
 final class MainMenuWindowController: NSObject {
     private var window: NSWindow?
+
+    var isVisible: Bool {
+        window?.isVisible == true
+    }
 
     func show() {
         if window != nil {
