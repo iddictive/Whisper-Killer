@@ -15,6 +15,7 @@ final class AudioRecorder: ObservableObject, @unchecked Sendable {
     private(set) var lastStopFailureMessage: String?
 
     private var audioEngine: AVAudioEngine?
+    private var audioRecorder: AVAudioRecorder?
     private var audioFile: AVAudioFile?
     private var recordingURL: URL?
     private var timer: Timer?
@@ -81,6 +82,82 @@ final class AudioRecorder: ObservableObject, @unchecked Sendable {
     }
 
     private func proceedWithRecording(inputDeviceID: String?) -> Bool {
+        proceedWithSystemAudioRecorder(inputDeviceID: inputDeviceID)
+    }
+
+    private func proceedWithSystemAudioRecorder(inputDeviceID: String?) -> Bool {
+        if inputDeviceID != nil {
+            print("whisper_debug: Custom input selection is ignored by AVAudioRecorder backend; using system default input")
+        }
+
+        let tempDir = FileManager.default.temporaryDirectory
+        let url = tempDir.appendingPathComponent("whisperkiller_\(UUID().uuidString).wav")
+
+        let fileSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 16000,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false
+        ]
+
+        let recorder: AVAudioRecorder
+        do {
+            recorder = try AVAudioRecorder(url: url, settings: fileSettings)
+        } catch {
+            updateObservableState {
+                self.error = "Failed to create audio recorder: \(error.localizedDescription)"
+            }
+            try? FileManager.default.removeItem(at: url)
+            return false
+        }
+
+        recorder.isMeteringEnabled = true
+        guard recorder.prepareToRecord(), recorder.record() else {
+            updateObservableState {
+                self.error = Self.inputUnavailableMessage
+            }
+            recorder.stop()
+            try? FileManager.default.removeItem(at: url)
+            return false
+        }
+
+        updateObservableState {
+            self.audioRecorder = recorder
+            self.recordingURL = url
+            self.startTime = Date()
+            self.isRecording = true
+            self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self, weak recorder] _ in
+                guard let self, let recorder, let start = self.startTime else { return }
+                recorder.updateMeters()
+
+                let level = self.normalizedMeterLevel(fromDecibels: recorder.averagePower(forChannel: 0))
+                let peak = self.normalizedMeterLevel(fromDecibels: recorder.peakPower(forChannel: 0))
+                self.recordingPeak = max(self.recordingPeak, peak)
+                self.recordingDuration = Date().timeIntervalSince(start)
+                self.audioLevels.append(level)
+                if self.audioLevels.count > self.levelHistoryCount {
+                    self.audioLevels.removeFirst()
+                }
+
+                self.recentLevels.append(level)
+                if self.recentLevels.count > 20 { self.recentLevels.removeFirst() }
+
+                if self.recentLevels.count >= 10 {
+                    let avg = self.recentLevels.reduce(0, +) / Float(self.recentLevels.count)
+                    self.isTooQuiet = avg < 0.02
+                    self.isTooNoisy = avg > 0.99
+                }
+            }
+        }
+
+        print("whisper_debug: AVAudioRecorder started successfully at \(url.path)")
+        return true
+    }
+
+    private func proceedWithAudioEngineRecording(inputDeviceID: String?) -> Bool {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
 
@@ -255,6 +332,12 @@ final class AudioRecorder: ObservableObject, @unchecked Sendable {
         }
     }
 
+    private func normalizedMeterLevel(fromDecibels decibels: Float) -> Float {
+        guard decibels.isFinite else { return 0 }
+        let clamped = min(max(decibels, -60), 0)
+        return pow(10, clamped / 40)
+    }
+
     private func configureInputDevice(inputDeviceID: String?, inputNode: AVAudioInputNode) -> Bool {
         let requestedDeviceID = inputDeviceID.flatMap { findDeviceID(uniqueID: $0) }
         if inputDeviceID != nil && requestedDeviceID == nil {
@@ -332,6 +415,7 @@ final class AudioRecorder: ObservableObject, @unchecked Sendable {
         updateObservableState {
             failedURL = self.recordingURL
             self.audioEngine = nil
+            self.audioRecorder = nil
             self.audioFile = nil
             self.recordingURL = nil
             self.isRecording = false
@@ -356,8 +440,12 @@ final class AudioRecorder: ObservableObject, @unchecked Sendable {
             }
             engine.inputNode.removeTap(onBus: 0)
         }
+        if let recorder = audioRecorder {
+            recorder.stop()
+        }
         
         audioEngine = nil
+        audioRecorder = nil
         audioFile = nil
         isRecording = false
 
@@ -496,6 +584,8 @@ final class AudioRecorder: ObservableObject, @unchecked Sendable {
     }
 
     func cleanup() {
+        audioRecorder?.stop()
+        audioRecorder = nil
         if let url = recordingURL {
             try? FileManager.default.removeItem(at: url)
         }

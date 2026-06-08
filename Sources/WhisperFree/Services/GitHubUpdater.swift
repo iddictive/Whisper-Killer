@@ -21,10 +21,8 @@ class GitHubUpdater: ObservableObject {
     func checkForUpdates(manual: Bool = false) {
         guard !isChecking else { return }
 
-        // Check settings
-        let defaults = UserDefaults.standard
-        let autoCheck = defaults.bool(forKey: "automaticallyChecksForUpdates")
-        if !manual && !autoCheck { return }
+        let updateSettings = Storage.shared.loadSettings()
+        if !manual && !updateSettings.automaticallyChecksForUpdates { return }
 
         isChecking = true
         error = nil
@@ -52,8 +50,7 @@ class GitHubUpdater: ObservableObject {
                         self?.updateAvailable = false
                         self?.downloadUrl = nil
 
-                        let defaults = UserDefaults.standard
-                        let automaticallyDownloadsUpdates = defaults.bool(forKey: "automaticallyDownloadsUpdates")
+                        let automaticallyDownloadsUpdates = Storage.shared.loadSettings().automaticallyDownloadsUpdates
 
                         if self?.compareVersions(current: self?.currentVersion ?? "", latest: latest) == true {
                             self?.updateAvailable = true

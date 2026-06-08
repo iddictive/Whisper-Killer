@@ -370,12 +370,21 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 Toggle(L.tr("Automatically check for updates", "Автоматически проверять обновления"), isOn: $appState.settings.automaticallyChecksForUpdates)
                     .padding()
+                    .onChange(of: appState.settings.automaticallyChecksForUpdates) { _, _ in
+                        if !appState.settings.automaticallyChecksForUpdates {
+                            appState.settings.automaticallyDownloadsUpdates = false
+                        }
+                        appState.saveSettings()
+                    }
 
                 Divider().padding(.horizontal)
 
                 Toggle(L.tr("Automatically download updates", "Автоматически загружать обновления"), isOn: $appState.settings.automaticallyDownloadsUpdates)
                     .disabled(!appState.settings.automaticallyChecksForUpdates)
                     .padding()
+                    .onChange(of: appState.settings.automaticallyDownloadsUpdates) { _, _ in
+                        appState.saveSettings()
+                    }
 
                 if updater.updateAvailable || updater.isDownloading || updater.error != nil {
                     Divider().padding(.horizontal)
