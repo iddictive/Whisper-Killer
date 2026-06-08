@@ -75,12 +75,13 @@ final class AudioRecorder: ObservableObject {
             return false
         }
 
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
         let inputFormat = inputNode.inputFormat(forBus: 0)
-        print("whisper_debug: Input Node Format - Input: \(inputFormat), Output: \(recordingFormat)")
+        let outputFormat = inputNode.outputFormat(forBus: 0)
+        let recordingFormat = inputFormat
+        print("whisper_debug: Input Node Format - Input: \(inputFormat), Output: \(outputFormat)")
 
-        if recordingFormat.sampleRate == 0 {
-            print("❌ Error: Input node has invalid sample rate (0)")
+        if recordingFormat.sampleRate == 0 || recordingFormat.channelCount == 0 {
+            print("❌ Error: Input node has invalid hardware format: \(recordingFormat)")
             self.error = Self.inputUnavailableMessage
             cleanupFailedStart(engine: engine, inputNode: inputNode, tapInstalled: false)
             return false
@@ -279,7 +280,7 @@ final class AudioRecorder: ObservableObject {
             return false
         }
 
-        print("whisper_debug: Bound input device \(deviceID)")
+        print("whisper_debug: Bound input device \(deviceID) \(Self.deviceDebugDescription(deviceID))")
         return true
     }
 
@@ -583,6 +584,30 @@ final class AudioRecorder: ObservableObject {
 
         let bufferList = UnsafeMutableAudioBufferListPointer(bufferListPointer)
         return bufferList.contains { $0.mNumberChannels > 0 }
+    }
+
+    private static func deviceDebugDescription(_ deviceID: AudioDeviceID) -> String {
+        var nameAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertyName,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var uidAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var name: Unmanaged<CFString>?
+        var uid: Unmanaged<CFString>?
+        var stringSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+
+        AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nil, &stringSize, &name)
+        stringSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        AudioObjectGetPropertyData(deviceID, &uidAddress, 0, nil, &stringSize, &uid)
+
+        let deviceName = name?.takeRetainedValue() as String? ?? "unknown"
+        let deviceUID = uid?.takeRetainedValue() as String? ?? "unknown"
+        return "(\(deviceName), uid: \(deviceUID))"
     }
 
     private static let inputUnavailableMessage = "Microphone input is unavailable. Check Sound Settings -> Input, microphone permission, or close apps that may be holding the device."
