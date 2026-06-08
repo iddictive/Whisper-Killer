@@ -28,6 +28,12 @@ struct WhisperFreeApp: App {
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
+            CommandGroup(after: .appInfo) {
+                Button(L.tr("Main Menu", "Основное меню")) {
+                    AppDelegate.shared?.showMainMenu()
+                }
+                .keyboardShortcut("0", modifiers: .command)
+            }
         }
     }
 
@@ -44,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     static private(set) var shared: AppDelegate?
 
     private var overlayController = OverlayWindowController()
+    private var mainMenuWindowController: MainMenuWindowController?
     private var setupWizardController: SetupWizardWindowController?
     private var settingsWindowController: SettingsWindowController?
     private var historyWindowController: HistoryWindowController?
@@ -113,9 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard AppState.shared.settings.appPresenceMode.showsDockIcon else { return true }
 
-        if !flag {
-            showSettings()
-        }
+        showMainMenu()
 
         return true
     }
@@ -144,6 +149,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             setupWizardController = SetupWizardWindowController()
         }
         setupWizardController?.show()
+    }
+
+    func showMainMenu() {
+        if mainMenuWindowController == nil {
+            mainMenuWindowController = MainMenuWindowController()
+        }
+        mainMenuWindowController?.show()
     }
 
     func showSettings() {
@@ -294,6 +306,43 @@ final class SetupWizardWindowController: NSObject {
     func close() {
         window?.close()
         window = nil
+    }
+}
+
+@MainActor
+final class MainMenuWindowController: NSObject {
+    private var window: NSWindow?
+
+    func show() {
+        if window != nil {
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let view = MenuBarView().environmentObject(AppState.shared)
+        let hostingView = NSHostingView(rootView: view)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 640),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.center()
+        window.contentView = hostingView
+        window.title = ""
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.isReleasedWhenClosed = false
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.minSize = NSSize(width: 430, height: 520)
+        applyAppWindowIcon(window)
+
+        self.window = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 

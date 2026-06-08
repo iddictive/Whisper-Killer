@@ -221,6 +221,14 @@ struct SettingsView: View {
                 Text(columnTitle)
                     .font(.system(size: 13, weight: .semibold))
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    AppDelegate.shared?.showMainMenu()
+                } label: {
+                    Image(systemName: "rectangle.grid.1x2")
+                }
+                .help(L.tr("Open Main Menu", "Открыть основное меню"))
+            }
         }
         .fileImporter(
             isPresented: $showProfanityDictionaryImporter,
