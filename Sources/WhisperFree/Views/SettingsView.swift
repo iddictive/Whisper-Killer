@@ -302,6 +302,26 @@ struct SettingsView: View {
 
                 Divider().padding(.horizontal)
 
+                HStack {
+                    Text(L.tr("Show app in", "Показывать приложение"))
+                    Spacer()
+                    Picker("", selection: $appState.settings.appPresenceMode) {
+                        ForEach(AppPresenceMode.allCases) { mode in
+                            Text(mode.localizedTitle).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 220)
+                }
+                .padding()
+                .onChange(of: appState.settings.appPresenceMode) { _, _ in
+                    appState.saveSettings()
+                    AppDelegate.shared?.applyConfiguredActivationPolicy(activateIfRegular: appState.settings.appPresenceMode.showsDockIcon)
+                }
+
+                Divider().padding(.horizontal)
+
                 Toggle(L.tr("Monochrome menu bar icon", "Монохромная иконка в menu bar"), isOn: $appState.settings.useMonochromeMenuIcon)
                     .padding()
                     .onChange(of: appState.settings.useMonochromeMenuIcon) { _, _ in

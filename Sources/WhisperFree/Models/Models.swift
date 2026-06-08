@@ -29,6 +29,30 @@ enum AudioRetentionPolicy: String, Codable, CaseIterable {
     }
 }
 
+// MARK: - App Presence
+
+enum AppPresenceMode: String, Codable, CaseIterable, Identifiable {
+    case menuBarOnly = "menuBarOnly"
+    case dockAndMenuBar = "dockAndMenuBar"
+    case dockOnly = "dockOnly"
+
+    var id: String { rawValue }
+
+    var showsDockIcon: Bool {
+        self != .menuBarOnly
+    }
+
+    var showsMenuBarExtra: Bool {
+        self != .dockOnly
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = AppPresenceMode(rawValue: rawValue) ?? .menuBarOnly
+    }
+}
+
 // MARK: - Transcription Mode
 
 struct TranscriptionMode: Codable, Identifiable, Hashable {
@@ -619,6 +643,7 @@ struct HotkeyConfig: Codable, Equatable, Hashable {
 
 struct AppSettings: Codable {
     var apiKey: String = ""
+    var appPresenceMode: AppPresenceMode = .menuBarOnly
     var cloudTranscriptionModel: CloudTranscriptionModel = .whisper1
     var postProcessingEngine: PostProcessingEngine = .openai
     var autoTypeResult: Bool = true
@@ -663,7 +688,7 @@ struct AppSettings: Codable {
     var selectedAIChatConversationID: UUID? = nil
 
     enum CodingKeys: String, CodingKey {
-        case apiKey, cloudTranscriptionModel, postProcessingEngine, autoTypeResult, enableProfanityFilter, language,
+        case apiKey, appPresenceMode, cloudTranscriptionModel, postProcessingEngine, autoTypeResult, enableProfanityFilter, language,
              selectedModeName, customModes, recordingMode, engineType, localModelSize, qwenASRModel,
              showOverlay, setupCompleted, hotkeyConfig, insertionMethod,
              automaticallyChecksForUpdates, automaticallyDownloadsUpdates,
@@ -680,6 +705,7 @@ struct AppSettings: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
+        appPresenceMode = try container.decodeIfPresent(AppPresenceMode.self, forKey: .appPresenceMode) ?? .menuBarOnly
         cloudTranscriptionModel = try container.decodeIfPresent(CloudTranscriptionModel.self, forKey: .cloudTranscriptionModel) ?? .whisper1
         postProcessingEngine = try container.decodeIfPresent(PostProcessingEngine.self, forKey: .postProcessingEngine) ?? .openai
         autoTypeResult = try container.decodeIfPresent(Bool.self, forKey: .autoTypeResult) ?? true

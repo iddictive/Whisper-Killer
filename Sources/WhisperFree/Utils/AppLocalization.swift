@@ -112,6 +112,19 @@ extension RecordingMode {
     }
 }
 
+extension AppPresenceMode {
+    var localizedTitle: String {
+        switch self {
+        case .menuBarOnly:
+            return L.tr("Menu Bar Only", "Только menu bar")
+        case .dockAndMenuBar:
+            return L.tr("Dock + Menu Bar", "Dock + menu bar")
+        case .dockOnly:
+            return L.tr("Dock Only", "Только Dock")
+        }
+    }
+}
+
 extension InsertionMethod {
     var localizedTitle: String {
         switch self {

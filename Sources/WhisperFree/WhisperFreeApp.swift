@@ -13,7 +13,7 @@ struct WhisperFreeApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(isInserted: menuBarExtraIsInserted) {
             MenuBarView()
                 .environmentObject(appState)
         } label: {
@@ -21,6 +21,21 @@ struct WhisperFreeApp: App {
                 .environmentObject(appState)
         }
         .menuBarExtraStyle(.window)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button(L.tr("Settings...", "Настройки...")) {
+                    AppDelegate.shared?.showSettings()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+        }
+    }
+
+    private var menuBarExtraIsInserted: Binding<Bool> {
+        Binding(
+            get: { appState.settings.appPresenceMode.showsMenuBarExtra },
+            set: { _ in }
+        )
     }
 }
 
@@ -44,8 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
 
-        // Ensure app can run without dock icon but with menu bar
-        NSApp.setActivationPolicy(.accessory)
+        applyConfiguredActivationPolicy()
 
         // Bridge AppState.showOverlayWindow → OverlayWindowController
         let appState = AppState.shared
@@ -78,6 +92,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
 
         print("✨ Launch sequence complete")
+    }
+
+    func applyConfiguredActivationPolicy(activateIfRegular: Bool = false) {
+        let mode = AppState.shared.settings.appPresenceMode
+        let targetPolicy: NSApplication.ActivationPolicy = mode.showsDockIcon ? .regular : .accessory
+
+        if NSApp.activationPolicy() != targetPolicy {
+            let didChange = NSApp.setActivationPolicy(targetPolicy)
+            if !didChange {
+                print("⚠️ Failed to switch activation policy to \(targetPolicy)")
+            }
+        }
+
+        if activateIfRegular && targetPolicy == .regular {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard AppState.shared.settings.appPresenceMode.showsDockIcon else { return true }
+
+        if !flag {
+            showSettings()
+        }
+
+        return true
     }
 
     private func configureApplicationIcon() {
