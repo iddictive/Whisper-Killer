@@ -129,7 +129,7 @@ struct HistoryView: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
             }
         }
         .padding(.horizontal, 12)
@@ -294,6 +294,7 @@ struct HistoryView: View {
                         expandedEntryId = expandedEntryId == entry.entryId ? nil : entry.entryId
                     }
                 }
+                .swInteractiveHover()
 
             if expandedEntryId == entry.entryId {
                 if let summary = entry.summaryText, !summary.isEmpty {
@@ -353,7 +354,7 @@ struct HistoryView: View {
                 Label(L.tr("Copy", "Копировать"), systemImage: "doc.on.doc.fill")
                     .font(.system(size: 11, weight: .bold))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
             .foregroundStyle(SW.accent)
             
             Button {
@@ -363,7 +364,7 @@ struct HistoryView: View {
                 Label(L.tr("Rename", "Переименовать"), systemImage: "pencil")
                     .font(.system(size: 11, weight: .bold))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
             .foregroundStyle(SW.secondaryText)
 
             if entry.summaryText?.isEmpty == false {
@@ -374,7 +375,7 @@ struct HistoryView: View {
                     Label(L.tr("Transcript", "Транскрипт"), systemImage: "text.alignleft")
                         .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .foregroundStyle(.secondary)
             }
 
@@ -385,7 +386,7 @@ struct HistoryView: View {
                     Label(L.tr("Save as MD", "Save as MD"), systemImage: "square.and.arrow.down")
                         .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .foregroundStyle(Color.accentColor)
 
                 markdownSaveStatus(entry)
@@ -404,7 +405,7 @@ struct HistoryView: View {
                           systemImage: retranscribingEntryIds.contains(entry.entryId) ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.clockwise")
                         .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .foregroundStyle(Color.accentColor)
                 .disabled(retranscribingEntryIds.contains(entry.entryId) || appState.state != .idle || appState.isProcessingActive)
 
@@ -415,7 +416,7 @@ struct HistoryView: View {
                           systemImage: playingEntryId == entry.entryId ? "pause.fill" : "play.fill")
                         .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .foregroundStyle(SW.warning)
 
                 Button {
@@ -425,7 +426,7 @@ struct HistoryView: View {
                     Label("Finder", systemImage: "folder.fill")
                         .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .foregroundStyle(.secondary)
             }
 
@@ -437,7 +438,7 @@ struct HistoryView: View {
                     Label(L.tr("Raw", "Сырой"), systemImage: "doc.on.clipboard")
                         .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .foregroundStyle(.secondary)
             }
 
@@ -449,7 +450,7 @@ struct HistoryView: View {
                 Image(systemName: "trash.fill")
                     .font(.system(size: 11))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
             .foregroundStyle(.red.opacity(0.8))
         }
     }

@@ -90,7 +90,7 @@ struct MaskedAPIKeyField: View {
                     Image(systemName: isEditing ? "eye.slash" : "pencil")
                         .frame(width: 16, height: 16)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .help(isEditing
                     ? L.tr("Hide API key", "Скрыть API key")
                     : L.tr("Edit API key", "Изменить API key")
@@ -111,6 +111,7 @@ struct MaskedAPIKeyField: View {
                     isEditing = true
                 }
                 .modifier(APIKeyFieldPresentationModifier(presentation: presentation))
+                .swInteractiveHover()
         } else {
             SecureField("sk-...", text: $apiKey)
                 .onChange(of: apiKey) { _, _ in
@@ -211,7 +212,7 @@ struct ClickableDisclosure<Label: View, Content: View>: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
 
             if isExpanded {
                 content

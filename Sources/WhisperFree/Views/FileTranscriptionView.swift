@@ -227,7 +227,7 @@ struct FileTranscriptionView: View {
                 .background(SW.rowBackground)
                 .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
             .help(L.tr("Import Google Meet recording", "Импортировать запись Google Meet"))
 
             Menu {
@@ -332,6 +332,7 @@ struct FileTranscriptionView: View {
             }
         }
         .frame(height: 40)
+        .swInteractiveHover()
         .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
             handleDrop(providers)
         }
@@ -389,7 +390,7 @@ struct FileTranscriptionView: View {
                     Text(L.tr("Clear Done", "Убрать готовые"))
                         .font(.system(size: 11))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .foregroundStyle(.secondary)
                 .disabled(queueItems.filter { $0.status == .done }.isEmpty)
 
@@ -443,6 +444,7 @@ struct FileTranscriptionView: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
+        .swInteractiveHover()
         .onTapGesture {
             showFilePicker = true
         }
@@ -466,7 +468,7 @@ struct FileTranscriptionView: View {
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(.white.opacity(0.8))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -912,7 +914,7 @@ struct QueueCardView: View {
                     .foregroundStyle(Color.accentColor)
                     .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .help(L.tr("Save transcript next to the original file", "Сохранить транскрипт рядом с исходным файлом"))
 
                 removeButton
@@ -937,7 +939,7 @@ struct QueueCardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
                     .opacity(canStart ? 1 : 0.45)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .disabled(!canStart)
 
                 Button(action: onCancel) {
@@ -946,7 +948,7 @@ struct QueueCardView: View {
                         .foregroundStyle(.secondary.opacity(0.6))
                         .padding(4)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .help(L.tr("Cancel", "Отменить"))
             }
         } else {
@@ -960,7 +962,7 @@ struct QueueCardView: View {
                         .foregroundStyle(SW.danger)
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
             .help(L.tr("Stop Processing", "Остановить обработку"))
         }
     }
@@ -972,7 +974,7 @@ struct QueueCardView: View {
                 .foregroundStyle(.secondary.opacity(0.6))
                 .padding(4)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
         .help(L.tr("Remove from queue", "Удалить из очереди"))
     }
 

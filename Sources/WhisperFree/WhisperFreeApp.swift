@@ -751,7 +751,7 @@ private struct AccessibilityDragHelperView: View {
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(SW.secondaryText)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
             }
 
             Text(L.tr("Drag WhisperKiller from this card into the Accessibility list, then enable the toggle.", "Перетащите WhisperKiller из этой карточки в список Accessibility, затем включите переключатель."))
@@ -769,7 +769,7 @@ private struct AccessibilityDragHelperView: View {
                         .background(SW.rowBackground)
                         .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .help(L.tr("Open Accessibility settings", "Открыть настройки Accessibility"))
             }
         }

@@ -62,7 +62,7 @@ struct MenuBarView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 4)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
             }
 
             headerControls
@@ -110,7 +110,7 @@ struct MenuBarView: View {
                                 .fill(appState.copiedFeedback ? SW.accent.opacity(0.3) : SW.accent)
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                     .animation(.easeInOut(duration: 0.2), value: appState.copiedFeedback)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -181,11 +181,12 @@ struct MenuBarView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.orange.opacity(0.8))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .background(Color.orange.opacity(0.1))
+                .swInteractiveHover(isActive: !isMissingWhisperCppError)
                 .onTapGesture {
                     if !isMissingWhisperCppError {
                         appState.clearError()
@@ -315,7 +316,7 @@ struct MenuBarView: View {
                                     .strokeBorder(isSelected ? SW.accent.opacity(0.32) : SW.border, lineWidth: 1)
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.swPlainInteractive)
                         .disabled(!isEnabled)
                         .help(modeHelpText(for: mode, isEnabled: isEnabled))
                     }
@@ -458,7 +459,7 @@ struct MenuBarView: View {
                     .fill(appState.settings.enableSpeakerDiarization ? SW.accent.opacity(0.12) : SW.rowBackground)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
         .fixedSize()
         .help(appState.settings.canUseSpeakerDiarization
               ? L.tr("Toggle native OpenAI speaker diarization.", "Включить или выключить нативную OpenAI-диаризацию спикеров.")
@@ -486,7 +487,7 @@ struct MenuBarView: View {
                     .fill(appState.state == .recording ? SW.danger : SW.rowBackground)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
         .fixedSize()
         .disabled(appState.state == .starting)
     }
@@ -512,7 +513,7 @@ struct MenuBarView: View {
                     .fill(appState.showLiveTranslatorOverlay ? SW.accent : SW.rowBackground)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
         .fixedSize()
     }
 
@@ -532,7 +533,7 @@ struct MenuBarView: View {
             .padding(.vertical, 8)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
     }
 
     private var isMissingWhisperCppError: Bool {

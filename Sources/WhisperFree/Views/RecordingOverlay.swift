@@ -103,14 +103,14 @@ struct RecordingOverlayContent: View {
                                 .background(Color.red.opacity(0.3))
                                 .clipShape(Capsule())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.swPlainInteractive)
                     }
                     
                     Button { appState.clearError() } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 14))
                             .foregroundStyle(.white.opacity(0.6))
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.swPlainInteractive)
                 }
             }
         }
@@ -240,7 +240,7 @@ struct RecordingOverlayContent: View {
                 .background(Circle().fill(.white.opacity(0.1)))
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
         .onHover { hovering in
             if hovering {
                 NSCursor.pointingHand.push()
@@ -261,7 +261,7 @@ struct RecordingOverlayContent: View {
                 .background(Circle().fill(.white.opacity(0.1)))
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
         .onHover { hovering in
             if hovering {
                 NSCursor.pointingHand.push()

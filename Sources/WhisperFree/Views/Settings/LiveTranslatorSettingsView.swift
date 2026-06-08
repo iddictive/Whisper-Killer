@@ -443,7 +443,7 @@ private struct OllamaModelSelector: View {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 11, weight: .semibold))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
             .disabled(isLoadingModels)
             .help("Refresh model list from Ollama")
         }

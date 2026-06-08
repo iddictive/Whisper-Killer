@@ -25,7 +25,7 @@ struct HotkeyRecorderView: View {
                             .stroke(appState.isRecordingHotkey ? Color.accentColor : Color.clear, lineWidth: 1)
                     )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
             .background(KeyEventView(isRecording: $appState.isRecordingHotkey, onKeyRecorded: { newConfig in
                 config = newConfig
                 appState.isRecordingHotkey = false
@@ -40,7 +40,7 @@ struct HotkeyRecorderView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .help("Reset to defaults")
             }
         }

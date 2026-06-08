@@ -161,7 +161,7 @@ private struct TranscriptDockHeader: View {
                     .background(Color.white.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
 
             Button(action: { LiveTranslatorManager.shared.stop() }) {
                 Image(systemName: "xmark")
@@ -171,7 +171,7 @@ private struct TranscriptDockHeader: View {
                     .background(Color.white.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)

@@ -361,7 +361,7 @@ struct SetupWizardView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(accentGold)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
             .padding(.top, 4)
 
             if appState.isTranslocated {
@@ -390,7 +390,7 @@ struct SetupWizardView: View {
                             .foregroundStyle(.red)
                             .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 }
                 .padding(14)
                 .background(Color.red.opacity(0.08))
@@ -450,7 +450,7 @@ struct SetupWizardView: View {
                             .background(Color.orange)
                             .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 }
             }
 
@@ -567,7 +567,7 @@ struct SetupWizardView: View {
                     .strokeBorder(selected ? accentGold.opacity(0.4) : borderSubtle, lineWidth: 1.5)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
     }
 
     private var cloudEngineCard: some View {
@@ -663,7 +663,7 @@ struct SetupWizardView: View {
                             .foregroundStyle(selectedQwenModel == model ? accentGold : textSecondary)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 }
             }
 
@@ -729,7 +729,7 @@ struct SetupWizardView: View {
                             .foregroundStyle(accentPink)
                             .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 } else {
                     Button {
                         installHomebrew()
@@ -742,7 +742,7 @@ struct SetupWizardView: View {
                             .foregroundStyle(accentPink)
                             .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 }
             }
         }
@@ -779,7 +779,7 @@ struct SetupWizardView: View {
                             .foregroundStyle(accentPink)
                             .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 }
             }
         }
@@ -852,7 +852,7 @@ struct SetupWizardView: View {
                                     .font(.system(size: 12))
                                     .foregroundStyle(textSecondary)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.swPlainInteractive)
                         }
                         HStack(spacing: 4) {
                             if state.speed > 0 {
@@ -883,7 +883,7 @@ struct SetupWizardView: View {
                         .background(accentGold.opacity(0.15))
                         .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 }
             }
         }
@@ -892,6 +892,7 @@ struct SetupWizardView: View {
         .background(isCurrent ? accentGold.opacity(0.06) : .clear)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .contentShape(Rectangle())
+        .swInteractiveHover()
         .onTapGesture {
             selectedModel = size
         }
@@ -957,7 +958,7 @@ struct SetupWizardView: View {
                         .foregroundStyle(accentGold)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                     .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || apiValidationState == .checking)
                 }
 
@@ -1141,7 +1142,7 @@ struct SetupWizardView: View {
                     }
                     .foregroundStyle(textSecondary)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 }
 
                 Spacer()
@@ -1168,7 +1169,7 @@ struct SetupWizardView: View {
                         .foregroundStyle(.white)
                         .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 } else {
                     Button {
                         finishSetup()
@@ -1190,7 +1191,7 @@ struct SetupWizardView: View {
                         .foregroundStyle(.white)
                         .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                 }
             }
         }

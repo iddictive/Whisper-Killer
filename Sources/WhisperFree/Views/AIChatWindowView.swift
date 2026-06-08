@@ -60,7 +60,7 @@ private struct AIChatSidebar: View {
                     .background(SW.accent.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(L.tr("CHATS", "ЧАТЫ"))
@@ -145,7 +145,7 @@ private struct AIChatConversationRow: View {
             .background(isSelected ? SW.accent.opacity(0.12) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
     }
 }
 
@@ -160,7 +160,7 @@ private struct AIChatAttachButton: View {
                 .font(.system(size: 11, weight: .medium))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
     }
 }
 
@@ -191,7 +191,7 @@ private struct AIChatHeader: View {
                     .background(SW.rowBackground)
                     .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.swPlainInteractive)
             .disabled(appState.isLoadingAIChatModels)
             .help(L.tr("Refresh OpenAI models", "Обновить модели OpenAI"))
         }
@@ -345,7 +345,7 @@ private struct AIChatComposer: View {
                         .background(appState.isAIChatVoiceRecording ? SW.danger : SW.rowBackground)
                         .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
 
                 TextField(L.tr("Ask about transcripts...", "Спросить по транскрипциям..."), text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -366,7 +366,7 @@ private struct AIChatComposer: View {
                         .background(SW.rowBackground)
                         .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
                 .disabled(!canSend)
             }
         }

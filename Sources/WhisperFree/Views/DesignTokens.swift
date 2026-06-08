@@ -62,9 +62,70 @@ struct SWCard: ViewModifier {
     }
 }
 
+struct SWInteractiveHover: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+    var isActive: Bool = true
+    var isPressed: Bool = false
+
+    private var isInteractive: Bool {
+        isEnabled && isActive
+    }
+
+    private var targetScale: CGFloat {
+        guard isInteractive else { return 1 }
+        if isPressed { return 0.985 }
+        return isHovering ? 1.01 : 1
+    }
+
+    private var targetBrightness: Double {
+        guard isInteractive else { return 0 }
+        if isPressed { return -0.012 }
+        return isHovering ? 0.018 : 0
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(targetScale)
+            .brightness(targetBrightness)
+            .animation(.easeOut(duration: 0.14), value: isHovering)
+            .animation(.easeOut(duration: 0.10), value: isPressed)
+            .onHover { hovering in
+                isHovering = isInteractive && hovering
+            }
+            .onChange(of: isEnabled) { _, enabled in
+                if !enabled {
+                    isHovering = false
+                }
+            }
+            .onChange(of: isActive) { _, active in
+                if !active {
+                    isHovering = false
+                }
+            }
+    }
+}
+
+struct SWPlainInteractiveButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .modifier(SWInteractiveHover(isPressed: configuration.isPressed))
+    }
+}
+
 extension View {
     func swCard(selected: Bool = false) -> some View {
         modifier(SWCard(isSelected: selected))
+    }
+
+    func swInteractiveHover(isActive: Bool = true, isPressed: Bool = false) -> some View {
+        modifier(SWInteractiveHover(isActive: isActive, isPressed: isPressed))
+    }
+}
+
+extension ButtonStyle where Self == SWPlainInteractiveButtonStyle {
+    static var swPlainInteractive: SWPlainInteractiveButtonStyle {
+        SWPlainInteractiveButtonStyle()
     }
 }
 
@@ -154,7 +215,7 @@ struct SWIconButton: View {
             .background(SW.rowBackground)
             .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
     }
 }
 
@@ -177,7 +238,7 @@ struct SWPillButton: View {
             .foregroundStyle(.white)
             .background(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous).fill(color))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
     }
 }
 

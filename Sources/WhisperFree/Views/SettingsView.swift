@@ -597,7 +597,7 @@ struct SettingsView: View {
                             } label: {
                                 Image(systemName: "trash")
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.swPlainInteractive)
                         }
                         .padding(.vertical, 10)
 
@@ -647,7 +647,7 @@ struct SettingsView: View {
                     .strokeBorder(selected ? SW.accent.opacity(0.35) : Color.primary.opacity(0.06), lineWidth: 1)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
     }
 
     private var engineSelector: some View {
@@ -672,7 +672,7 @@ struct SettingsView: View {
                                 .fill(appState.settings.engineType == type ? Color(nsColor: .controlBackgroundColor).opacity(0.92) : Color.clear)
                         )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.swPlainInteractive)
 
                 if type != TranscriptionEngineType.allCases.last {
                     Divider()
@@ -830,12 +830,12 @@ struct SettingsView: View {
                         Image(systemName: "trash")
                             .foregroundStyle(.red.opacity(0.7))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.swPlainInteractive)
                     .padding(.leading, 8)
                 } else if let state = modelManager.activeDownloads[size.rawValue] {
                     if state.error != nil {
                         Button(L.tr("Retry", "Повторить")) { modelManager.downloadModel(size) }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.swPlainInteractive)
                             .font(.caption2)
                             .foregroundStyle(SW.accent)
                     } else {
@@ -1012,7 +1012,7 @@ struct SettingsView: View {
                             Image(systemName: "trash")
                                 .foregroundStyle(.red.opacity(0.7))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.swPlainInteractive)
                     }
                 }
             }
@@ -1542,6 +1542,7 @@ struct SettingsView: View {
         .onDrop(of: [.fileURL], isTargeted: $isProfanityDictionaryDropTarget) { providers in
             handleProfanityDictionaryDrop(providers)
         }
+        .swInteractiveHover()
         .onTapGesture {
             showProfanityDictionaryImporter = true
         }
@@ -2124,7 +2125,7 @@ struct ModeCard: View {
                             Image(systemName: "pencil")
                                 .foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.swPlainInteractive)
                     }
 
                     if let onDelete = onDelete {
@@ -2132,7 +2133,7 @@ struct ModeCard: View {
                             Image(systemName: "trash")
                                 .foregroundStyle(.red.opacity(0.7))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.swPlainInteractive)
                     }
                 }
             }
@@ -2152,6 +2153,7 @@ struct ModeCard: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .contentShape(Rectangle())
+        .swInteractiveHover(isActive: isEnabled)
         .onTapGesture {
             if isEnabled { onSelect() }
         }

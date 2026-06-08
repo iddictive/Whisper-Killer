@@ -394,7 +394,7 @@ private struct CalendarDayButton: View {
             .background(isSelected ? SW.accent : SW.rowBackground)
             .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.swPlainInteractive)
     }
 
     private static let weekdayFormatter: DateFormatter = {
