@@ -470,9 +470,9 @@ struct MenuBarView: View {
             appState.toggleFromMenuBar()
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: appState.state == .recording ? "stop.fill" : "mic.fill")
+                Image(systemName: appState.state == .recording ? "stop.fill" : appState.state == .starting ? "hourglass" : "mic.fill")
                     .font(.system(size: 10))
-                Text(appState.state == .recording ? L.tr("Stop", "Стоп") : L.tr("Rec", "Rec"))
+                Text(appState.state == .recording ? L.tr("Stop", "Стоп") : appState.state == .starting ? "..." : L.tr("Rec", "Rec"))
                     .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
@@ -488,6 +488,7 @@ struct MenuBarView: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
+        .disabled(appState.state == .starting)
     }
 
     private var liveTranslatorButton: some View {

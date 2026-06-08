@@ -142,6 +142,7 @@ struct RecordingOverlayContent: View {
         if appState.state == .recording { return SW.danger }
         if appState.backgroundProcessingCount > 0 { return SW.warning }
         switch appState.state {
+        case .starting: return SW.warning
         case .recording: return SW.danger
         case .processing: return SW.warning
         case .typing: return SW.accent
@@ -155,6 +156,7 @@ struct RecordingOverlayContent: View {
             return localizedProcessingStage
         }
         switch appState.state {
+        case .starting: return L.tr("Starting microphone...", "Запуск микрофона...")
         case .recording: return L.tr("Recording...", "Запись...")
         case .processing: return localizedProcessingStage
         case .typing: return L.tr("Typing...", "Печать...")

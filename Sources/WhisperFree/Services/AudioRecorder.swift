@@ -2,7 +2,9 @@ import AVFoundation
 import Combine
 import CoreAudio
 
-final class AudioRecorder: ObservableObject {
+// AVAudioEngine startup may block inside CoreAudio, so AppState can start it off
+// the main thread. Published UI state is bridged back through updateObservableState.
+final class AudioRecorder: ObservableObject, @unchecked Sendable {
     @Published var audioLevels: [Float] = Array(repeating: 0, count: 30)
     @Published var isRecording = false
     @Published var recordingDuration: TimeInterval = 0
@@ -30,18 +32,28 @@ final class AudioRecorder: ObservableObject {
 
     var currentRecordingURL: URL? { recordingURL }
 
+    private func updateObservableState(_ update: @escaping () -> Void) {
+        if Thread.isMainThread {
+            update()
+        } else {
+            DispatchQueue.main.sync(execute: update)
+        }
+    }
+
     @discardableResult
     func startRecording(inputDeviceID: String? = nil) -> Bool {
         // Stop monitor mode if active (avoid two engines on same mic)
         stopMonitoring()
-        
-        error = nil
-        lastStopFailureMessage = nil
-        isTooQuiet = false
-        isTooNoisy = false
-        isMicrophoneDenied = false
-        recentLevels.removeAll()
-        resetLevelTracking()
+
+        updateObservableState {
+            self.error = nil
+            self.lastStopFailureMessage = nil
+            self.isTooQuiet = false
+            self.isTooNoisy = false
+            self.isMicrophoneDenied = false
+            self.recentLevels.removeAll()
+            self.resetLevelTracking()
+        }
         
         // 1. Check Microphone Permissions
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
@@ -62,8 +74,10 @@ final class AudioRecorder: ObservableObject {
     }
 
     private func handlePermissionDenied() {
-        self.isMicrophoneDenied = true
-        self.error = "Microphone access denied. Please enable it in System Settings → Privacy & Security."
+        updateObservableState {
+            self.isMicrophoneDenied = true
+            self.error = "Microphone access denied. Please enable it in System Settings → Privacy & Security."
+        }
     }
 
     private func proceedWithRecording(inputDeviceID: String?) -> Bool {
@@ -82,7 +96,9 @@ final class AudioRecorder: ObservableObject {
 
         if recordingFormat.sampleRate == 0 || recordingFormat.channelCount == 0 {
             print("❌ Error: Input node has invalid hardware format: \(recordingFormat)")
-            self.error = Self.inputUnavailableMessage
+            updateObservableState {
+                self.error = Self.inputUnavailableMessage
+            }
             cleanupFailedStart(engine: engine, inputNode: inputNode, tapInstalled: false)
             return false
         }
@@ -90,7 +106,6 @@ final class AudioRecorder: ObservableObject {
         // Create temp file for recording
         let tempDir = FileManager.default.temporaryDirectory
         let url = tempDir.appendingPathComponent("whisperkiller_\(UUID().uuidString).wav")
-        recordingURL = url
 
         // Processing format: 16kHz mono float32 (for real-time buffer conversion)
         guard let targetFormat = AVAudioFormat(
@@ -99,14 +114,18 @@ final class AudioRecorder: ObservableObject {
             channels: 1,
             interleaved: false
         ) else {
-            self.error = "Failed to create audio format"
+            updateObservableState {
+                self.error = "Failed to create audio format"
+            }
             cleanupFailedStart(engine: engine, inputNode: inputNode, tapInstalled: false)
             return false
         }
 
         guard let converter = AVAudioConverter(from: recordingFormat, to: targetFormat) else {
             print("❌ Error: Failed to create converter from \(recordingFormat) to \(targetFormat)")
-            self.error = "Audio format mismatch: \(Int(recordingFormat.sampleRate))Hz to 16kHz"
+            updateObservableState {
+                self.error = "Audio format mismatch: \(Int(recordingFormat.sampleRate))Hz to 16kHz"
+            }
             cleanupFailedStart(engine: engine, inputNode: inputNode, tapInstalled: false)
             return false
         }
@@ -123,10 +142,16 @@ final class AudioRecorder: ObservableObject {
         ]
         
         do {
-            audioFile = try AVAudioFile(forWriting: url, settings: fileSettings)
+            let file = try AVAudioFile(forWriting: url, settings: fileSettings)
+            updateObservableState {
+                self.audioFile = file
+                self.recordingURL = url
+            }
             print("whisper_debug: Audio file created at \(url.path)")
         } catch {
-            self.error = "Failed to create audio file: \(error.localizedDescription)"
+            updateObservableState {
+                self.error = "Failed to create audio file: \(error.localizedDescription)"
+            }
             cleanupFailedStart(engine: engine, inputNode: inputNode, tapInstalled: false)
             return false
         }
@@ -205,20 +230,26 @@ final class AudioRecorder: ObservableObject {
         do {
             engine.prepare()
             try engine.start()
-            audioEngine = engine
-            startTime = Date()
-            isRecording = true
+            updateObservableState {
+                self.audioEngine = engine
+                self.startTime = Date()
+                self.isRecording = true
+            }
             print("whisper_debug: Audio engine started successfully. Input device enabled.")
 
             // Update duration timer
-            timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-                guard let self = self, let start = self.startTime else { return }
-                self.recordingDuration = Date().timeIntervalSince(start)
+            updateObservableState {
+                self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                    guard let self = self, let start = self.startTime else { return }
+                    self.recordingDuration = Date().timeIntervalSince(start)
+                }
             }
             return true
         } catch {
             print("whisper_debug: Failed to start audio engine: \(error)")
-            self.error = "Failed to start recording: \(error.localizedDescription)"
+            updateObservableState {
+                self.error = "Failed to start recording: \(error.localizedDescription)"
+            }
             cleanupFailedStart(engine: engine, inputNode: inputNode, tapInstalled: true)
             return false
         }
@@ -231,7 +262,9 @@ final class AudioRecorder: ObservableObject {
         }
 
         guard let defaultDeviceID = Self.defaultInputDeviceID() else {
-            error = "No system input microphone found. Check Sound Settings -> Input."
+            updateObservableState {
+                self.error = "No system input microphone found. Check Sound Settings -> Input."
+            }
             return false
         }
 
@@ -241,7 +274,9 @@ final class AudioRecorder: ObservableObject {
         }
 
         guard primaryDeviceID != defaultDeviceID else {
-            error = Self.inputUnavailableMessage
+            updateObservableState {
+                self.error = Self.inputUnavailableMessage
+            }
             return false
         }
 
@@ -250,7 +285,9 @@ final class AudioRecorder: ObservableObject {
             return true
         }
 
-        error = Self.inputUnavailableMessage
+        updateObservableState {
+            self.error = Self.inputUnavailableMessage
+        }
         return false
     }
 
@@ -291,17 +328,21 @@ final class AudioRecorder: ObservableObject {
         if tapInstalled {
             inputNode.removeTap(onBus: 0)
         }
-        audioEngine = nil
-        audioFile = nil
-        if let url = recordingURL {
-            try? FileManager.default.removeItem(at: url)
+        var failedURL: URL?
+        updateObservableState {
+            failedURL = self.recordingURL
+            self.audioEngine = nil
+            self.audioFile = nil
+            self.recordingURL = nil
+            self.isRecording = false
+            self.recordingDuration = 0
+            self.audioLevels = Array(repeating: 0, count: self.levelHistoryCount)
+            self.recentLevels.removeAll()
+            self.resetLevelTracking()
         }
-        recordingURL = nil
-        isRecording = false
-        recordingDuration = 0
-        audioLevels = Array(repeating: 0, count: levelHistoryCount)
-        recentLevels.removeAll()
-        resetLevelTracking()
+        if let failedURL {
+            try? FileManager.default.removeItem(at: failedURL)
+        }
     }
 
     func stopRecording() -> (URL?, TimeInterval) {

@@ -6,6 +6,7 @@ import AVFoundation
 
 enum AppRecordingState: Equatable {
     case idle
+    case starting
     case recording
     case processing
     case typing
@@ -93,7 +94,7 @@ final class AppState: ObservableObject {
     }
 
     private var shouldShowOverlay: Bool {
-        state == .recording || state == .processing || state == .typing || backgroundProcessingCount > 0 || lastError != nil
+        state == .starting || state == .recording || state == .processing || state == .typing || backgroundProcessingCount > 0 || lastError != nil
     }
 
     @Published var showOverlayWindow = false {
@@ -135,9 +136,12 @@ final class AppState: ObservableObject {
     private var pendingStopTask: Task<Void, Never>?
     private var currentProcessingTask: Task<Void, Never>?
     private var currentProcessingToken: UUID?
+    private var recordingStartID: UUID?
+    private var pendingKeyUpDuringRecordingStartDuration: TimeInterval?
     private var processingQueue: [RecordingProcessingJob] = []
     private var activeProcessingRecording: RecordingProcessingJob?
     private let postReleaseTail: TimeInterval = 0.45
+    private let recordingStartTimeout: TimeInterval = 8
 
     private init() {
         print("🚀 AppState initializing...")
@@ -758,6 +762,12 @@ final class AppState: ObservableObject {
     private func handleKeyUp() {
         let now = Date()
         let duration = keyDownTime.map { now.timeIntervalSince($0) } ?? 0
+
+        if state == .starting {
+            pendingKeyUpDuringRecordingStartDuration = duration
+            keyDownTime = nil
+            return
+        }
         
         switch settings.recordingMode {
         case .hold:
@@ -884,7 +894,48 @@ final class AppState: ObservableObject {
 
         lastError = nil
 
-        guard recorder.startRecording(inputDeviceID: settings.selectedInputDeviceID) else {
+        let startID = UUID()
+        recordingStartID = startID
+        pendingKeyUpDuringRecordingStartDuration = nil
+        state = .starting
+        showOverlayWindow = true
+
+        let selectedInputDeviceID = settings.selectedInputDeviceID
+        let recorder = recorder
+        DispatchQueue.global(qos: .userInitiated).async { [weak self, recorder] in
+            let didStart = recorder.startRecording(inputDeviceID: selectedInputDeviceID)
+
+            DispatchQueue.main.async {
+                self?.finishRecordingStart(id: startID, didStart: didStart)
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + recordingStartTimeout) { [weak self] in
+            guard let self,
+                  self.recordingStartID == startID,
+                  self.state == .starting
+            else { return }
+
+            self.recordingStartID = nil
+            self.pendingKeyUpDuringRecordingStartDuration = nil
+            self.state = .idle
+            self.refreshBackgroundProcessingState()
+            self.showError("Microphone startup timed out. Check Sound Settings -> Input or disconnect the current input device, then try again.")
+        }
+    }
+
+    private func finishRecordingStart(id: UUID, didStart: Bool) {
+        guard recordingStartID == id else {
+            if didStart {
+                _ = recorder.stopRecording()
+                recorder.cleanup()
+            }
+            return
+        }
+
+        recordingStartID = nil
+
+        guard didStart else {
             let message = recorder.error ?? "Could not start recording. Check microphone access and try again."
             resetFailedRecordingStart()
             showError(message)
@@ -893,9 +944,29 @@ final class AppState: ObservableObject {
 
         state = .recording
         showOverlayWindow = true
+
+        if let duration = pendingKeyUpDuringRecordingStartDuration {
+            pendingKeyUpDuringRecordingStartDuration = nil
+            switch settings.recordingMode {
+            case .hold:
+                if duration > 0.8 {
+                    scheduleStopAndTranscribe(after: postReleaseTail)
+                } else {
+                    cancelRecording()
+                }
+            case .pushToTalk:
+                if duration >= 0.8 {
+                    scheduleStopAndTranscribe(after: postReleaseTail)
+                }
+            case .toggle:
+                break
+            }
+        }
     }
 
     private func resetFailedRecordingStart(keepErrorOverlay: Bool = false) {
+        recordingStartID = nil
+        pendingKeyUpDuringRecordingStartDuration = nil
         cancelPendingStopTask()
         _ = recorder.stopRecording()
         recorder.stopMonitoring()
@@ -913,6 +984,17 @@ final class AppState: ObservableObject {
 
     func cancelRecording() {
         cancelPendingStopTask()
+        if state == .starting {
+            recordingStartID = nil
+            pendingKeyUpDuringRecordingStartDuration = nil
+            state = .idle
+            refreshBackgroundProcessingState()
+            if backgroundProcessingCount == 0 {
+                showOverlayWindow = false
+            }
+            return
+        }
+
         if state == .processing {
             cancelProcessing()
             return

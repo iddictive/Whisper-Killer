@@ -799,6 +799,7 @@ struct MenuBarIconView: View {
 
     private var dotColor: NSColor {
         switch appState.state {
+        case .starting: return .systemOrange
         case .recording: return .systemRed
         case .processing: return .systemOrange
         default: return appState.backgroundProcessingCount > 0 ? .systemOrange : .clear
