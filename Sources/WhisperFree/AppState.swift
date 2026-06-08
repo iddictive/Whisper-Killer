@@ -634,12 +634,13 @@ final class AppState: ObservableObject {
         resetStaleAccessibilityEntries()
         // Not trusted — AXIsProcessTrustedWithOptions(prompt: true) shows the native
         // system dialog with "Deny" / "Open System Settings" buttons.
-        AppDelegate.shared?.showAccessibilityDragHelper()
         let trusted = hotkeyManager.checkTrust(prompt: true)
         self.isHotkeyTrusted = trusted
         if trusted {
             AppDelegate.shared?.hideAccessibilityDragHelper()
             reloadHotkeyManager()
+        } else {
+            AppDelegate.shared?.showAccessibilityDragHelper(afterSystemSettingsAppears: true)
         }
     }
 

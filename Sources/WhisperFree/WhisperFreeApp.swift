@@ -192,11 +192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         } ?? []
     }
 
-    func showAccessibilityDragHelper() {
+    func showAccessibilityDragHelper(afterSystemSettingsAppears: Bool = false) {
         if accessibilityDragHelperController == nil {
             accessibilityDragHelperController = AccessibilityDragHelperWindowController()
         }
-        accessibilityDragHelperController?.show()
+        accessibilityDragHelperController?.show(afterSystemSettingsAppears: afterSystemSettingsAppears)
     }
 
     func hideAccessibilityDragHelper() {
@@ -406,6 +406,7 @@ final class FileTranscriptionWindowController: NSObject {
 @MainActor
 final class AccessibilityDragHelperWindowController: NSObject {
     private var panel: NSPanel?
+    private var pendingShowTimer: Timer?
     private var repositionTimer: Timer?
 
     private struct AnchorWindow {
@@ -414,7 +415,15 @@ final class AccessibilityDragHelperWindowController: NSObject {
         let visibleArea: CGFloat
     }
 
-    func show() {
+    func show(afterSystemSettingsAppears: Bool = false) {
+        if afterSystemSettingsAppears && systemSettingsWindowAnchor() == nil {
+            scheduleShowWhenSystemSettingsAppears()
+            return
+        }
+
+        pendingShowTimer?.invalidate()
+        pendingShowTimer = nil
+
         if let panel {
             panel.makeKeyAndOrderFront(nil)
             position(panel)
@@ -455,10 +464,38 @@ final class AccessibilityDragHelperWindowController: NSObject {
     }
 
     func close() {
+        pendingShowTimer?.invalidate()
+        pendingShowTimer = nil
         repositionTimer?.invalidate()
         repositionTimer = nil
         panel?.close()
         panel = nil
+    }
+
+    private func scheduleShowWhenSystemSettingsAppears() {
+        pendingShowTimer?.invalidate()
+        var ticks = 0
+        pendingShowTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
+            Task { @MainActor in
+                guard let self else {
+                    timer.invalidate()
+                    return
+                }
+
+                ticks += 1
+                guard self.systemSettingsWindowAnchor() != nil else {
+                    if ticks >= 40 {
+                        timer.invalidate()
+                        self.pendingShowTimer = nil
+                    }
+                    return
+                }
+
+                timer.invalidate()
+                self.pendingShowTimer = nil
+                self.show()
+            }
+        }
     }
 
     private func position(_ panel: NSPanel) {
