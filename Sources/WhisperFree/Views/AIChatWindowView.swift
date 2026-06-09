@@ -107,6 +107,7 @@ private struct AIChatSidebar: View {
                         Label(L.tr("Recent items", "Недавние"), systemImage: "clock")
                             .font(.system(size: 11, weight: .medium))
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .swInteractiveHover()
                     }
                     .menuStyle(.borderlessButton)
                 }
@@ -263,6 +264,7 @@ private struct AIChatModelMenu: View {
             .padding(.vertical, 6)
             .background(SW.rowBackground)
             .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+            .swInteractiveHover()
         }
         .menuStyle(.borderlessButton)
     }

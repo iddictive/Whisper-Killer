@@ -171,7 +171,7 @@ struct MenuBarView: View {
                             Text(dependencyInstaller.isHomebrewInstalled ? L.tr("Install", "Установить") : L.tr("Install Brew", "Установить Brew"))
                                 .font(.system(size: 10, weight: .semibold))
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.swPlainInteractive)
                         .disabled(dependencyInstaller.isInstallingWhisperCpp || dependencyInstaller.isInstallingHomebrew)
                     }
 
@@ -376,6 +376,7 @@ struct MenuBarView: View {
             .padding(.vertical, 4)
             .background(SW.rowBackground)
             .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+            .swInteractiveHover()
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -430,6 +431,7 @@ struct MenuBarView: View {
             .padding(.vertical, 4)
             .background(SW.rowBackground)
             .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+            .swInteractiveHover()
         }
         .menuStyle(.borderlessButton)
         .help(selectedInputDeviceName)

@@ -126,7 +126,7 @@ struct FileTranscriptionView: View {
                         } label: {
                             Image(systemName: "trash")
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.swPlainInteractive)
                         .foregroundStyle(SW.danger)
                         .help(L.tr("Clear All Files", "Очистить все файлы"))
                     }
@@ -169,6 +169,7 @@ struct FileTranscriptionView: View {
                 .padding(.vertical, 5)
                 .background(SW.rowBackground)
                 .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                .swInteractiveHover()
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -195,6 +196,7 @@ struct FileTranscriptionView: View {
                 .padding(.vertical, 5)
                 .background(SW.rowBackground)
                 .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                .swInteractiveHover()
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -278,6 +280,7 @@ struct FileTranscriptionView: View {
                 .padding(.vertical, 5)
                 .background(SW.rowBackground)
                 .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                .swInteractiveHover()
             }
             .menuStyle(.borderlessButton)
             .fixedSize()

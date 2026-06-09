@@ -150,7 +150,7 @@ struct GoogleMeetImportView: View {
                     }
                     .font(.system(size: 11, weight: .semibold))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.swPlainInteractive)
                 .help(L.tr("Back to file transcription", "Вернуться к транскрибации файла"))
             }
 
@@ -167,7 +167,7 @@ struct GoogleMeetImportView: View {
                         } label: {
                             Image(systemName: "person.crop.circle.badge.plus")
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.swPlainInteractive)
                         .disabled(viewModel.isLoading)
                         .help(L.tr("Add Google account", "Добавить Google аккаунт"))
 
@@ -176,7 +176,7 @@ struct GoogleMeetImportView: View {
                         } label: {
                             Image(systemName: "arrow.clockwise")
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.swPlainInteractive)
                         .disabled(viewModel.isLoading)
                         .help(L.tr("Refresh", "Обновить"))
 
@@ -185,7 +185,7 @@ struct GoogleMeetImportView: View {
                         } label: {
                             Image(systemName: "rectangle.portrait.and.arrow.right")
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.swPlainInteractive)
                         .disabled(viewModel.isLoading)
                         .help(L.tr("Remove selected Google account", "Удалить выбранный Google аккаунт"))
                     }
@@ -289,7 +289,7 @@ struct GoogleMeetImportView: View {
             } label: {
                 Image(systemName: "chevron.left")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.swPlainInteractive)
             .disabled(viewModel.isLoading)
 
             ForEach(visibleDays, id: \.self) { date in
@@ -308,7 +308,7 @@ struct GoogleMeetImportView: View {
             } label: {
                 Image(systemName: "chevron.right")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.swPlainInteractive)
             .disabled(viewModel.isLoading)
 
             Divider()
@@ -327,7 +327,7 @@ struct GoogleMeetImportView: View {
                 Text(L.tr("Today", "Сегодня"))
                     .font(SW.compactFont)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.swPlainInteractive)
             .disabled(viewModel.isLoading)
         }
         .padding(.horizontal, 14)
@@ -355,6 +355,7 @@ struct GoogleMeetImportView: View {
             }
             .font(SW.compactFont)
             .frame(maxWidth: 150)
+            .swInteractiveHover(isActive: !viewModel.isLoading)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()

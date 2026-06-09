@@ -1955,7 +1955,7 @@ private struct GoogleAccountSettingsRow: View {
             Button(role: .destructive, action: onRemove) {
                 Image(systemName: "trash")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.swPlainInteractive)
             .disabled(isBusy)
             .help(L.tr("Remove Google account", "Удалить Google аккаунт"))
         }

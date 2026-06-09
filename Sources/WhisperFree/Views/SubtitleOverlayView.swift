@@ -136,6 +136,7 @@ private struct TranscriptDockHeader: View {
                     .padding(.vertical, 6)
                     .background(Color.white.opacity(0.06))
                     .clipShape(Capsule())
+                    .swInteractiveHover()
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
