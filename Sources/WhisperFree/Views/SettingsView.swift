@@ -168,8 +168,11 @@ struct SettingsView: View {
                     .listStyle(.sidebar)
                     .scrollContentBackground(.hidden)
                     .frame(width: 230)
+                    .frame(maxHeight: .infinity)
 
-                    Spacer()
+                    accessibilitySidebarBar
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
                 }
                 .padding(.top, 8)
 
@@ -180,10 +183,6 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         if let tab = selectedTab {
-                            if !appState.isHotkeyTrusted && tab != "info" {
-                                permissionBanner
-                            }
-
                             switch tab {
                             case "app": appSection
                             case "capture":
@@ -257,32 +256,44 @@ struct SettingsView: View {
         }
     }
 
-    private var permissionBanner: some View {
-        HStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.title3)
-                .foregroundStyle(SW.warning)
+    private var accessibilitySidebarBar: some View {
+        Button {
+            appState.requestAccessibilityPermission()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: appState.isHotkeyTrusted ? "checkmark.circle.fill" : "key.horizontal.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(appState.isHotkeyTrusted ? SW.success : SW.warning)
+                    .frame(width: 18)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(L.tr("Accessibility required", "Нужен Accessibility"))
-                    .font(SW.titleFont)
-                Text(L.tr("Enable it for global hotkeys.", "Включите доступ для глобальных хоткеев."))
-                    .font(SW.compactFont)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L.tr("Accessibility", "Доступы"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(SW.primaryText)
+                    Text(appState.isHotkeyTrusted ? L.tr("Enabled", "Включён") : L.tr("Required for hotkeys", "Нужен для хоткеев"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(SW.secondaryText)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 6)
+
+                Image(systemName: appState.isHotkeyTrusted ? "gearshape" : "arrow.up.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(SW.secondaryText)
             }
-
-            Spacer()
-
-            Button(L.tr("Grant Access…", "Выдать доступ…")) {
-                appState.requestAccessibilityPermission()
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(appState.isHotkeyTrusted ? SW.rowBackground : SW.warning.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
+                    .strokeBorder(appState.isHotkeyTrusted ? SW.border : SW.warning.opacity(0.25), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(appState.isHotkeyTrusted ? 0.06 : 0.10), radius: 10, y: 5)
         }
-        .padding(14)
-        .background(SW.warning.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous).strokeBorder(SW.warning.opacity(0.22), lineWidth: 1))
+        .buttonStyle(.swPlainInteractive)
+        .help(L.tr("Open Accessibility permission helper", "Открыть помощник доступа Accessibility"))
     }
 
     // MARK: - Sections

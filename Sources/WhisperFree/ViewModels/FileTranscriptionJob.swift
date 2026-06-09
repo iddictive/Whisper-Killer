@@ -159,6 +159,30 @@ final class QueueItem: ObservableObject, Identifiable {
         estimatedCost = displayCost(settings: settings)
     }
 
+    func resetForRerun(settings: AppSettings) {
+        guard status.isTerminal else { return }
+
+        engine?.cancel()
+        transcriptionTask?.cancel()
+        engine = nil
+        transcriptionTask = nil
+        startTime = nil
+        status = .queued
+        progress = 0
+        result = nil
+        rawResult = nil
+        summary = nil
+        summaryError = nil
+        transcriptionSpeed = nil
+        isExpanded = false
+        markdownSaveURL = nil
+        markdownSaveError = nil
+        shouldReduceCloudConcurrency = false
+        runProvenance = nil
+        historyEntryID = nil
+        updateCost(settings: settings)
+    }
+
     func displayCost(settings: AppSettings) -> Double? {
         displayCostEstimate(settings: settings)?.amount
     }

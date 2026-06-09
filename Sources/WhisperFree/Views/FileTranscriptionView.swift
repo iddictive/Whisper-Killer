@@ -295,6 +295,8 @@ struct FileTranscriptionView: View {
                 ForEach(queueItems) { item in
                     QueueCardView(item: item, canStart: canStartQueuedItems, onStart: {
                         startItem(item)
+                    }, onRerun: {
+                        rerunItem(item)
                     }, onCancel: {
                         cancelItem(item)
                     }, onRemove: {
@@ -698,6 +700,14 @@ struct FileTranscriptionView: View {
         queueItems.removeAll { $0.id == item.id }
     }
 
+    private func rerunItem(_ item: QueueItem) {
+        guard item.status.isTerminal, canStartQueuedItems else { return }
+
+        item.resetForRerun(settings: appState.settings)
+        queueStateRevision += 1
+        startItem(item)
+    }
+
     private func clearCompleted() {
         queueItems.removeAll { $0.status == .done }
     }
@@ -807,6 +817,7 @@ struct QueueCardView: View {
     @ObservedObject var item: QueueItem
     var canStart: Bool
     var onStart: () -> Void
+    var onRerun: () -> Void
     var onCancel: () -> Void
     var onRemove: () -> Void
     @EnvironmentObject private var appState: AppState
@@ -917,10 +928,14 @@ struct QueueCardView: View {
                 .buttonStyle(.swPlainInteractive)
                 .help(L.tr("Save transcript next to the original file", "Сохранить транскрипт рядом с исходным файлом"))
 
+                rerunButton
                 removeButton
             }
         } else if isFinished {
-            removeButton
+            HStack(spacing: 8) {
+                rerunButton
+                removeButton
+            }
         } else if item.status == .queued {
             HStack(spacing: 8) {
                 Button {
@@ -965,6 +980,28 @@ struct QueueCardView: View {
             .buttonStyle(.swPlainInteractive)
             .help(L.tr("Stop Processing", "Остановить обработку"))
         }
+    }
+
+    private var rerunButton: some View {
+        Button {
+            onRerun()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 10))
+                Text(L.tr("Rerun", "Повторить"))
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(canStart ? SW.accent.opacity(0.12) : SW.rowBackground)
+            .foregroundStyle(canStart ? Color.accentColor : SW.secondaryText)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+            .opacity(canStart ? 1 : 0.55)
+        }
+        .buttonStyle(.swPlainInteractive)
+        .disabled(!canStart)
+        .help(L.tr("Run this file again with the current settings", "Запустить этот файл снова с текущими настройками"))
     }
 
     private var removeButton: some View {

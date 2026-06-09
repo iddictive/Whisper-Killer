@@ -140,6 +140,20 @@ struct GoogleMeetImportView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button {
+                    onClose()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text(L.tr("File Transcription", "К транскрибации"))
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .help(L.tr("Back to file transcription", "Вернуться к транскрибации файла"))
+            }
+
             ToolbarItem(placement: .principal) {
                 Text(L.tr("Meet Calendar", "Календарь Meet"))
                     .font(.system(size: 13, weight: .semibold))
@@ -176,13 +190,6 @@ struct GoogleMeetImportView: View {
                         .help(L.tr("Remove selected Google account", "Удалить выбранный Google аккаунт"))
                     }
 
-                    Button {
-                        onClose()
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .buttonStyle(.borderless)
-                    .help(L.tr("Close", "Закрыть"))
                 }
             }
         }
