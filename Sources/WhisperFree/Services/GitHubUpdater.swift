@@ -64,10 +64,14 @@ class GitHubUpdater: ObservableObject {
                                 self?.startDownload()
                             }
                         } else if manual {
-                            let alert = NSAlert()
-                            alert.messageText = "You're up to date!"
-                            alert.informativeText = "WhisperKiller \(self?.currentVersion ?? "") is the latest version."
-                            alert.runModal()
+                            _ = self?.runUpdaterAlert(
+                                messageText: L.tr("You're up to date!", "Обновлений нет"),
+                                informativeText: L.tr(
+                                    "WhisperKiller \(self?.currentVersion ?? "") is the latest version.",
+                                    "Установлена последняя версия WhisperKiller \(self?.currentVersion ?? "")."
+                                ),
+                                primaryButtonTitle: L.tr("OK", "ОК")
+                            )
                         }
                     }
                 } catch {
@@ -82,13 +86,17 @@ class GitHubUpdater: ObservableObject {
     }
 
     private func showUpdateAlert(version: String, downloadUrl: String?) {
-        let alert = NSAlert()
-        alert.messageText = "Update Available"
-        alert.informativeText = "A new version (\(version)) of WhisperKiller is available. Would you like to download and install it now?"
-        alert.addButton(withTitle: "Download & Install")
-        alert.addButton(withTitle: "Later")
+        let response = runUpdaterAlert(
+            messageText: L.tr("Update Available", "Доступно обновление"),
+            informativeText: L.tr(
+                "A new version (\(version)) of WhisperKiller is available. Would you like to download and install it now?",
+                "Доступна новая версия WhisperKiller \(version). Скачать и установить сейчас?"
+            ),
+            primaryButtonTitle: L.tr("Download & Install", "Скачать и установить"),
+            secondaryButtonTitle: L.tr("Later", "Позже")
+        )
 
-        if alert.runModal() == .alertFirstButtonReturn {
+        if response == .alertFirstButtonReturn {
             startDownload()
         }
     }
@@ -129,16 +137,69 @@ class GitHubUpdater: ObservableObject {
     private func performInstallation(dmgPath: String) {
         // Show install prompt if it was a background download
         DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "Installation Ready"
-            alert.informativeText = "The update has been downloaded. WhisperKiller will close to install the new version."
-            alert.addButton(withTitle: "Install & Relaunch")
-            alert.addButton(withTitle: "Later")
+            let response = self.runUpdaterAlert(
+                messageText: L.tr("Installation Ready", "Готово к установке"),
+                informativeText: L.tr(
+                    "The update has been downloaded. WhisperKiller will close to install the new version.",
+                    "Обновление загружено. WhisperKiller закроется, установит новую версию и запустится снова."
+                ),
+                primaryButtonTitle: L.tr("Install & Relaunch", "Установить и перезапустить"),
+                secondaryButtonTitle: L.tr("Later", "Позже")
+            )
 
-            if alert.runModal() == .alertFirstButtonReturn {
+            if response == .alertFirstButtonReturn {
                 self.runInstallScript(dmgPath: dmgPath)
             }
         }
+    }
+
+    @discardableResult
+    private func runUpdaterAlert(
+        messageText: String,
+        informativeText: String,
+        primaryButtonTitle: String,
+        secondaryButtonTitle: String? = nil
+    ) -> NSApplication.ModalResponse {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = messageText
+        alert.informativeText = informativeText
+        alert.icon = updaterAlertIcon()
+
+        let primaryButton = alert.addButton(withTitle: primaryButtonTitle)
+        primaryButton.keyEquivalent = "\r"
+
+        if let secondaryButtonTitle {
+            let secondaryButton = alert.addButton(withTitle: secondaryButtonTitle)
+            secondaryButton.keyEquivalent = "\u{1b}"
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal()
+    }
+
+    private func updaterAlertIcon() -> NSImage? {
+        if let appIcon = NSApp.applicationIconImage, appIcon.isValid {
+            return sizedAlertIcon(appIcon)
+        }
+
+        let iconURLs = [
+            Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+            Bundle.main.url(forResource: "AppIcon", withExtension: "icns", subdirectory: "Resources"),
+            Bundle.main.resourceURL?.appendingPathComponent("Resources/AppIcon.icns")
+        ].compactMap { $0 }
+
+        guard let iconURL = iconURLs.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+              let icon = NSImage(contentsOf: iconURL)
+        else { return nil }
+
+        return sizedAlertIcon(icon)
+    }
+
+    private func sizedAlertIcon(_ icon: NSImage) -> NSImage {
+        guard let copy = icon.copy() as? NSImage else { return icon }
+        copy.size = NSSize(width: 64, height: 64)
+        return copy
     }
 
     private func runInstallScript(dmgPath: String) {
