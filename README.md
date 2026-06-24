@@ -1,35 +1,44 @@
+# WhisperKiller
+
 <p align="center">
-  <img src="Sources/WhisperFree/Resources/Banner.png" alt="WhisperFree" width="800">
+  <img src="assets/banner.png" alt="WhisperKiller banner" width="860">
 </p>
 
 <p align="center">
-  <a href="#english">English</a> | <a href="#russian">Русский</a>
+  <a href="#english">English</a> • <a href="#russian">Русский</a>
 </p>
 
 ---
 
 <a id="english"></a>
 
-## WhisperFree
+## 🇺🇸 English
 
-WhisperFree turns a Mac menu bar shortcut into dictation, file transcription, summaries, and text cleanup.
+> macOS menu bar app for dictation, file transcription, transcript cleanup, and meeting summaries.
 
-It can run locally through `whisper.cpp`, use OpenAI Whisper for cloud transcription, or use GigaAM for Russian ASR experiments. Cloud features use your own OpenAI API key; the app itself does not require a subscription.
+WhisperKiller turns a global shortcut into speech-to-text for daily writing and audio files. It can run locally through `whisper.cpp`, use OpenAI Whisper for cloud transcription, or use GigaAM for Russian ASR experiments. Cloud features use your own OpenAI API key.
 
-Current release: **3.0**
+Current release: **3.34**
 
-## What it does
+## What It Handles
 
-- Dictate from the menu bar with a global shortcut. Default: `Option + Space`.
-- Choose hold-to-record, toggle recording, or push-to-talk.
-- Transcribe audio and video files from a drag-and-drop queue.
-- Trim file ranges before transcription.
-- Insert the result into the active app by paste, typing, or paste-and-enter.
-- Clean up transcripts with built-in modes for dictation, email, code, notes, and custom prompts.
-- Add speaker diarization and summaries for meetings or interviews when an OpenAI key is available.
-- Keep a searchable history with raw text, processed text, summaries, playback, and Finder reveal.
-- Translate microphone or system audio through the Live Translator surface.
-- Import supported Google Meet recordings from Drive when Google OAuth is configured.
+- Dictation from the menu bar with a global shortcut. Default: `Option + Space`.
+- Hold-to-record, toggle recording, and push-to-talk modes.
+- Audio and video file transcription through a drag-and-drop queue.
+- File range trimming before transcription.
+- Result insertion into the active app by paste, typing, or paste-and-enter.
+- Transcript cleanup modes for dictation, email, code, notes, and custom prompts.
+- Speaker diarization and summaries when an OpenAI key is available.
+- Searchable history with raw text, processed text, summaries, playback, and Finder reveal.
+- Live Translator for microphone or system audio.
+- Google Meet recording import from Drive when Google OAuth is configured.
+
+## Interface Surfaces
+
+- **Menu bar:** recording controls, active mode, quick access to history and file transcription.
+- **File transcription:** queue, drag-and-drop import, range selection, per-file progress.
+- **Settings:** engine choice, models, language, text insertion, OpenAI/GigaAM/Ollama/Google integrations.
+- **History:** searchable transcripts with raw output, processed text, summary, audio playback, and file reveal.
 
 ## Engines
 
@@ -52,7 +61,7 @@ The app exposes 17 selectable languages plus auto-detect: English, Russian, Span
 4. Grant Accessibility and Microphone permissions.
 5. Pick a transcription engine in Settings.
 
-## Build from source
+## Build From Source
 
 ```bash
 git clone https://github.com/iddictive/Whisper-Killer.git
@@ -71,7 +80,7 @@ make verify   # verify release build
 
 - macOS 14 or newer
 - Apple Silicon for the official install/build scripts
-- 8 GB RAM minimum; 16 GB or more is better for larger local models
+- 8 GB RAM minimum; 16 GB or more for larger local models
 - Accessibility permission for global shortcuts and text insertion
 - Microphone permission for dictation
 
@@ -79,33 +88,40 @@ make verify   # verify release build
 
 <a id="russian"></a>
 
-## WhisperFree
+## 🇷🇺 Русский
 
-WhisperFree превращает shortcut в macOS menu bar в диктовку, транскрибацию файлов, саммари и очистку текста.
+> macOS menu bar приложение для диктовки, транскрибации файлов, очистки текста и саммари встреч.
 
-Приложение может работать локально через `whisper.cpp`, отправлять аудио в OpenAI Whisper или использовать GigaAM для экспериментального русского ASR. Облачные функции работают через ваш OpenAI API key; отдельная подписка на приложение не нужна.
+WhisperKiller превращает глобальную горячую клавишу в speech-to-text для повседневного письма и аудиофайлов. Приложение может работать локально через `whisper.cpp`, отправлять аудио в OpenAI Whisper или использовать GigaAM для экспериментального русского ASR. Облачные функции работают через ваш OpenAI API key.
 
-Текущий релиз: **3.0**
+Текущий релиз: **3.34**
 
 ## Что умеет приложение
 
 - Диктовка из menu bar по глобальной горячей клавише. По умолчанию: `Option + Space`.
-- Режимы hold-to-record, toggle и push-to-talk.
+- Режимы hold-to-record, toggle recording и push-to-talk.
 - Транскрибация аудио и видео через drag-and-drop очередь.
 - Выбор нужного временного диапазона внутри файла.
 - Вставка результата в активное приложение: paste, посимвольный ввод или paste-and-enter.
 - Обработка текста режимами для диктовки, email, кода, заметок и своих промптов.
-- Диаризация спикеров и саммари для встреч или интервью при наличии OpenAI API key.
+- Диаризация спикеров и саммари при наличии OpenAI API key.
 - История с поиском, raw/processed текстом, саммари, playback и открытием файла в Finder.
 - Live Translator для микрофона и системного аудио.
-- Импорт поддерживаемых Google Meet записей из Drive, если настроен Google OAuth.
+- Импорт Google Meet записей из Drive, если настроен Google OAuth.
+
+## Интерфейс
+
+- **Menu bar:** запись, активный режим, быстрый доступ к истории и транскрибации файлов.
+- **File transcription:** очередь, drag-and-drop импорт, выбор диапазона, прогресс по каждому файлу.
+- **Settings:** движок, модели, язык, вставка текста, OpenAI/GigaAM/Ollama/Google интеграции.
+- **History:** поиск по транскриптам, raw output, processed text, summary, playback и reveal в Finder.
 
 ## Движки
 
 | Движок | Для чего | Требования |
 | --- | --- | --- |
 | Local Whisper | Офлайн-диктовка и транскрибация файлов | `brew install whisper-cpp` и скачанная Whisper-модель |
-| OpenAI Whisper | Облачная транскрибация и более точные прогоны | OpenAI API key |
+| OpenAI Whisper | Облачная транскрибация | OpenAI API key |
 | GigaAM Russian | Экспериментальный русский ASR | Python runtime и GigaAM packages |
 | Ollama follow-up | Локальные follow-up саммари, если настроено | Ollama на машине |
 
@@ -140,6 +156,6 @@ make verify   # проверить release build
 
 - macOS 14 или новее
 - Apple Silicon для официальных install/build scripts
-- 8 GB RAM минимум; 16 GB+ лучше для больших локальных моделей
+- 8 GB RAM минимум; 16 GB или больше для крупных локальных моделей
 - Accessibility для hotkeys и вставки текста
 - Microphone для диктовки
