@@ -8,6 +8,12 @@
   <a href="#english">English</a> • <a href="#russian">Русский</a>
 </p>
 
+## Interface Snapshot
+
+<p align="center">
+  <img src="assets/interface-menu.png" alt="WhisperKiller menu interface" width="560">
+</p>
+
 ---
 
 <a id="english"></a>
