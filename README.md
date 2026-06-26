@@ -8,10 +8,21 @@
   <a href="#english">English</a> • <a href="#russian">Русский</a>
 </p>
 
-## Interface Snapshot
+## Interface Tour
 
 <p align="center">
-  <img src="assets/interface-menu.png" alt="WhisperKiller menu interface" width="560">
+  <a href="assets/interface-menu.png">
+    <img src="assets/interface-menu.png" alt="WhisperKiller menu bar controls with transcription modes and quick actions" width="520">
+  </a>
+</p>
+
+<p align="center">
+  <a href="assets/settings.png"><img src="assets/settings.png" alt="WhisperKiller app preferences window" width="410"></a>
+  <a href="assets/meet-calendar.png"><img src="assets/meet-calendar.png" alt="WhisperKiller Meet Calendar import window" width="410"></a>
+</p>
+
+<p align="center">
+  <sub>Preferences · Meet Calendar</sub>
 </p>
 
 ---
