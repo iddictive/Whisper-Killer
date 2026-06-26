@@ -31,6 +31,7 @@ struct SettingsView: View {
     @State private var showProfanityDictionaries = false
     @State private var showGigaAMManualCommand = false
     @State private var showRecentActivityDetails = false
+    private let sidebarWidth: CGFloat = 250
 
     private var appVersionText: String {
         let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -167,14 +168,15 @@ struct SettingsView: View {
                     }
                     .listStyle(.sidebar)
                     .scrollContentBackground(.hidden)
-                    .frame(width: 230)
-                    .frame(maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     accessibilitySidebarBar
                         .padding(.horizontal, 12)
                         .padding(.bottom, 12)
                 }
                 .padding(.top, 8)
+                .frame(width: sidebarWidth)
+                .frame(maxHeight: .infinity, alignment: .top)
 
                 Divider()
                     .opacity(0.1) // Subtler divider
@@ -207,7 +209,9 @@ struct SettingsView: View {
                 }
                 .scrollContentBackground(.hidden)
                 .background(SW.contentBackground.opacity(0.12))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
             dependencyInstaller.refreshHomebrewStatus()
