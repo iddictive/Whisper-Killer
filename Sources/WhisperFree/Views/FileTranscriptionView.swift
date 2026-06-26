@@ -885,12 +885,15 @@ struct QueueCardView: View {
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .layoutPriority(-1)
 
             Spacer()
 
             provenanceBadge
             statusBadge
+                .fixedSize(horizontal: true, vertical: false)
             actionButton
+                .layoutPriority(2)
         }
     }
 
@@ -921,7 +924,9 @@ struct QueueCardView: View {
                             .font(.system(size: 10))
                         Text(L.tr("Save as MD", "Save as MD"))
                             .font(.system(size: 11, weight: .bold))
+                            .lineLimit(1)
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(SW.accent.opacity(0.12))
@@ -934,11 +939,13 @@ struct QueueCardView: View {
                 rerunButton
                 removeButton
             }
+            .fixedSize(horizontal: true, vertical: false)
         } else if isFinished {
             HStack(spacing: 8) {
                 rerunButton
                 removeButton
             }
+            .fixedSize(horizontal: true, vertical: false)
         } else if item.status == .queued {
             HStack(spacing: 8) {
                 Button {
@@ -949,7 +956,9 @@ struct QueueCardView: View {
                             .font(.system(size: 10))
                         Text(L.tr("Start", "Старт"))
                             .font(.system(size: 11, weight: .bold))
+                            .lineLimit(1)
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(SW.accent)
@@ -994,7 +1003,9 @@ struct QueueCardView: View {
                     .font(.system(size: 10))
                 Text(L.tr("Rerun", "Повторить"))
                     .font(.system(size: 11, weight: .bold))
+                    .lineLimit(1)
             }
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(canStart ? SW.accent.opacity(0.12) : SW.rowBackground)
