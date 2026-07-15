@@ -12,6 +12,8 @@ final class GoogleMeetImportViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var importingMeetingID: String?
     @Published var downloadProgress: [String: GoogleDriveDownloadProgress] = [:]
+    @Published var cachedRecordingIDs: Set<String> = []
+    @Published var downloadSummary = GoogleMeetDownloadSummary.empty
 
     var selectedAccount: GoogleOAuthAccount? {
         guard let selectedAccountID else { return nil }
@@ -25,6 +27,7 @@ final class GoogleMeetImportViewModel: ObservableObject {
                 self.refreshAccountState()
                 self.selectedAccountID = account.id
                 self.meetings = try await GoogleDriveMeetImporter.shared.listCalendarMeetings(on: self.selectedDate, accountID: account.id)
+                try await self.refreshDownloadState()
                 self.statusMessage = L.tr("Google Calendar connected.", "Google Calendar подключён.")
             }
         }
@@ -57,6 +60,7 @@ final class GoogleMeetImportViewModel: ObservableObject {
             await runBusyTask { [self] in
                 self.refreshAccountState()
                 self.meetings = try await GoogleDriveMeetImporter.shared.listCalendarMeetings(on: self.selectedDate, accountID: self.selectedAccountID)
+                try await self.refreshDownloadState()
                 self.statusMessage = self.meetings.isEmpty
                     ? L.tr("No Meet meetings on this day.", "В этот день нет встреч Meet.")
                     : nil
@@ -79,22 +83,69 @@ final class GoogleMeetImportViewModel: ObservableObject {
 
         Task {
             importingMeetingID = meeting.id
-            downloadProgress[meeting.id] = GoogleDriveDownloadProgress(downloadedBytes: 0, totalBytes: meeting.recording?.sizeBytes)
+            if !cachedRecordingIDs.contains(recording.id) {
+                downloadProgress[meeting.id] = GoogleDriveDownloadProgress(downloadedBytes: 0, totalBytes: recording.sizeBytes)
+            }
             errorMessage = nil
             do {
                 let accountID = selectedAccountID
-                let url = try await GoogleDriveMeetImporter.shared.downloadRecording(recording, accountID: accountID) { [weak self] progress in
+                let url = try await GoogleDriveMeetImporter.shared.downloadRecording(
+                    recording,
+                    accountID: accountID,
+                    meetingID: meeting.id
+                ) { [weak self] progress in
                     Task { @MainActor in
                         self?.downloadProgress[meeting.id] = progress
                     }
                 }
                 onImport([url])
+                try await refreshDownloadState()
                 statusMessage = L.tr("Recording added to the queue.", "Запись добавлена в очередь.")
             } catch {
                 errorMessage = error.localizedDescription
             }
             downloadProgress[meeting.id] = nil
             importingMeetingID = nil
+        }
+    }
+
+    func deleteDownload(for meeting: GoogleCalendarMeeting) {
+        guard let recording = meeting.recording else { return }
+        Task {
+            errorMessage = nil
+            do {
+                _ = try await GoogleDriveMeetImporter.shared.deleteCachedRecording(recording)
+                try await refreshDownloadState()
+                statusMessage = L.tr("Local recording deleted.", "Локальная запись удалена.")
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func clearDownloads() {
+        Task {
+            errorMessage = nil
+            do {
+                let deleted = try await GoogleDriveMeetImporter.shared.clearCachedRecordings()
+                try await refreshDownloadState()
+                statusMessage = L.tr(
+                    "Deleted \(deleted.fileCount) local recordings (\(deleted.displaySize)).",
+                    "Удалено локальных записей: \(deleted.fileCount) (\(deleted.displaySize))."
+                )
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func refreshDownloads() {
+        Task {
+            do {
+                try await refreshDownloadState()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -115,10 +166,23 @@ final class GoogleMeetImportViewModel: ObservableObject {
         selectedAccountID = GoogleDriveMeetImporter.shared.selectedAccountID
         isConnected = GoogleDriveMeetImporter.shared.isConnected
     }
+
+    private func refreshDownloadState() async throws {
+        var cachedIDs: Set<String> = []
+        for meeting in meetings {
+            guard let recording = meeting.recording else { continue }
+            if try await GoogleDriveMeetImporter.shared.cachedRecordingURL(recording, meetingID: meeting.id) != nil {
+                cachedIDs.insert(recording.id)
+            }
+        }
+        cachedRecordingIDs = cachedIDs
+        downloadSummary = try await GoogleDriveMeetImporter.shared.cachedRecordingsSummary()
+    }
 }
 
 struct GoogleMeetImportView: View {
     @StateObject private var viewModel = GoogleMeetImportViewModel()
+    @State private var isConfirmingClearDownloads = false
 
     let onImport: ([URL]) -> Void
     let onClose: () -> Void
@@ -161,6 +225,15 @@ struct GoogleMeetImportView: View {
 
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 8) {
+                    Button {
+                        isConfirmingClearDownloads = true
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.swPlainInteractive)
+                    .disabled(viewModel.downloadSummary.fileCount == 0)
+                    .help(clearDownloadsHelp)
+
                     if viewModel.isConnected {
                         Button {
                             viewModel.addAccount()
@@ -195,10 +268,35 @@ struct GoogleMeetImportView: View {
         }
         .onAppear {
             viewModel.refreshAccountState()
+            viewModel.refreshDownloads()
             if viewModel.isConnected && viewModel.meetings.isEmpty {
                 viewModel.refresh()
             }
         }
+        .confirmationDialog(
+            L.tr("Delete all downloaded Meet recordings?", "Удалить все скачанные записи Meet?"),
+            isPresented: $isConfirmingClearDownloads
+        ) {
+            Button(L.tr("Delete downloads", "Удалить скачанное"), role: .destructive) {
+                viewModel.clearDownloads()
+            }
+            Button(L.tr("Cancel", "Отмена"), role: .cancel) {}
+        } message: {
+            Text(L.tr(
+                "This removes \(viewModel.downloadSummary.fileCount) local files (\(viewModel.downloadSummary.displaySize)). Google Drive files stay unchanged.",
+                "Будет удалено локальных файлов: \(viewModel.downloadSummary.fileCount) (\(viewModel.downloadSummary.displaySize)). Файлы в Google Drive останутся без изменений."
+            ))
+        }
+    }
+
+    private var clearDownloadsHelp: String {
+        guard viewModel.downloadSummary.fileCount > 0 else {
+            return L.tr("No downloaded Meet recordings", "Нет скачанных записей Meet")
+        }
+        return L.tr(
+            "Delete \(viewModel.downloadSummary.fileCount) downloads (\(viewModel.downloadSummary.displaySize))",
+            "Удалить скачанное: \(viewModel.downloadSummary.fileCount) (\(viewModel.downloadSummary.displaySize))"
+        )
     }
 
     private var connectContent: some View {
@@ -269,9 +367,14 @@ struct GoogleMeetImportView: View {
                             GoogleCalendarMeetingRow(
                                 meeting: meeting,
                                 isImporting: viewModel.importingMeetingID == meeting.id,
+                                isBusy: viewModel.importingMeetingID != nil,
+                                isDownloaded: meeting.recording.map { viewModel.cachedRecordingIDs.contains($0.id) } ?? false,
                                 downloadProgress: viewModel.downloadProgress[meeting.id],
                                 onImport: {
                                     viewModel.importMeeting(meeting, onImport: onImport)
+                                },
+                                onDelete: {
+                                    viewModel.deleteDownload(for: meeting)
                                 }
                             )
                         }
@@ -421,8 +524,12 @@ private struct CalendarDayButton: View {
 private struct GoogleCalendarMeetingRow: View {
     let meeting: GoogleCalendarMeeting
     let isImporting: Bool
+    let isBusy: Bool
+    let isDownloaded: Bool
     let downloadProgress: GoogleDriveDownloadProgress?
     let onImport: () -> Void
+    let onDelete: () -> Void
+    @State private var isConfirmingDelete = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -453,6 +560,13 @@ private struct GoogleCalendarMeetingRow: View {
                         Text(downloadProgress.byteLabel)
                             .font(.system(size: 10))
                             .foregroundStyle(SW.secondaryText)
+                    } else if isDownloaded {
+                        SWStatusBadge(title: L.tr("Downloaded", "Скачано"), icon: "checkmark.circle.fill", color: SW.accent)
+                        if let recording = meeting.recording, !recording.displaySize.isEmpty {
+                            Text(recording.displaySize)
+                                .font(.system(size: 10))
+                                .foregroundStyle(SW.secondaryText)
+                        }
                     } else if let recording = meeting.recording {
                         SWStatusBadge(title: L.tr("Recording ready", "Запись готова"), icon: "checkmark.circle.fill", color: SW.accent)
                         if !recording.displaySize.isEmpty {
@@ -479,6 +593,17 @@ private struct GoogleCalendarMeetingRow: View {
 
             Spacer()
 
+            if isDownloaded {
+                Button {
+                    isConfirmingDelete = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.swPlainInteractive)
+                .disabled(isBusy)
+                .help(L.tr("Delete local copy", "Удалить локальную копию"))
+            }
+
             Button {
                 onImport()
             } label: {
@@ -496,10 +621,22 @@ private struct GoogleCalendarMeetingRow: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
-            .disabled(meeting.recording == nil || isImporting)
+            .disabled(meeting.recording == nil || isBusy)
         }
         .padding(10)
         .background(SW.rowBackground)
         .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
+        .confirmationDialog(
+            L.tr("Delete this downloaded recording?", "Удалить эту скачанную запись?"),
+            isPresented: $isConfirmingDelete
+        ) {
+            Button(L.tr("Delete local copy", "Удалить локальную копию"), role: .destructive, action: onDelete)
+            Button(L.tr("Cancel", "Отмена"), role: .cancel) {}
+        } message: {
+            Text(L.tr(
+                "The Google Drive recording stays unchanged.",
+                "Запись в Google Drive останется без изменений."
+            ))
+        }
     }
 }

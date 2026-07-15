@@ -345,10 +345,15 @@ final class GoogleDriveMeetImporter {
     func downloadRecording(
         _ recording: GoogleDriveRecording,
         accountID: String? = nil,
+        meetingID: String? = nil,
         onProgress: (@Sendable (GoogleDriveDownloadProgress) -> Void)? = nil
     ) async throws -> URL {
         guard recording.canImportForTranscription else {
             throw GoogleDriveImportError.unsupportedFileType(recording.mimeType)
+        }
+
+        if let cachedURL = try await GoogleMeetDownloadCache.shared.localURL(for: recording, meetingID: meetingID) {
+            return cachedURL
         }
 
         let accessToken = try await validAccessToken(for: accountID)
@@ -362,12 +367,28 @@ final class GoogleDriveMeetImporter {
         let (temporaryURL, response) = try await GoogleDriveDownload(request: request, onProgress: onProgress).start()
         try Self.validateHTTPResponse(response, data: nil)
 
-        let destination = try destinationURL(for: recording)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
-        }
-        try FileManager.default.moveItem(at: temporaryURL, to: destination)
-        return destination
+        return try await GoogleMeetDownloadCache.shared.store(
+            temporaryURL: temporaryURL,
+            recording: recording,
+            meetingID: meetingID
+        )
+    }
+
+    func cachedRecordingURL(_ recording: GoogleDriveRecording, meetingID: String) async throws -> URL? {
+        try await GoogleMeetDownloadCache.shared.localURL(for: recording, meetingID: meetingID)
+    }
+
+    @discardableResult
+    func deleteCachedRecording(_ recording: GoogleDriveRecording) async throws -> Bool {
+        try await GoogleMeetDownloadCache.shared.delete(recordingID: recording.id)
+    }
+
+    func clearCachedRecordings() async throws -> GoogleMeetDownloadSummary {
+        try await GoogleMeetDownloadCache.shared.clear()
+    }
+
+    func cachedRecordingsSummary() async throws -> GoogleMeetDownloadSummary {
+        try await GoogleMeetDownloadCache.shared.summary()
     }
 
     private func calendarEvents(start: Date, end: Date, accessToken: String) async throws -> CalendarEventsResponse {
@@ -550,37 +571,6 @@ final class GoogleDriveMeetImporter {
             name: decoded.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             connectedAt: Date()
         )
-    }
-
-    private func destinationURL(for recording: GoogleDriveRecording) throws -> URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
-        let directory = appSupport.appendingPathComponent("WhisperKiller/GoogleMeetImports", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
-        let sanitizedName = Self.sanitizedFilename(recording.name)
-        let ext = URL(fileURLWithPath: sanitizedName).pathExtension
-        let filename: String
-        if ext.isEmpty {
-            filename = sanitizedName + Self.defaultExtension(for: recording.mimeType)
-        } else {
-            filename = sanitizedName
-        }
-
-        return directory.appendingPathComponent(filename)
-    }
-
-    private static func defaultExtension(for mimeType: String) -> String {
-        if mimeType == "audio/mpeg" { return ".mp3" }
-        if mimeType == "audio/mp4" || mimeType == "audio/x-m4a" { return ".m4a" }
-        if mimeType == "video/quicktime" { return ".mov" }
-        return ".mp4"
-    }
-
-    private static func sanitizedFilename(_ name: String) -> String {
-        let invalid = CharacterSet(charactersIn: "/\\?%*|\"<>:")
-        let components = name.components(separatedBy: invalid)
-        let joined = components.joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
-        return joined.isEmpty ? "Google Meet Recording" : joined
     }
 
     private static func validateHTTPResponse(_ response: URLResponse, data: Data?) throws {

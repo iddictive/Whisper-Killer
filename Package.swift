@@ -20,6 +20,10 @@ let package = Package(
             exclude: [
                 "Resources"
             ]
+        ),
+        .testTarget(
+            name: "WhisperKillerTests",
+            dependencies: ["WhisperKiller"]
         )
     ]
 )
