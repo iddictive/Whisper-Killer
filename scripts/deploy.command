@@ -164,6 +164,7 @@ if [ $? -eq 0 ]; then
         echo "❌ scripts/fix_accessibility.sh not found!"
         exit 1
     fi
+    rm -rf "$BUNDLE_NAME"
 
     echo "✨ $APP_NAME v$VERSION successfully installed to /Applications."
     exit 0
