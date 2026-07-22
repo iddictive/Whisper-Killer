@@ -907,9 +907,11 @@ struct QueueCardView: View {
 
             Spacer()
 
-            provenanceBadge
-            statusBadge
-                .fixedSize(horizontal: true, vertical: false)
+            if item.status != .done {
+                provenanceBadge
+                statusBadge
+                    .fixedSize(horizontal: true, vertical: false)
+            }
             actionButton
                 .layoutPriority(2)
         }
@@ -1181,7 +1183,9 @@ struct QueueCardView: View {
             ClickableDisclosure(isExpanded: $item.isExpanded) {
                 resultContent(result)
             } label: {
-                Text(L.tr("Show Result", "Показать результат"))
+                Text(item.isExpanded
+                     ? L.tr("Hide Result", "Скрыть результат")
+                     : L.tr("Show Result", "Показать результат"))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(Color.accentColor)
             }
@@ -1192,7 +1196,7 @@ struct QueueCardView: View {
         VStack(alignment: .leading, spacing: 6) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    transcriptBlock(title: L.tr("Transcript", "Транскрипт"), text: result)
+                    transcriptBlock(text: result)
 
                     if let summary = item.summary, !summary.isEmpty {
                         transcriptBlock(title: L.tr("Auto Summary", "Автосводка"), text: summary)
@@ -1259,11 +1263,13 @@ struct QueueCardView: View {
         .padding(.top, 4)
     }
 
-    private func transcriptBlock(title: String, text: String) -> some View {
+    private func transcriptBlock(title: String? = nil, text: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title.uppercased())
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.secondary)
+            if let title {
+                Text(title.uppercased())
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
             Text(text)
                 .font(.system(size: 11))
                 .lineSpacing(3)
