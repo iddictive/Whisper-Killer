@@ -30,6 +30,7 @@ enum TranscriptSanitizer {
 
     private static func stripKnownArtifacts(from text: String) -> String {
         let patterns = [
+            #"^\s*(?:(?:[Рр]едактор(?:\s+субтитров)?|[Кк]орректор|[Пп]родюсер|[Пп]ереводчик|[Рр]ежисс[её]р|[Мм]онтаж[её]р)\s+(?:\p{Lu}\.\s*)?\p{Lu}[\p{L}'’\-]+\s*){2,}"#,
             #"(?i)\b(?:subtitles by|translated by|edited by)[^.!\n]*[.!]?"#,
             #"(?i)\b(?:thank you|thanks) for watching[.!]?"#,
             #"(?i)(?:субтитры (?:сделал|подготовил|предоставлены|добавил|отредактировал)[^.!\n]*[.!]?)"#,
