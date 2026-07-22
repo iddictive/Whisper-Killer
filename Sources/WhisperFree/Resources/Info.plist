@@ -4,20 +4,6 @@
 <dict>
 	<key>CFBundleDisplayName</key>
 	<string>WhisperKiller</string>
-	<key>CFBundleExecutable</key>
-	<string>WhisperKiller</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon.icns</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.whisperkiller.app</string>
-	<key>CFBundleName</key>
-	<string>WhisperKiller</string>
-	<key>CFBundleShortVersionString</key>
-	<string>3.34</string>
-	<key>CFBundleVersion</key>
-	<string>3.34</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Whisper Free needs microphone access to record your voice for transcription.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -35,6 +21,20 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleExecutable</key>
+	<string>WhisperKiller</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.whisperkiller.app</string>
+	<key>CFBundleName</key>
+	<string>WhisperKiller</string>
+	<key>CFBundleShortVersionString</key>
+	<string>3.34</string>
+	<key>CFBundleVersion</key>
+	<string>3.34</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Whisper Free needs microphone access to record your voice for transcription.</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
@@ -47,6 +47,8 @@
 			<string>transcribeFiles</string>
 			<key>NSPortName</key>
 			<string>WhisperKiller</string>
+			<key>NSRequiredContext</key>
+			<dict/>
 			<key>NSSendFileTypes</key>
 			<array>
 				<string>public.audio</string>
@@ -57,8 +59,6 @@
 			<array>
 				<string>public.file-url</string>
 			</array>
-			<key>NSRequiredContext</key>
-			<dict/>
 			<key>NSServiceDescription</key>
 			<string>Transcribes selected audio and video files.</string>
 		</dict>

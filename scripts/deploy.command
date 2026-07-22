@@ -20,9 +20,14 @@ function resolve_signing_identity() {
         return
     fi
 
-    security find-identity -v -p codesigning 2>/dev/null \
-        | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' \
-        | head -n 1
+    local identities
+    identities="$(security find-identity -v -p codesigning 2>/dev/null)"
+    local identity
+    identity="$(printf '%s\n' "$identities" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
+    if [ -z "$identity" ]; then
+        identity="$(printf '%s\n' "$identities" | sed -n 's/.*"\(Apple Development:.*\)".*/\1/p' | head -n 1)"
+    fi
+    echo "$identity"
 }
 
 # 1. Versioning
@@ -96,7 +101,7 @@ if [ $? -eq 0 ]; then
         echo "✅ Using signing identity: $SIGNING_IDENTITY"
         SIGN_COMMAND=(codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$APP_BUNDLE_PATH")
     else
-        echo "⚠️  Developer ID Application identity not found. Falling back to ad-hoc signing."
+        echo "⚠️  Stable code-signing identity not found. Falling back to ad-hoc signing."
         echo "⚠️  Ad-hoc signed builds may cause macOS to treat each install as a new app and ask for permissions again."
         SIGN_COMMAND=(codesign --force --options runtime --deep --entitlements "$ENTITLEMENTS" --sign "-" "$APP_BUNDLE_PATH")
     fi

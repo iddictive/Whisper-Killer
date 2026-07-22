@@ -179,21 +179,23 @@ class GitHubUpdater: ObservableObject {
     }
 
     private func updaterAlertIcon() -> NSImage? {
-        if let appIcon = NSApp.applicationIconImage, appIcon.isValid {
-            return sizedAlertIcon(appIcon)
-        }
-
         let iconURLs = [
             Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
             Bundle.main.url(forResource: "AppIcon", withExtension: "icns", subdirectory: "Resources"),
             Bundle.main.resourceURL?.appendingPathComponent("Resources/AppIcon.icns")
         ].compactMap { $0 }
 
-        guard let iconURL = iconURLs.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
-              let icon = NSImage(contentsOf: iconURL)
-        else { return nil }
+        if let iconURL = iconURLs.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+           let icon = NSImage(contentsOf: iconURL),
+           icon.isValid {
+            return sizedAlertIcon(icon)
+        }
 
-        return sizedAlertIcon(icon)
+        if let appIcon = NSApp.applicationIconImage, appIcon.isValid {
+            return sizedAlertIcon(appIcon)
+        }
+
+        return nil
     }
 
     private func sizedAlertIcon(_ icon: NSImage) -> NSImage {

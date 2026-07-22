@@ -11,6 +11,8 @@ final class GoogleMeetImportViewModel: ObservableObject {
     @Published var statusMessage: String?
     @Published var errorMessage: String?
     @Published var importingMeetingID: String?
+    @Published var isImportingDriveLink = false
+    @Published var driveLinkProgress: GoogleDriveDownloadProgress?
     @Published var downloadProgress: [String: GoogleDriveDownloadProgress] = [:]
     @Published var cachedRecordingIDs: Set<String> = []
     @Published var downloadSummary = GoogleMeetDownloadSummary.empty
@@ -149,6 +151,37 @@ final class GoogleMeetImportViewModel: ObservableObject {
         }
     }
 
+    func importDriveLink(_ rawValue: String, onImport: @escaping ([URL]) -> Void, onComplete: @escaping () -> Void) {
+        guard let url = URL(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            errorMessage = GoogleDriveImportError.invalidDriveLink.localizedDescription
+            return
+        }
+
+        Task {
+            isImportingDriveLink = true
+            driveLinkProgress = GoogleDriveDownloadProgress(downloadedBytes: 0, totalBytes: nil)
+            errorMessage = nil
+            do {
+                let downloadedURL = try await GoogleDriveMeetImporter.shared.downloadRecording(
+                    fromDriveURL: url,
+                    accountID: selectedAccountID
+                ) { [weak self] progress in
+                    Task { @MainActor in
+                        self?.driveLinkProgress = progress
+                    }
+                }
+                onImport([downloadedURL])
+                try await refreshDownloadState()
+                statusMessage = L.tr("Drive file added to the queue.", "Файл Drive добавлен в очередь.")
+                onComplete()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            driveLinkProgress = nil
+            isImportingDriveLink = false
+        }
+    }
+
     private func runBusyTask(_ operation: @escaping () async throws -> Void) async {
         isLoading = true
         errorMessage = nil
@@ -182,6 +215,8 @@ final class GoogleMeetImportViewModel: ObservableObject {
 
 struct GoogleMeetImportView: View {
     @StateObject private var viewModel = GoogleMeetImportViewModel()
+    @State private var isShowingDriveLinkImport = false
+    @State private var driveLink = ""
     @State private var isConfirmingClearDownloads = false
 
     let onImport: ([URL]) -> Void
@@ -204,7 +239,7 @@ struct GoogleMeetImportView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
+            ToolbarItem(placement: .navigation) {
                 Button {
                     onClose()
                 } label: {
@@ -235,6 +270,31 @@ struct GoogleMeetImportView: View {
                     .help(clearDownloadsHelp)
 
                     if viewModel.isConnected {
+                        Button {
+                            isShowingDriveLinkImport = true
+                        } label: {
+                            Image(systemName: "link.badge.plus")
+                        }
+                        .buttonStyle(.swPlainInteractive)
+                        .disabled(viewModel.isLoading || viewModel.isImportingDriveLink || viewModel.importingMeetingID != nil)
+                        .help(L.tr("Import a Google Drive file link", "Импортировать файл по ссылке Google Drive"))
+                        .popover(isPresented: $isShowingDriveLinkImport, arrowEdge: .bottom) {
+                            GoogleDriveLinkImportPopover(
+                                driveLink: $driveLink,
+                                isImporting: viewModel.isImportingDriveLink,
+                                progress: viewModel.driveLinkProgress,
+                                onCancel: {
+                                    isShowingDriveLinkImport = false
+                                },
+                                onImport: {
+                                    viewModel.importDriveLink(driveLink, onImport: onImport) {
+                                        driveLink = ""
+                                        isShowingDriveLinkImport = false
+                                    }
+                                }
+                            )
+                        }
+
                         Button {
                             viewModel.addAccount()
                         } label: {
@@ -367,7 +427,7 @@ struct GoogleMeetImportView: View {
                             GoogleCalendarMeetingRow(
                                 meeting: meeting,
                                 isImporting: viewModel.importingMeetingID == meeting.id,
-                                isBusy: viewModel.importingMeetingID != nil,
+                                isBusy: viewModel.importingMeetingID != nil || viewModel.isImportingDriveLink,
                                 isDownloaded: meeting.recording.map { viewModel.cachedRecordingIDs.contains($0.id) } ?? false,
                                 downloadProgress: viewModel.downloadProgress[meeting.id],
                                 onImport: {
@@ -483,6 +543,55 @@ struct GoogleMeetImportView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .background(color.opacity(0.10))
+    }
+}
+
+private struct GoogleDriveLinkImportPopover: View {
+    @Binding var driveLink: String
+    let isImporting: Bool
+    let progress: GoogleDriveDownloadProgress?
+    let onCancel: () -> Void
+    let onImport: () -> Void
+
+    private var canImport: Bool {
+        !driveLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isImporting
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L.tr("Import from Google Drive", "Импорт из Google Drive"))
+                .font(.system(size: 13, weight: .semibold))
+
+            TextField(
+                "https://drive.google.com/file/d/…/view",
+                text: $driveLink
+            )
+            .textFieldStyle(.roundedBorder)
+            .onSubmit {
+                if canImport { onImport() }
+            }
+
+            if isImporting {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(progress?.percentLabel ?? L.tr("Preparing…", "Подготовка…"))
+                        .font(SW.compactFont)
+                        .foregroundStyle(SW.secondaryText)
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button(L.tr("Cancel", "Отмена"), action: onCancel)
+                    .disabled(isImporting)
+                Button(L.tr("Import", "Импортировать"), action: onImport)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canImport)
+            }
+        }
+        .padding(14)
+        .frame(width: 380)
     }
 }
 

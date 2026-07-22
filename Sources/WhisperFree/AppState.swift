@@ -444,6 +444,11 @@ final class AppState: ObservableObject {
 
     private func updateAIChatTitleIfNeeded(at index: Int, using message: AIChatMessage) {
         guard aiChatConversations[index].messages.count == 1 else { return }
+        if let attachmentTitle = message.attachmentTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !attachmentTitle.isEmpty {
+            aiChatConversations[index].title = attachmentTitle
+            return
+        }
         let words = message.content
             .split(whereSeparator: { $0.isWhitespace })
             .prefix(5)
@@ -505,6 +510,7 @@ final class AppState: ObservableObject {
                 aiChatError = aiChatRecorder.error ?? L.tr("Could not start voice message.", "Не удалось начать голосовое сообщение.")
                 return
             }
+            aiChatError = nil
             isAIChatVoiceRecording = true
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in

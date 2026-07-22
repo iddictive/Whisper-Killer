@@ -43,7 +43,7 @@ struct FileTranscriptionView: View {
 
             errorOverlay
         }
-        .frame(minWidth: showGoogleMeetImporter ? 560 : 400, minHeight: showGoogleMeetImporter ? 500 : 320)
+        .frame(minWidth: 800, minHeight: 550)
         .onDisappear {
             for item in queueItems { item.cancel() }
             queueItems.removeAll()
@@ -139,155 +139,173 @@ struct FileTranscriptionView: View {
 
     private var configBar: some View {
         HStack(spacing: 10) {
-            Menu {
-                ForEach(appState.settings.allModes) { mode in
-                    let isEnabled = appState.settings.isModeEnabled(mode)
-                    Button {
-                        appState.settings.selectedModeName = mode.name
-                    } label: {
-                        HStack {
-                            Text(mode.localizedName)
-                            if !isEnabled {
-                                Spacer()
-                                Image(systemName: "lock.fill")
-                                    .font(.system(size: 8))
-                            }
-                        }
-                    }
-                    .disabled(!isEnabled)
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    let mode = appState.settings.selectedMode
-                    Image(systemName: mode.icon)
-                    Text(mode.localizedName)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 8))
-                }
-                .font(SW.compactFont)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(SW.rowBackground)
-                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                .swInteractiveHover()
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            modeMenu
+            languageMenu
+            diarizationToggle
 
-            // Language Selection
-            Menu {
-                ForEach(AppSettings.supportedLanguages, id: \.code) { lang in
-                    Button {
-                        appState.settings.language = lang.code
-                    } label: {
-                        Text(L.languageName(code: lang.code, fallback: lang.name))
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    let currentLanguage = AppSettings.supportedLanguages.first { $0.code == appState.settings.language }
-                    let currentLang = L.languageName(code: currentLanguage?.code ?? "auto", fallback: currentLanguage?.name ?? "Auto")
-                    Text(currentLang)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 8))
-                }
-                .font(SW.compactFont)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(SW.rowBackground)
-                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                .swInteractiveHover()
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            Spacer(minLength: 0)
 
-            if appState.settings.engineType == .cloud || appState.settings.enableSpeakerDiarization {
-                Toggle(isOn: $appState.settings.enableSpeakerDiarization) {
-                    Text(L.tr("Diarization", "Диаризация"))
-                        .font(.system(size: 10, weight: .medium))
-                }
-                .toggleStyle(.checkbox)
-                .padding(.leading, 4)
-                .disabled(!appState.settings.canUseSpeakerDiarization)
-                .help(appState.settings.canUseSpeakerDiarization
-                      ? L.tr("Use native OpenAI speaker diarization.", "Использовать нативную OpenAI-диаризацию спикеров.")
-                      : L.tr("Cloud (OpenAI) and an OpenAI API key are required for diarization.", "Для диаризации нужны Облако (OpenAI) и OpenAI API key."))
-            }
-
-            Spacer()
-
-            Button {
-                showGoogleMeetImporter = true
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "video.badge.waveform")
-                    Text("Meet")
-                }
-                .font(SW.compactFont)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(SW.rowBackground)
-                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-            }
-            .buttonStyle(.swPlainInteractive)
-            .help(L.tr("Import Google Meet recording", "Импортировать запись Google Meet"))
-
-            Menu {
-                Button {
-                    appState.settings.engineType = .local
-                    appState.saveSettings()
-                    updateVisibleCosts()
-                } label: {
-                    Label(L.tr("Local (whisper.cpp)", "Локально (whisper.cpp)"), systemImage: "cpu")
-                }
-
-                Button {
-                    appState.settings.engineType = .cloud
-                    appState.saveSettings()
-                    updateVisibleCosts()
-                } label: {
-                    Label(L.tr("Cloud (OpenAI)", "Облако (OpenAI)"), systemImage: "cloud.fill")
-                }
-                .disabled(appState.settings.apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
-
-                Button {
-                    appState.settings.engineType = .qwenASR
-                    appState.settings.qwenASRModel = QwenASRModel.recommended
-                    appState.saveSettings()
-                    updateVisibleCosts()
-                } label: {
-                    Label(L.tr("Local (Qwen3-ASR MLX)", "Локально (Qwen3-ASR MLX)"), systemImage: TranscriptionEngineType.qwenASR.icon)
-                }
-                .disabled(!QwenASRTranscriber.isAppleSilicon)
-
-                Button {
-                    appState.settings.engineType = .gigaAM
-                    appState.settings.language = "ru"
-                    appState.saveSettings()
-                    updateVisibleCosts()
-                } label: {
-                    Label(L.tr("GigaAM Russian", "GigaAM русский"), systemImage: TranscriptionEngineType.gigaAM.icon)
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: appState.settings.engineType.fileTranscriptionIcon)
-                    Text(appState.settings.engineType.localizedShortTitle)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 8))
-                }
-                .font(SW.compactFont)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(SW.rowBackground)
-                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                .swInteractiveHover()
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            meetButton
+            engineMenu
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
         .background(SW.windowBackground.opacity(0.45))
+    }
+
+    private var modeMenu: some View {
+        Menu {
+            ForEach(appState.settings.allModes) { mode in
+                let isEnabled = appState.settings.isModeEnabled(mode)
+                Button {
+                    appState.settings.selectedModeName = mode.name
+                } label: {
+                    HStack {
+                        Text(mode.localizedName)
+                        if !isEnabled {
+                            Spacer()
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 8))
+                        }
+                    }
+                }
+                .disabled(!isEnabled)
+            }
+        } label: {
+            HStack(spacing: 4) {
+                let mode = appState.settings.selectedMode
+                Image(systemName: mode.icon)
+                Text(mode.localizedName)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8))
+            }
+            .font(SW.compactFont)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(SW.rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+            .swInteractiveHover()
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private var languageMenu: some View {
+        Menu {
+            ForEach(AppSettings.supportedLanguages, id: \.code) { lang in
+                Button {
+                    appState.settings.language = lang.code
+                } label: {
+                    Text(L.languageName(code: lang.code, fallback: lang.name))
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                let currentLanguage = AppSettings.supportedLanguages.first { $0.code == appState.settings.language }
+                let currentLang = L.languageName(code: currentLanguage?.code ?? "auto", fallback: currentLanguage?.name ?? "Auto")
+                Text(currentLang)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8))
+            }
+            .font(SW.compactFont)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(SW.rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+            .swInteractiveHover()
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private var diarizationToggle: some View {
+        if appState.settings.engineType == .cloud || appState.settings.enableSpeakerDiarization {
+            Toggle(isOn: $appState.settings.enableSpeakerDiarization) {
+                Text(L.tr("Diarization", "Диаризация"))
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .toggleStyle(.checkbox)
+            .disabled(!appState.settings.canUseSpeakerDiarization)
+            .help(appState.settings.canUseSpeakerDiarization
+                  ? L.tr("Use native OpenAI speaker diarization.", "Использовать нативную OpenAI-диаризацию спикеров.")
+                  : L.tr("Cloud (OpenAI) and an OpenAI API key are required for diarization.", "Для диаризации нужны Облако (OpenAI) и OpenAI API key."))
+            .fixedSize()
+        }
+    }
+
+    private var meetButton: some View {
+        Button {
+            showGoogleMeetImporter = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "video.badge.waveform")
+                Text("Meet")
+            }
+            .font(SW.compactFont)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(SW.rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+        }
+        .buttonStyle(.swPlainInteractive)
+        .help(L.tr("Import Google Meet recording", "Импортировать запись Google Meet"))
+        .fixedSize()
+    }
+
+    private var engineMenu: some View {
+        Menu {
+            Button {
+                appState.settings.engineType = .local
+                appState.saveSettings()
+                updateVisibleCosts()
+            } label: {
+                Label(L.tr("Local (whisper.cpp)", "Локально (whisper.cpp)"), systemImage: "cpu")
+            }
+
+            Button {
+                appState.settings.engineType = .cloud
+                appState.saveSettings()
+                updateVisibleCosts()
+            } label: {
+                Label(L.tr("Cloud (OpenAI)", "Облако (OpenAI)"), systemImage: "cloud.fill")
+            }
+            .disabled(appState.settings.apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
+
+            Button {
+                appState.settings.engineType = .qwenASR
+                appState.settings.qwenASRModel = QwenASRModel.recommended
+                appState.saveSettings()
+                updateVisibleCosts()
+            } label: {
+                Label(L.tr("Local (Qwen3-ASR MLX)", "Локально (Qwen3-ASR MLX)"), systemImage: TranscriptionEngineType.qwenASR.icon)
+            }
+            .disabled(!QwenASRTranscriber.isAppleSilicon)
+
+            Button {
+                appState.settings.engineType = .gigaAM
+                appState.settings.language = "ru"
+                appState.saveSettings()
+                updateVisibleCosts()
+            } label: {
+                Label(L.tr("GigaAM Russian", "GigaAM русский"), systemImage: TranscriptionEngineType.gigaAM.icon)
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: appState.settings.engineType.fileTranscriptionIcon)
+                Text(appState.settings.engineType.localizedShortTitle)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8))
+            }
+            .font(SW.compactFont)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(SW.rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+            .swInteractiveHover()
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 
     // MARK: - Queue List

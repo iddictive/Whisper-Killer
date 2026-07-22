@@ -1,5 +1,9 @@
 import SwiftUI
 import AppKit
+
+private enum AppWindowGeometry {
+    static let standardContentSize = NSSize(width: 800, height: 550)
+}
 import Combine
 import Foundation
 
@@ -376,7 +380,7 @@ final class SettingsWindowController: NSObject {
         let view = SettingsView(modelManager: appState.modelManager, recorder: appState.recorder).environmentObject(appState)
         let hostingView = NSHostingView(rootView: view)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 550),
+            contentRect: NSRect(origin: .zero, size: AppWindowGeometry.standardContentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -485,8 +489,8 @@ final class FileTranscriptionWindowController: NSObject {
         let view = FileTranscriptionView().environmentObject(AppState.shared)
         let hostingView = NSHostingView(rootView: view)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 480),
-            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            contentRect: NSRect(origin: .zero, size: AppWindowGeometry.standardContentSize),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )

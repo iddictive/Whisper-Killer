@@ -7,7 +7,8 @@ final class SystemAudioCapturer: NSObject, @unchecked Sendable {
     static let shared = SystemAudioCapturer()
     
     private var stream: SCStream?
-    private var isCapturing = false
+    private var streamSessionID: UUID?
+    private var desiredSessionID: UUID?
     
     // Buffer for whisper-stream or other consumers
     private let lock = NSLock()
@@ -30,12 +31,23 @@ final class SystemAudioCapturer: NSObject, @unchecked Sendable {
         super.init()
     }
     
-    func startCapture(callback: @MainActor @Sendable @escaping (Data) -> Void) async throws {
-        guard !isCapturing else { return }
+    func startCapture(sessionID: UUID, callback: @MainActor @Sendable @escaping (Data) -> Void) async throws {
+        desiredSessionID = sessionID
+
+        if let previousStream = stream {
+            stream = nil
+            streamSessionID = nil
+            audioCallback = nil
+            try? await previousStream.stopCapture()
+        }
+
+        guard desiredSessionID == sessionID else { throw CancellationError() }
+
         self.audioCallback = callback
         
         // 1. Get Shareable Content
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard desiredSessionID == sessionID else { throw CancellationError() }
         guard let display = content.displays.first else {
             throw NSError(domain: "SystemAudioCapturer", code: 1, userInfo: [NSLocalizedDescriptionKey: "No display found for capture"])
         }
@@ -55,23 +67,51 @@ final class SystemAudioCapturer: NSObject, @unchecked Sendable {
         config.height = 2
         
         // 4. Initialize Stream
-        stream = SCStream(filter: filter, configuration: config, delegate: nil)
+        let newStream = SCStream(filter: filter, configuration: config, delegate: nil)
+        stream = newStream
+        streamSessionID = sessionID
         
         // 5. Add Audio Output
-        try stream?.addStreamOutput(self, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
+        do {
+            try newStream.addStreamOutput(self, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
+            try await newStream.startCapture()
+        } catch {
+            if stream === newStream {
+                stream = nil
+                streamSessionID = nil
+                audioCallback = nil
+            }
+            throw error
+        }
         
-        // 6. Start
-        try await stream?.startCapture()
-        isCapturing = true
+        guard desiredSessionID == sessionID,
+              streamSessionID == sessionID,
+              stream === newStream else {
+            try? await newStream.stopCapture()
+            throw CancellationError()
+        }
+
         print("🎙️ SCK: System Audio capture started")
     }
     
-    func stopCapture() async {
-        guard isCapturing else { return }
-        try? await stream?.stopCapture()
+    func stopCapture(sessionID: UUID? = nil) async {
+        if let sessionID, streamSessionID != sessionID {
+            return
+        }
+
+        if sessionID == nil || desiredSessionID == sessionID {
+            desiredSessionID = nil
+        }
+
+        guard let streamToStop = stream else {
+            audioCallback = nil
+            return
+        }
+
         stream = nil
-        isCapturing = false
+        streamSessionID = nil
         audioCallback = nil
+        try? await streamToStop.stopCapture()
         print("🛑 SCK: System Audio capture stopped")
     }
     

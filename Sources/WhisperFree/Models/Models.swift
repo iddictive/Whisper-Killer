@@ -274,6 +274,11 @@ struct AIChatConversation: Codable, Identifiable, Hashable {
 
     var displayTitle: String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("Attached context:"),
+           let attachmentTitle = messages.first?.attachmentTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !attachmentTitle.isEmpty {
+            return attachmentTitle
+        }
         return trimmed.isEmpty ? "AI Chat" : trimmed
     }
 }

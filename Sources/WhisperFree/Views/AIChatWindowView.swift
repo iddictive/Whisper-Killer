@@ -34,7 +34,7 @@ struct AIChatWindowView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("AI Chat")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(SW.titleFont)
             }
         }
         .onAppear {
@@ -135,7 +135,10 @@ private struct AIChatConversationRow: View {
                 Text(conversation.displayTitle)
                     .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                     .lineLimit(1)
-                Text("\(conversation.messages.count) messages")
+                Text(L.tr(
+                    "\(conversation.messages.count) messages",
+                    "Сообщений: \(conversation.messages.count)"
+                ))
                     .font(.system(size: 10))
                     .foregroundStyle(SW.secondaryText)
                     .lineLimit(1)
@@ -171,13 +174,10 @@ private struct AIChatHeader: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(conversation?.displayTitle ?? "AI Chat")
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
-                modelStatus
-            }
-            .layoutPriority(1)
+            Text(conversation?.displayTitle ?? "AI Chat")
+                .font(.system(size: 14, weight: .semibold))
+                .lineLimit(1)
+                .layoutPriority(1)
 
             Spacer(minLength: 0)
 
@@ -193,33 +193,12 @@ private struct AIChatHeader: View {
                     .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
             .buttonStyle(.swPlainInteractive)
-            .disabled(appState.isLoadingAIChatModels)
+            .disabled(appState.isLoadingAIChatModels || !appState.settings.hasOpenAIAPIKey)
+            .accessibilityLabel(L.tr("Refresh OpenAI models", "Обновить модели OpenAI"))
             .help(L.tr("Refresh OpenAI models", "Обновить модели OpenAI"))
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
-
-    @ViewBuilder
-    private var modelStatus: some View {
-        if !appState.settings.hasOpenAIAPIKey {
-            Text(L.tr("OpenAI API key is missing", "Нет OpenAI API key"))
-                .font(.system(size: 10))
-                .foregroundStyle(SW.warning)
-        } else if appState.isLoadingAIChatModels {
-            Text(L.tr("Loading models from OpenAI...", "Загружаю модели из OpenAI..."))
-                .font(.system(size: 10))
-                .foregroundStyle(SW.secondaryText)
-        } else if let error = appState.aiChatError, appState.availableAIChatModels.isEmpty {
-            Text(error)
-                .font(.system(size: 10))
-                .foregroundStyle(SW.warning)
-                .lineLimit(1)
-        } else {
-            Text("\(appState.availableAIChatModels.count) OpenAI models")
-                .font(.system(size: 10))
-                .foregroundStyle(SW.secondaryText)
-        }
+        .padding(.vertical, 8)
     }
 }
 
@@ -294,7 +273,10 @@ private struct AIChatMessageList: View {
                         }
                     }
                 }
-                .padding(14)
+                .frame(maxWidth: SW.readableContentMaxWidth)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, SW.spacingXL)
+                .padding(.vertical, SW.spacingL)
             }
             .onChange(of: messages) { _, newMessages in
                 guard let last = newMessages.last else { return }
@@ -329,12 +311,7 @@ private struct AIChatComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            if let error = appState.aiChatError, !error.isEmpty, !appState.availableAIChatModels.isEmpty {
-                Text(error)
-                    .font(.system(size: 10))
-                    .foregroundStyle(SW.warning)
-                    .lineLimit(2)
-            }
+            composerStatus
 
             HStack(alignment: .bottom, spacing: 8) {
                 Button {
@@ -348,6 +325,9 @@ private struct AIChatComposer: View {
                         .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
                 }
                 .buttonStyle(.swPlainInteractive)
+                .disabled(!canToggleVoice)
+                .accessibilityLabel(voiceActionLabel)
+                .help(voiceActionLabel)
 
                 TextField(L.tr("Ask about transcripts...", "Спросить по транскрипциям..."), text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -370,18 +350,64 @@ private struct AIChatComposer: View {
                 }
                 .buttonStyle(.swPlainInteractive)
                 .disabled(!canSend)
+                .accessibilityLabel(sendActionLabel)
+                .help(sendActionLabel)
             }
         }
         .padding(14)
     }
 
+    @ViewBuilder
+    private var composerStatus: some View {
+        if !appState.settings.hasOpenAIAPIKey {
+            Label(
+                L.tr("Add an OpenAI API key in Settings to send messages.", "Добавьте OpenAI API key в настройках, чтобы отправлять сообщения."),
+                systemImage: "key"
+            )
+            .font(.system(size: 10))
+            .foregroundStyle(SW.warning)
+        } else if let error = appState.aiChatError, !error.isEmpty {
+            Label(error, systemImage: "exclamationmark.triangle")
+                .font(.system(size: 10))
+                .foregroundStyle(SW.warning)
+                .lineLimit(2)
+        } else if appState.isAIChatVoiceRecording {
+            Label(L.tr("Recording voice message...", "Запись голосового сообщения..."), systemImage: "waveform")
+                .font(.system(size: 10))
+                .foregroundStyle(SW.danger)
+        } else if appState.isAIChatSending {
+            Label(L.tr("Sending message...", "Отправка сообщения..."), systemImage: "hourglass")
+                .font(.system(size: 10))
+                .foregroundStyle(SW.secondaryText)
+        }
+    }
+
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !appState.isAIChatSending
+        appState.settings.hasOpenAIAPIKey
+            && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !appState.isAIChatSending
+    }
+
+    private var canToggleVoice: Bool {
+        appState.isAIChatVoiceRecording
+            || (appState.settings.hasOpenAIAPIKey && !appState.isAIChatSending)
+    }
+
+    private var voiceActionLabel: String {
+        appState.isAIChatVoiceRecording
+            ? L.tr("Stop voice recording", "Остановить запись")
+            : L.tr("Record voice message", "Записать голосовое сообщение")
+    }
+
+    private var sendActionLabel: String {
+        appState.isAIChatSending
+            ? L.tr("Sending message", "Сообщение отправляется")
+            : L.tr("Send message", "Отправить сообщение")
     }
 
     private func sendDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard canSend, !text.isEmpty else { return }
         draft = ""
         isInputFocused = false
         appState.sendAIChatMessage(text)
@@ -390,6 +416,7 @@ private struct AIChatComposer: View {
 
 private struct AIChatMessageRow: View {
     let message: AIChatMessage
+    @State private var isAttachmentExpanded = false
 
     private var isUser: Bool {
         message.role == .user
@@ -403,16 +430,42 @@ private struct AIChatMessageRow: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 if let attachmentTitle = message.attachmentTitle {
-                    Label(attachmentTitle, systemImage: "paperclip")
+                    Button {
+                        isAttachmentExpanded.toggle()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Label(attachmentTitle, systemImage: "paperclip")
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                            Image(systemName: isAttachmentExpanded ? "chevron.up" : "chevron.down")
+                        }
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(SW.secondaryText)
-                        .lineLimit(1)
-                }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        isAttachmentExpanded
+                            ? L.tr("Collapse attached context", "Свернуть прикреплённый контекст")
+                            : L.tr("Expand attached context", "Развернуть прикреплённый контекст")
+                    )
+                    .help(
+                        isAttachmentExpanded
+                            ? L.tr("Collapse attached context", "Свернуть прикреплённый контекст")
+                            : L.tr("Expand attached context", "Развернуть прикреплённый контекст")
+                    )
 
-                Text(message.content)
-                    .font(.system(size: 12))
-                    .foregroundStyle(SW.primaryText)
-                    .textSelection(.enabled)
+                    Text(attachmentPreview(title: attachmentTitle))
+                        .font(.system(size: 12))
+                        .foregroundStyle(SW.primaryText)
+                        .lineLimit(isAttachmentExpanded ? nil : 5)
+                        .truncationMode(.tail)
+                        .textSelection(.enabled)
+                } else {
+                    Text(message.content)
+                        .font(.system(size: 12))
+                        .foregroundStyle(SW.primaryText)
+                        .textSelection(.enabled)
+                }
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 9)
@@ -425,5 +478,12 @@ private struct AIChatMessageRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+    }
+
+    private func attachmentPreview(title: String) -> String {
+        let prefix = "Attached context: \(title)"
+        guard message.content.hasPrefix(prefix) else { return message.content }
+        return String(message.content.dropFirst(prefix.count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

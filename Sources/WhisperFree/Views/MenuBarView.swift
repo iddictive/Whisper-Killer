@@ -198,6 +198,16 @@ struct MenuBarView: View {
 
             // ─── Navigation ─────────────────────
             VStack(spacing: 0) {
+                menuButton(icon: "doc.badge.plus", title: L.tr("Transcribe File...", "Транскрибировать файл...")) {
+                    AppDelegate.shared?.showFileTranscription()
+                }
+                menuButton(icon: "video.badge.waveform", title: L.tr("Import Meet Recording...", "Импортировать запись Meet...")) {
+                    AppDelegate.shared?.showFileTranscription()
+                    appState.requestGoogleMeetImport()
+                }
+
+                Divider()
+
                 menuButton(icon: "gear", title: L.tr("Settings", "Настройки")) {
                     AppDelegate.shared?.showSettings()
                 }
@@ -207,14 +217,6 @@ struct MenuBarView: View {
                 menuButton(icon: "bubble.left.and.text.bubble.right", title: "AI Chat") {
                     AppDelegate.shared?.showAIChat()
                 }
-                menuButton(icon: "doc.badge.plus", title: L.tr("Transcribe File...", "Транскрибировать файл...")) {
-                    AppDelegate.shared?.showFileTranscription()
-                }
-                menuButton(icon: "video.badge.waveform", title: L.tr("Import Meet Recording...", "Импортировать запись Meet...")) {
-                    AppDelegate.shared?.showFileTranscription()
-                    appState.requestGoogleMeetImport()
-                }
-
                 menuButton(icon: "wand.and.stars", title: L.tr("Setup Wizard", "Мастер настройки")) {
                     AppDelegate.shared?.showSetupWizard()
                 }

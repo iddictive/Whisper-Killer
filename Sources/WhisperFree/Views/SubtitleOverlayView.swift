@@ -23,6 +23,7 @@ struct SubtitleOverlayContent: View {
                     targetLanguageLabel: targetLanguageLabel,
                     containerSize: geo.size
                 )
+                .environment(\.colorScheme, .dark)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
@@ -56,7 +57,8 @@ private struct TranscriptDockView: View {
             TranscriptDockHeader(
                 compactMode: compactMode,
                 targetLanguageLabel: targetLanguageLabel,
-                statusMessage: manager.statusMessage
+                statusMessage: manager.statusMessage,
+                didDropAudio: manager.didDropAudio
             )
 
             Divider()
@@ -107,6 +109,7 @@ private struct TranscriptDockHeader: View {
     let compactMode: Bool
     let targetLanguageLabel: String
     let statusMessage: String?
+    let didDropAudio: Bool
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -139,12 +142,23 @@ private struct TranscriptDockHeader: View {
                     .swInteractiveHover()
                 }
                 .menuStyle(.borderlessButton)
+                .tint(SW.accent)
                 .fixedSize()
             }
 
             Spacer(minLength: 8)
 
-            if let statusMessage {
+            if didDropAudio {
+                OverlayStatusChip(
+                    text: L.tr("Audio lag", "Задержка аудио"),
+                    icon: "exclamationmark.triangle",
+                    isAccent: false
+                )
+                .help(L.tr(
+                    "Audio processing fell behind and skipped the oldest buffered audio.",
+                    "Обработка аудио не успела за потоком, поэтому самая старая часть буфера была пропущена."
+                ))
+            } else if let statusMessage {
                 OverlayStatusChip(
                     text: statusMessage,
                     icon: "dot.radiowaves.left.and.right",
@@ -208,9 +222,10 @@ private struct TranscriptSegmentsView: View {
     let compactMode: Bool
 
     private var shouldShowDraft: Bool {
-        !originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        segments.last?.originalText != originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        LiveTranscriptPresentation.shouldShowDraft(
+            lastCommittedOriginal: segments.last?.originalText,
+            currentOriginal: originalText
+        )
     }
 
     var body: some View {
@@ -285,7 +300,10 @@ private struct TranscriptSegmentRow: View {
                 foreground: .white,
                 compactMode: compactMode,
                 isDraft: isDraft,
-                isEmphasized: true
+                isEmphasized: true,
+                emptyPlaceholder: isDraft
+                    ? L.tr("Translating…", "Перевожу…")
+                    : nil
             )
         }
     }
@@ -297,16 +315,22 @@ private struct TranscriptCell: View {
     let compactMode: Bool
     var isDraft: Bool = false
     var isEmphasized: Bool = false
+    var emptyPlaceholder: String?
 
     var body: some View {
-        Text(text)
+        Text(displayText)
             .font(.system(size: compactMode ? 13 : (isEmphasized ? 15 : 14), weight: isEmphasized ? .semibold : .regular))
-            .foregroundStyle(foreground)
+            .foregroundStyle(text.isEmpty ? foreground.opacity(0.55) : foreground)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(backgroundStyle)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var displayText: String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? (emptyPlaceholder ?? "") : trimmed
     }
 
     private var backgroundStyle: some ShapeStyle {

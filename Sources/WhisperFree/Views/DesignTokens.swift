@@ -39,6 +39,7 @@ enum SW {
     static let spacingXL: CGFloat = 20
     static let cardPadding: CGFloat = 12
     static let sectionSpacing: CGFloat = 16
+    static let readableContentMaxWidth: CGFloat = 720
 
     static let titleFont = Font.system(size: 13, weight: .semibold)
     static let bodyFont = Font.system(size: 12)

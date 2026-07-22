@@ -137,6 +137,7 @@ enum GoogleDriveImportError: LocalizedError {
     case callbackFailed
     case invalidCallback
     case invalidTokenResponse
+    case invalidDriveLink
     case tokenMissing
     case apiError(String)
     case unsupportedFileType(String)
@@ -151,6 +152,11 @@ enum GoogleDriveImportError: LocalizedError {
             return L.tr("Google sign-in callback was invalid.", "Некорректный callback от Google.")
         case .invalidTokenResponse:
             return L.tr("Google returned an invalid token response.", "Google вернул некорректный ответ с токеном.")
+        case .invalidDriveLink:
+            return L.tr(
+                "Paste a Google Drive file link in the format drive.google.com/file/d/…",
+                "Вставьте ссылку на файл Google Drive в формате drive.google.com/file/d/…"
+            )
         case .tokenMissing:
             return L.tr("Connect Google first.", "Сначала подключите Google.")
         case .apiError(let message):
@@ -196,10 +202,7 @@ final class GoogleDriveMeetImporter {
     }
 
     var isConnected: Bool {
-        guard let selectedAccountID,
-              let token = accountStore.loadToken(for: selectedAccountID)
-        else { return false }
-        return token.refreshToken?.isEmpty == false || !token.accessToken.isEmpty
+        !accountStore.loadAccounts().isEmpty
     }
 
     func selectAccount(id: String) {
@@ -357,6 +360,48 @@ final class GoogleDriveMeetImporter {
         }
 
         let accessToken = try await validAccessToken(for: accountID)
+        return try await downloadRecording(
+            recording,
+            accessToken: accessToken,
+            meetingID: meetingID,
+            onProgress: onProgress
+        )
+    }
+
+    func downloadRecording(
+        fromDriveURL url: URL,
+        accountID: String? = nil,
+        onProgress: (@Sendable (GoogleDriveDownloadProgress) -> Void)? = nil
+    ) async throws -> URL {
+        guard let fileID = Self.driveFileID(from: url) else {
+            throw GoogleDriveImportError.invalidDriveLink
+        }
+
+        let accessToken = try await validAccessToken(for: accountID)
+        guard let recording = try await driveFileMetadata(fileID: fileID, accessToken: accessToken) else {
+            throw GoogleDriveImportError.invalidDriveLink
+        }
+        guard recording.canImportForTranscription else {
+            throw GoogleDriveImportError.unsupportedFileType(recording.mimeType)
+        }
+        return try await downloadRecording(
+            recording,
+            accessToken: accessToken,
+            meetingID: nil,
+            onProgress: onProgress
+        )
+    }
+
+    private func downloadRecording(
+        _ recording: GoogleDriveRecording,
+        accessToken: String,
+        meetingID: String?,
+        onProgress: (@Sendable (GoogleDriveDownloadProgress) -> Void)?
+    ) async throws -> URL {
+        if let cachedURL = try await GoogleMeetDownloadCache.shared.localURL(for: recording, meetingID: meetingID) {
+            return cachedURL
+        }
+
         var components = URLComponents(string: "https://www.googleapis.com/drive/v3/files/\(recording.id)")!
         components.queryItems = [URLQueryItem(name: "alt", value: "media")]
         guard let url = components.url else { throw GoogleDriveImportError.invalidCallback }
@@ -389,6 +434,22 @@ final class GoogleDriveMeetImporter {
 
     func cachedRecordingsSummary() async throws -> GoogleMeetDownloadSummary {
         try await GoogleMeetDownloadCache.shared.summary()
+    }
+
+    static func driveFileID(from url: URL) -> String? {
+        guard url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == "drive.google.com"
+        else { return nil }
+
+        let path = url.path.split(separator: "/").map(String.init)
+        guard path.count >= 3, path[0] == "file", path[1] == "d" else { return nil }
+
+        let fileID = path[2]
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_") )
+        guard !fileID.isEmpty,
+              fileID.unicodeScalars.allSatisfy(allowed.contains)
+        else { return nil }
+        return fileID
     }
 
     private func calendarEvents(start: Date, end: Date, accessToken: String) async throws -> CalendarEventsResponse {
@@ -648,8 +709,9 @@ private final class GoogleOAuthAccountStore {
     private let defaults = UserDefaults.standard
 
     func loadAccounts() -> [GoogleOAuthAccount] {
-        migrateLegacyTokenIfNeeded()
-        return loadCatalog()
+        let accounts = loadCatalog()
+        guard accounts.isEmpty, hasLegacyToken else { return accounts }
+        return [GoogleOAuthAccount(id: "legacy", email: nil, name: nil, connectedAt: .distantPast)]
     }
 
     func selectedAccount() -> GoogleOAuthAccount? {
@@ -690,6 +752,10 @@ private final class GoogleOAuthAccountStore {
     }
 
     func loadToken(for accountID: String) -> GoogleOAuthToken? {
+        if accountID == "legacy" {
+            migrateLegacyTokenIfNeeded()
+        }
+
         var query = tokenQuery(accountID: accountID)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -697,7 +763,9 @@ private final class GoogleOAuthAccountStore {
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess, let data = result as? Data else { return nil }
-        return try? JSONDecoder().decode(GoogleOAuthToken.self, from: data)
+        guard let token = try? JSONDecoder().decode(GoogleOAuthToken.self, from: data) else { return nil }
+        repairIdentityAccessIfNeeded(token, accountID: accountID)
+        return token
     }
 
     func saveToken(_ token: GoogleOAuthToken, for accountID: String) {
@@ -707,7 +775,9 @@ private final class GoogleOAuthAccountStore {
         var query = tokenQuery(accountID: accountID)
         query[kSecValueData as String] = data
         query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(query as CFDictionary, nil)
+        if SecItemAdd(query as CFDictionary, nil) == errSecSuccess {
+            markIdentityAccessCurrent()
+        }
     }
 
     func deleteAccount(id accountID: String?) {
@@ -781,6 +851,13 @@ private final class GoogleOAuthAccountStore {
         return try? JSONDecoder().decode(GoogleOAuthToken.self, from: data)
     }
 
+    private var hasLegacyToken: Bool {
+        var query = legacyQuery()
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
+    }
+
     private func loadCatalog() -> [GoogleOAuthAccount] {
         guard let data = defaults.data(forKey: accountsKey),
               let accounts = try? JSONDecoder().decode([GoogleOAuthAccount].self, from: data)
@@ -795,6 +872,38 @@ private final class GoogleOAuthAccountStore {
         }
         guard let data = try? JSONEncoder().encode(accounts) else { return }
         defaults.set(data, forKey: accountsKey)
+    }
+
+    private func repairIdentityAccessIfNeeded(_ token: GoogleOAuthToken, accountID: String) {
+        guard let marker = identityAccessMarker,
+              !defaults.bool(forKey: marker)
+        else { return }
+        saveToken(token, for: accountID)
+    }
+
+    private func markIdentityAccessCurrent() {
+        guard let marker = identityAccessMarker else { return }
+        defaults.set(true, forKey: marker)
+    }
+
+    private var identityAccessMarker: String? {
+        guard let teamIdentifier = Self.currentTeamIdentifier else { return nil }
+        return "WhisperKiller.GoogleDriveMeet.KeychainIdentity.\(teamIdentifier)"
+    }
+
+    private static var currentTeamIdentifier: String? {
+        guard let executableURL = Bundle.main.executableURL else { return nil }
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(executableURL as CFURL, SecCSFlags(), &code) == errSecSuccess,
+              let code
+        else { return nil }
+
+        var signingInfo: CFDictionary?
+        let flags = SecCSFlags(rawValue: kSecCSSigningInformation)
+        guard SecCodeCopySigningInformation(code, flags, &signingInfo) == errSecSuccess,
+              let info = signingInfo as? [String: Any]
+        else { return nil }
+        return info[kSecCodeInfoTeamIdentifier as String] as? String
     }
 
     private func tokenQuery(accountID: String) -> [String: Any] {

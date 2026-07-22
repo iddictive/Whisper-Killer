@@ -12,13 +12,33 @@ struct LiveTranscriptSegment: Identifiable, Equatable, Sendable {
 final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     static let shared = LiveTranslatorManager()
 
+    private struct TranslationRequest: Equatable {
+        let text: String
+        let targetLanguage: String
+        let sourceLanguage: String
+        let engine: LiveTranslationEngine
+        let localModel: String
+        let segmentID: UUID
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.text == rhs.text &&
+            lhs.targetLanguage == rhs.targetLanguage &&
+            lhs.sourceLanguage == rhs.sourceLanguage &&
+            lhs.engine.rawValue == rhs.engine.rawValue &&
+            lhs.localModel == rhs.localModel &&
+            lhs.segmentID == rhs.segmentID
+        }
+    }
+
     @Published var isRunning: Bool = false
     @Published var originalText: String = ""
     @Published var translatedText: String = ""
     @Published var statusMessage: String?
     @Published var transcriptSegments: [LiveTranscriptSegment] = []
+    @Published private(set) var didDropAudio = false
     
     private var translationTask: Task<Void, Never>?
+    private var translationGate = CoalescingRequestGate<TranslationRequest>()
     private var process: Process?
     private var outputPipe: Pipe?
     private var errorPipe: Pipe?
@@ -26,6 +46,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     private let localEngine = LocalTranslationEngine()
     private var rawStreamBuffer: String = ""
     private var lastSentText: String = ""
+    private var currentSegmentID = UUID()
     
     private var translationDebounceTimer: AnyCancellable?
     private var isStoppingProcess = false
@@ -36,10 +57,14 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     
     // SCK Support
     private var isUsingSCK = false
-    private var sckAudioBuffer = Data()
-    private let maxBufferSize = 16000 * 2 * 15 // 15 seconds max
+    private var sckAudioBuffer = BoundedAudioBuffer(maxByteCount: 16000 * 2 * 15)
+    // Match whisper.cpp stream's default 200 ms audio keep window at 16 kHz mono Int16.
+    private var sckChunkAssembler = LiveAudioChunkAssembler(overlapByteCount: 16000 * 2 / 5)
+    private var sckSilenceBoundaryGuard = LiveSilenceBoundaryGuard()
     private var isTranscribingSCK = false
     private var transcriptionTask: Task<Void, Never>?
+    private var systemCaptureTask: Task<Void, Never>?
+    private var captureSessionID: UUID?
     
     private var settingsSubscription: AnyCancellable?
     
@@ -166,6 +191,7 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             translatedText = ""
             transcriptSegments = []
             rawStreamBuffer = ""
+            currentSegmentID = UUID()
             statusMessage = "Listening..."
             resetSilenceTimer()
             NotificationCenter.default.post(name: .liveTranslatorDidStart, object: nil)
@@ -175,22 +201,36 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     }
 
     private func startSystemAudioCapture() {
+        let sessionID = UUID()
+        captureSessionID = sessionID
+        systemCaptureTask?.cancel()
         statusMessage = "Starting system audio capture..."
         originalText = ""
         translatedText = ""
         transcriptSegments = []
         rawStreamBuffer = ""
         lastSentText = ""
-        sckAudioBuffer.removeAll(keepingCapacity: true)
+        currentSegmentID = UUID()
+        sckAudioBuffer.reset()
+        didDropAudio = false
+        sckChunkAssembler.reset()
+        sckSilenceBoundaryGuard = LiveSilenceBoundaryGuard()
         translationTask?.cancel()
+        translationTask = nil
+        translationGate.cancel()
         transcriptionTask?.cancel()
 
-        Task { @MainActor [weak self] in
+        systemCaptureTask = Task { @MainActor [weak self] in
             guard let self else { return }
 
             do {
-                try await SystemAudioCapturer.shared.startCapture { [weak self] data in
-                    self?.handleSCKBuffer(data)
+                try await SystemAudioCapturer.shared.startCapture(sessionID: sessionID) { [weak self] data in
+                    self?.handleSCKBuffer(data, sessionID: sessionID)
+                }
+
+                guard !Task.isCancelled, self.captureSessionID == sessionID else {
+                    await SystemAudioCapturer.shared.stopCapture(sessionID: sessionID)
+                    return
                 }
 
                 self.isUsingSCK = true
@@ -199,10 +239,17 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
                 self.statusMessage = "Listening..."
                 self.resetSilenceTimer()
                 self.startSCKTranscriptionLoop()
+                self.systemCaptureTask = nil
                 NotificationCenter.default.post(name: .liveTranslatorDidStart, object: nil)
             } catch {
+                guard !Task.isCancelled, self.captureSessionID == sessionID else {
+                    await SystemAudioCapturer.shared.stopCapture(sessionID: sessionID)
+                    return
+                }
                 self.isUsingSCK = false
                 self.isTranscribingSCK = false
+                self.captureSessionID = nil
+                self.systemCaptureTask = nil
                 self.failToStart(with: "Failed to start system audio capture: \(error.localizedDescription)")
             }
         }
@@ -211,9 +258,13 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     func stop() {
         print("🛑 LiveTranslatorManager: Stopping...")
         
-        if isUsingSCK {
+        let captureSessionIDToStop = captureSessionID
+        captureSessionID = nil
+        systemCaptureTask?.cancel()
+        systemCaptureTask = nil
+        if let captureSessionIDToStop {
             Task {
-                await SystemAudioCapturer.shared.stopCapture()
+                await SystemAudioCapturer.shared.stopCapture(sessionID: captureSessionIDToStop)
             }
         }
         
@@ -238,8 +289,15 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         translatedText = ""
         transcriptSegments = []
         rawStreamBuffer = ""
+        currentSegmentID = UUID()
+        sckAudioBuffer.reset()
+        didDropAudio = false
+        sckChunkAssembler.reset()
+        sckSilenceBoundaryGuard = LiveSilenceBoundaryGuard()
         lastSentText = ""
         translationTask?.cancel()
+        translationTask = nil
+        translationGate.cancel()
         translationDebounceTimer?.cancel()
         silenceTimer?.invalidate()
         isUsingSCK = false
@@ -286,10 +344,15 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         guard !fullText.isEmpty else { return }
         if fullText.count < 3 && !fullText.contains(where: { $0.isLetter }) { return } // Filter out things like "." or "!!!"
         
-        if fullText == originalText { return }
-        
+        let accumulatedText = LiveTranscriptAssembler.appendLosslessly(
+            previous: originalText,
+            incoming: fullText
+        )
+        guard accumulatedText != originalText else { return }
+
+        originalText = accumulatedText
+        translatedText = ""
         resetSilenceTimer()
-        originalText = mergedWithLatestSegment(fullText) ?? fullText
         
         triggerTranslation(targetLanguage: targetLanguage, sourceLanguage: sourceLanguage, engine: engine, localModel: localModel)
     }
@@ -318,10 +381,15 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         rawStreamBuffer = ""
         lastSentText = ""
         translationTask?.cancel()
+        translationTask = nil
+        translationGate.cancel()
         translationDebounceTimer?.cancel()
         silenceTimer?.invalidate()
         transcriptionTask?.cancel()
         transcriptionTask = nil
+        captureSessionID = nil
+        systemCaptureTask?.cancel()
+        systemCaptureTask = nil
         isUsingSCK = false
         isTranscribingSCK = false
         isStoppingProcess = false
@@ -432,28 +500,46 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         
         let textToTranslate = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !textToTranslate.isEmpty, textToTranslate != lastSentText else { return }
+        let segmentID = currentSegmentID
         
         translationDebounceTimer = Just(())
             .delay(for: .milliseconds(500), scheduler: RunLoop.main) // Reduced from 800ms for better responsiveness
             .sink { [weak self] in
                 guard let self = self else { return }
-                self.performTranslation(text: textToTranslate, targetLanguage: targetLanguage, sourceLanguage: sourceLanguage, engine: engine, localModel: localModel)
+                self.enqueueTranslation(
+                    TranslationRequest(
+                        text: textToTranslate,
+                        targetLanguage: targetLanguage,
+                        sourceLanguage: sourceLanguage,
+                        engine: engine,
+                        localModel: localModel,
+                        segmentID: segmentID
+                    )
+                )
             }
     }
-    
-    private func performTranslation(text: String, targetLanguage: String, sourceLanguage: String, engine: LiveTranslationEngine, localModel: String) {
-        lastSentText = text
+
+    private func enqueueTranslation(_ request: TranslationRequest) {
+        lastSentText = request.text
+        guard let requestToStart = translationGate.submit(request, coalescingKey: request.segmentID) else { return }
+        startTranslation(requestToStart)
+    }
+
+    private func startTranslation(_ request: TranslationRequest) {
         statusMessage = "Translating..."
-        
-        translationTask?.cancel()
+
         translationTask = Task {
             do {
                 let translationResult: String
                 
-                if AppSettings.liveTranslatorSourceMatchesTarget(sourceLanguageCode: sourceLanguage, targetLanguage: targetLanguage) {
-                    translationResult = text
-                } else if engine == .local {
-                    translationResult = try await self.localEngine.translate(text: text, targetLanguage: targetLanguage, model: localModel)
+                if AppSettings.liveTranslatorSourceMatchesTarget(sourceLanguageCode: request.sourceLanguage, targetLanguage: request.targetLanguage) {
+                    translationResult = request.text
+                } else if request.engine == .local {
+                    translationResult = try await self.localEngine.translate(
+                        text: request.text,
+                        targetLanguage: request.targetLanguage,
+                        model: request.localModel
+                    )
                 } else {
                     let settings = Storage.shared.loadSettings()
                     let processor = PostProcessor(settings: settings)
@@ -461,27 +547,41 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
                     // Temp fake mode to force system prompt
                     let translateMode = TranscriptionMode(
                         name: "Translate", icon: "", description: "", exampleInput: "", exampleOutput: "",
-                        systemPrompt: "You are a real-time translator. Translate the given text to \(targetLanguage). Provide ONLY the translation. No quotes, no markdown.",
+                        systemPrompt: "You are a real-time translator. Translate the given text to \(request.targetLanguage). Provide ONLY the translation. No quotes, no markdown.",
                         isBuiltIn: false
                     )
                     
-                    let result = try await processor.process(text: text, mode: translateMode)
+                    let result = try await processor.process(text: request.text, mode: translateMode)
                     translationResult = result.text
                 }
                 
                 guard !Task.isCancelled else { return }
                 
                 await MainActor.run {
-                    self.translatedText = translationResult
-                    self.upsertTranscriptSegment(original: text, translated: translationResult)
-                    self.statusMessage = "Listening..."
+                    self.upsertTranscriptSegment(
+                        original: request.text,
+                        translated: translationResult,
+                        segmentID: request.segmentID
+                    )
+                    self.translatedText = self.originalText == request.text ? translationResult : ""
+                    self.finishTranslation()
                 }
             } catch {
                 guard !Task.isCancelled else { return }
+                print("❌ Live translation error: \(error)")
                 await MainActor.run {
-                    self.statusMessage = "Translation error: \(error.localizedDescription)"
+                    self.finishTranslation(errorMessage: "Live translation failed. Listening for the next segment.")
                 }
             }
+        }
+    }
+
+    private func finishTranslation(errorMessage: String? = nil) {
+        translationTask = nil
+        if let nextRequest = translationGate.complete() {
+            startTranslation(nextRequest)
+        } else {
+            statusMessage = errorMessage ?? "Listening..."
         }
     }
     
@@ -490,22 +590,25 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
         silenceTimer?.invalidate()
         silenceTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                self?.isSilence = true
-                self?.rawStreamBuffer = ""
-                self?.originalText = ""
-                self?.translatedText = ""
-                self?.lastSentText = ""
+                guard let self, self.sckSilenceBoundaryGuard.shouldRotateTurnOnSilence() else { return }
+                self.isSilence = true
+                self.rawStreamBuffer = ""
+                self.originalText = ""
+                self.translatedText = ""
+                self.lastSentText = ""
+                self.currentSegmentID = UUID()
             }
         }
     }
 
-    private func upsertTranscriptSegment(original: String, translated: String) {
+    private func upsertTranscriptSegment(original: String, translated: String, segmentID: UUID) {
         let original = original.trimmingCharacters(in: .whitespacesAndNewlines)
         let translated = translated.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !original.isEmpty, !translated.isEmpty else { return }
 
-        if let lastIndex = transcriptSegments.indices.last {
+        if let lastIndex = transcriptSegments.indices.last,
+           transcriptSegments[lastIndex].id == segmentID {
             let lastSegment = transcriptSegments[lastIndex]
 
             if lastSegment.originalText == original {
@@ -515,17 +618,27 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
                 return
             }
 
-            if let mergedOriginal = mergeOverlappingText(previous: lastSegment.originalText, incoming: original) {
-                let mergedTranslated = mergeOverlappingText(previous: lastSegment.translatedText, incoming: translated) ?? translated
-                transcriptSegments[lastIndex].originalText = mergedOriginal
-                transcriptSegments[lastIndex].translatedText = mergedTranslated
+            let previousTurn = LiveTranscriptAssembler.Turn(
+                id: lastSegment.id,
+                pair: .init(
+                    original: lastSegment.originalText,
+                    translated: lastSegment.translatedText
+                )
+            )
+            let incomingTurn = LiveTranscriptAssembler.Turn(
+                id: segmentID,
+                pair: .init(original: original, translated: translated)
+            )
+            if let mergedTurn = LiveTranscriptAssembler.merge(previous: previousTurn, incoming: incomingTurn) {
+                transcriptSegments[lastIndex].originalText = mergedTurn.pair.original
+                transcriptSegments[lastIndex].translatedText = mergedTurn.pair.translated
                 return
             }
         }
 
         transcriptSegments.append(
             LiveTranscriptSegment(
-                id: UUID(),
+                id: segmentID,
                 originalText: original,
                 translatedText: translated
             )
@@ -535,133 +648,15 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     private func canonicalLiveText(from lines: [String]) -> String {
         lines.reduce("") { current, line in
             guard !current.isEmpty else { return line }
-            return mergeOverlappingText(previous: current, incoming: line) ?? "\(current) \(line)"
+            return LiveTranscriptAssembler.mergeText(previous: current, incoming: line) ?? "\(current) \(line)"
         }
         .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func mergedWithLatestSegment(_ text: String) -> String? {
-        guard let latest = transcriptSegments.last else { return nil }
-        return mergeOverlappingText(previous: latest.originalText, incoming: text)
-    }
-
-    private func mergeOverlappingText(previous: String, incoming: String) -> String? {
-        let previous = previous.trimmingCharacters(in: .whitespacesAndNewlines)
-        let incoming = incoming.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !previous.isEmpty, !incoming.isEmpty else { return nil }
-        if previous == incoming { return previous }
-
-        let previousNormalized = normalizedSpeechText(previous)
-        let incomingNormalized = normalizedSpeechText(incoming)
-
-        guard !previousNormalized.isEmpty, !incomingNormalized.isEmpty else { return nil }
-        if previousNormalized == incomingNormalized { return previous.count >= incoming.count ? previous : incoming }
-        if incomingNormalized.hasPrefix(previousNormalized) { return incoming }
-        if previousNormalized.hasPrefix(incomingNormalized) { return previous }
-        if incomingNormalized.contains(previousNormalized) { return incoming }
-        if previousNormalized.contains(incomingNormalized) { return previous }
-
-        let previousWords = normalizedSpeechWords(previous)
-        let incomingWords = normalizedSpeechWords(incoming)
-        let overlap = longestWordOverlap(left: previousWords, right: incomingWords)
-        if overlap >= 3 {
-            let incomingOriginalWords = incoming.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-            let remainder = incomingOriginalWords.dropFirst(overlap).joined(separator: " ")
-            guard !remainder.isEmpty else { return previous }
-
-            return "\(previous) \(remainder)"
-                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        if let fuzzyMerge = mergeByCommonPhrase(previous: previous, incoming: incoming, previousWords: previousWords, incomingWords: incomingWords) {
-            return fuzzyMerge
-        }
-
-        return nil
-    }
-
-    private func longestWordOverlap(left: [String], right: [String]) -> Int {
-        guard !left.isEmpty, !right.isEmpty else { return 0 }
-
-        let maxCandidate = min(left.count, right.count)
-        for count in stride(from: maxCandidate, through: 1, by: -1) {
-            if Array(left.suffix(count)) == Array(right.prefix(count)) {
-                return count
-            }
-        }
-
-        return 0
-    }
-
-    private func normalizedSpeechText(_ text: String) -> String {
-        normalizedSpeechWords(text).joined(separator: " ")
-    }
-
-    private func mergeByCommonPhrase(previous: String, incoming: String, previousWords: [String], incomingWords: [String]) -> String? {
-        guard let match = longestCommonPhrase(left: previousWords, right: incomingWords), match.count >= 3 else {
-            return nil
-        }
-
-        let previousOriginalWords = previous.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-        let incomingOriginalWords = incoming.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-
-        if match.rightStart == 0 {
-            let remainder = incomingOriginalWords.dropFirst(match.count).joined(separator: " ")
-            guard !remainder.isEmpty else { return previous }
-            return "\(previous) \(remainder)"
-                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        if match.leftStart == 0 && incomingOriginalWords.count > previousOriginalWords.count {
-            return incoming
-        }
-
-        let remainder = incomingOriginalWords.dropFirst(match.rightStart + match.count).joined(separator: " ")
-        guard !remainder.isEmpty else { return previous }
-
-        return "\(previous) \(remainder)"
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func longestCommonPhrase(left: [String], right: [String]) -> (leftStart: Int, rightStart: Int, count: Int)? {
-        guard !left.isEmpty, !right.isEmpty else { return nil }
-
-        var best: (leftStart: Int, rightStart: Int, count: Int)?
-        for leftStart in left.indices {
-            for rightStart in right.indices {
-                var count = 0
-                while leftStart + count < left.count,
-                      rightStart + count < right.count,
-                      left[leftStart + count] == right[rightStart + count] {
-                    count += 1
-                }
-
-                if count > (best?.count ?? 0) {
-                    best = (leftStart, rightStart, count)
-                }
-            }
-        }
-
-        return best
-    }
-
-    private func normalizedSpeechWords(_ text: String) -> [String] {
-        text
-            .lowercased()
-            .split(whereSeparator: { $0.isWhitespace })
-            .map { token in
-                token.filter { $0.isLetter || $0.isNumber }
-            }
-            .filter { !$0.isEmpty }
-    }
-
     // MARK: - SCK Audio Logic
     
-    private func handleSCKBuffer(_ data: Data) {
+    private func handleSCKBuffer(_ data: Data, sessionID: UUID) {
+        guard captureSessionID == sessionID else { return }
         let length = data.count
         
         // Diagnostic: Check if audio is non-silent
@@ -682,13 +677,8 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             }
         }
         
-        DispatchQueue.main.async {
-            self.sckAudioBuffer.append(data)
-            
-            // Keep buffer within limits (15s)
-            if self.sckAudioBuffer.count > self.maxBufferSize {
-                self.sckAudioBuffer.removeFirst(self.sckAudioBuffer.count - self.maxBufferSize)
-            }
+        if sckAudioBuffer.append(data) > 0 {
+            didDropAudio = true
         }
     }
     
@@ -699,7 +689,12 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
                 // Wait for some audio to accumulate
                 try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
                 
-                guard !isTranscribingSCK, sckAudioBuffer.count > 16000 * 2 else { continue }
+                guard !Task.isCancelled,
+                      isRunning,
+                      isUsingSCK,
+                      !isTranscribingSCK,
+                      sckAudioBuffer.count > 16000 * 2
+                else { continue }
                 
                 await transcribeCurrentSCKBuffer()
             }
@@ -708,11 +703,21 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     
     private func transcribeCurrentSCKBuffer() async {
         isTranscribingSCK = true
+        sckSilenceBoundaryGuard.beginRecognition()
+        silenceTimer?.invalidate()
         
-        let audioToProcess = sckAudioBuffer
-        sckAudioBuffer.removeAll(keepingCapacity: true)
+        let freshAudio = sckAudioBuffer.consumeAll()
+        let audioToProcess = sckChunkAssembler.makeChunk(from: freshAudio)
         // We write to a temp file
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("sck_chunk_\(UUID().uuidString).wav")
+        defer {
+            try? FileManager.default.removeItem(at: tempURL)
+            isTranscribingSCK = false
+            sckSilenceBoundaryGuard.endRecognition()
+            if isRunning && isUsingSCK {
+                resetSilenceTimer()
+            }
+        }
         
         // Whisper CLI needs a WAV header. We use AVAudioFile to write it correctly.
         let settings: [String: Any] = [
@@ -747,11 +752,22 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             let whisper = LocalWhisper(modelSize: modelSize)
             
             print("🎙️ SCK: Transcribing \(audioToProcess.count) bytes...")
-            let text = try await whisper.transcribe(audioURL: tempURL, language: sourceLanguage, timeRange: nil, onProgress: nil)
+            let text = try await withTaskCancellationHandler {
+                try await whisper.transcribe(audioURL: tempURL, language: sourceLanguage, timeRange: nil, onProgress: nil)
+            } onCancel: {
+                whisper.cancel()
+            }
+
+            guard !Task.isCancelled, isRunning, isUsingSCK else { return }
             
             if !text.isEmpty {
                 await MainActor.run {
-                    self.originalText = text
+                    self.originalText = LiveTranscriptAssembler.appendStreamingChunk(
+                        previous: self.originalText,
+                        incoming: text
+                    )
+                    self.translatedText = ""
+                    self.resetSilenceTimer()
                     self.triggerTranslation(
                         targetLanguage: AppSettings.normalizedLiveTranslatorTargetLanguage(settings.liveTranslatorTargetLanguage),
                         sourceLanguage: sourceLanguage,
@@ -761,11 +777,10 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
                 }
             }
             
-            try? FileManager.default.removeItem(at: tempURL)
         } catch {
+            guard !Task.isCancelled, isRunning, isUsingSCK else { return }
             print("❌ SCK Transcription Error: \(error)")
+            statusMessage = "Live transcription failed. Listening for the next segment."
         }
-        
-        isTranscribingSCK = false
     }
 }

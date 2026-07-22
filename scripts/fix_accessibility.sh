@@ -38,9 +38,27 @@ safe_codesign() {
         return 0
     fi
 
+    # Preserve the stable signature created by deploy.command after copying.
+    if codesign --verify --deep --strict "$app_path" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local identity="$WHISPERKILLER_CODESIGN_IDENTITY"
+    if [ -z "$identity" ]; then
+        local identities
+        identities="$(security find-identity -v -p codesigning 2>/dev/null)"
+        identity="$(printf '%s\n' "$identities" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
+        if [ -z "$identity" ]; then
+            identity="$(printf '%s\n' "$identities" | sed -n 's/.*"\(Apple Development:.*\)".*/\1/p' | head -n 1)"
+        fi
+    fi
+    if [ -z "$identity" ]; then
+        identity="-"
+    fi
+
     rm -rf "$app_path/Contents/_CodeSignature" 2>/dev/null || sudo rm -rf "$app_path/Contents/_CodeSignature"
-    codesign --force --options runtime --deep --entitlements "$entitlements" --sign - "$app_path" >/dev/null 2>&1 || \
-        sudo codesign --force --options runtime --deep --entitlements "$entitlements" --sign - "$app_path" >/dev/null 2>&1
+    codesign --force --options runtime --deep --entitlements "$entitlements" --sign "$identity" "$app_path" >/dev/null 2>&1 || \
+        sudo codesign --force --options runtime --deep --entitlements "$entitlements" --sign "$identity" "$app_path" >/dev/null 2>&1
 }
 
 unregister_app_bundle() {
