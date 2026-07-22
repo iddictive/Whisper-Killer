@@ -877,7 +877,7 @@ struct QueueCardView: View {
             }
             
             progressRow
-            metricsRow
+            feedbackRow
             resultRow
         }
         .padding(10)
@@ -904,6 +904,12 @@ struct QueueCardView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .layoutPriority(-1)
+
+            if item.status != .queued || isError {
+                durationLabel
+                costLabel
+                speedLabel
+            }
 
             Spacer()
 
@@ -1060,15 +1066,12 @@ struct QueueCardView: View {
         }
     }
 
-    // MARK: - Row 3: Metrics
+    // MARK: - Feedback
 
-    private var metricsRow: some View {
+    private var feedbackRow: some View {
         Group {
-            if item.status != .queued || isError {
+            if errorMessage != nil || item.markdownSaveError != nil || item.markdownSaveURL != nil {
                 HStack(spacing: 8) {
-                    durationLabel
-                    costLabel
-                    speedLabel
                     errorLabel
                     markdownSaveLabel
                     Spacer()
