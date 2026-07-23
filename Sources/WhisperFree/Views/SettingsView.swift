@@ -349,6 +349,7 @@ struct SettingsView: View {
                 Divider().padding(.horizontal)
 
                 Toggle(L.tr("Monochrome menu bar icon", "Монохромная иконка в menu bar"), isOn: $appState.settings.useMonochromeMenuIcon)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                     .onChange(of: appState.settings.useMonochromeMenuIcon) { _, _ in
                         appState.saveSettings()
@@ -364,6 +365,7 @@ struct SettingsView: View {
                             set: { launchAtLogin.setEnabled($0) }
                         )
                     )
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     if let message = launchAtLogin.message {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -395,6 +397,7 @@ struct SettingsView: View {
 
             VStack(spacing: 0) {
                 Toggle(L.tr("Automatically check for updates", "Автоматически проверять обновления"), isOn: $appState.settings.automaticallyChecksForUpdates)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                     .onChange(of: appState.settings.automaticallyChecksForUpdates) { _, _ in
                         if !appState.settings.automaticallyChecksForUpdates {
@@ -406,6 +409,7 @@ struct SettingsView: View {
                 Divider().padding(.horizontal)
 
                 Toggle(L.tr("Automatically download updates", "Автоматически загружать обновления"), isOn: $appState.settings.automaticallyDownloadsUpdates)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .disabled(!appState.settings.automaticallyChecksForUpdates)
                     .padding()
                     .onChange(of: appState.settings.automaticallyDownloadsUpdates) { _, _ in
