@@ -5,7 +5,13 @@ import Combine
 class GitHubUpdater: ObservableObject {
     static let shared = GitHubUpdater()
     private let repo = "iddictive/Whisper-Killer"
+    private static let productionBundleIdentifier = "com.whisperkiller.app"
+    private static let installedApplicationURL = URL(fileURLWithPath: "/Applications/WhisperKiller.app")
     let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.0"
+    let isAvailable = GitHubUpdater.isAvailable(
+        bundleIdentifier: Bundle.main.bundleIdentifier,
+        bundleURL: Bundle.main.bundleURL
+    )
 
     @Published var isChecking = false
     @Published var updateAvailable = false
@@ -18,7 +24,13 @@ class GitHubUpdater: ObservableObject {
     private var downloadTask: URLSessionDownloadTask?
     private var observation: NSKeyValueObservation?
 
+    static func isAvailable(bundleIdentifier: String?, bundleURL: URL) -> Bool {
+        guard bundleIdentifier == productionBundleIdentifier else { return false }
+        return bundleURL.standardizedFileURL == installedApplicationURL.standardizedFileURL
+    }
+
     func checkForUpdates(manual: Bool = false) {
+        guard isAvailable else { return }
         guard !isChecking else { return }
 
         let updateSettings = Storage.shared.loadSettings()
@@ -102,6 +114,7 @@ class GitHubUpdater: ObservableObject {
     }
 
     func startDownload() {
+        guard isAvailable else { return }
         guard let urlString = downloadUrl, let url = URL(string: urlString), !isDownloading else { return }
 
         isDownloading = true
@@ -135,6 +148,7 @@ class GitHubUpdater: ObservableObject {
     }
 
     private func performInstallation(dmgPath: String) {
+        guard isAvailable else { return }
         // Show install prompt if it was a background download
         DispatchQueue.main.async {
             let response = self.runUpdaterAlert(
