@@ -226,6 +226,13 @@ class GitHubUpdater: ObservableObject {
         let backupAppPath = "/tmp/WhisperKiller.previous.app"
         let logPath = "/tmp/WhisperKillerUpdate.log"
         let expectedVersion = latestVersion ?? ""
+        guard expectedVersion.range(
+            of: #"^\d+(?:\.\d+)+$"#,
+            options: .regularExpression
+        ) != nil else {
+            error = L.tr("Invalid update version.", "Некорректная версия обновления.")
+            return
+        }
         let script = """
         set -eu
         logPath="\(logPath)"
@@ -235,6 +242,7 @@ class GitHubUpdater: ObservableObject {
         backupAppPath="\(backupAppPath)"
         dmgPath="\(dmgPath)"
         expectedVersion="\(expectedVersion)"
+        expectedTeamIdentifier="ML79F87J32"
         executableName="WhisperKiller"
         needsRollback=0
 
@@ -284,6 +292,51 @@ class GitHubUpdater: ObservableObject {
         ditto "$sourceAppPath" "$stagedAppPath"
         xattr -rc "$stagedAppPath" || true
         codesign --verify --deep --strict "$stagedAppPath"
+
+        stagedBundleID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$stagedAppPath/Contents/Info.plist" 2>/dev/null || true)"
+        if [ "$stagedBundleID" != "com.whisperkiller.app" ]; then
+            log "Staged app has unexpected bundle identifier: $stagedBundleID"
+            exit 1
+        fi
+
+        stagedSigningInfo="$(codesign -dv --verbose=4 "$stagedAppPath" 2>&1)"
+        stagedTeamIdentifier="$(printf '%s\\n' "$stagedSigningInfo" | sed -n 's/^TeamIdentifier=//p')"
+        stagedSigningAuthority="$(printf '%s\\n' "$stagedSigningInfo" | sed -n 's/^Authority=//p' | head -n 1)"
+        if [ "$stagedTeamIdentifier" != "$expectedTeamIdentifier" ]; then
+            log "Staged app has an unexpected TeamIdentifier"
+            exit 1
+        fi
+        case "$stagedSigningAuthority" in
+            "Developer ID Application:"*) ;;
+            "Apple Development:"*) ;;
+            *)
+                log "Staged app does not have an accepted Apple signing authority"
+                exit 1
+                ;;
+        esac
+        codesign --verify --deep --strict \
+            --test-requirement "=anchor apple generic and identifier \\"com.whisperkiller.app\\" and certificate leaf[subject.OU] = \\"$expectedTeamIdentifier\\"" \
+            "$stagedAppPath"
+
+        currentTeamIdentifier="$(codesign -dv --verbose=4 "$appPath" 2>&1 | sed -n 's/^TeamIdentifier=//p' || true)"
+        if [ -n "$currentTeamIdentifier" ] && [ "$currentTeamIdentifier" != "not set" ] && [ "$currentTeamIdentifier" != "$stagedTeamIdentifier" ]; then
+            log "Staged app TeamIdentifier does not match the installed app"
+            exit 1
+        fi
+
+        currentSigningAuthority="$(codesign -dv --verbose=4 "$appPath" 2>&1 | sed -n 's/^Authority=//p' | head -n 1 || true)"
+        if [[ "$currentSigningAuthority" = "Developer ID Application:"* && "$stagedSigningAuthority" = "Apple Development:"* ]]; then
+            log "Refusing to downgrade from Developer ID to Apple Development"
+            exit 1
+        fi
+        if [[ "$currentSigningAuthority" = "Apple Development:"* && "$stagedSigningAuthority" = "Apple Development:"* ]]; then
+            currentDesignatedRequirement="$(codesign -dr - "$appPath" 2>&1 | sed -n 's/^designated => //p')"
+            stagedDesignatedRequirement="$(codesign -dr - "$stagedAppPath" 2>&1 | sed -n 's/^designated => //p')"
+            if [ -z "$currentDesignatedRequirement" ] || [ "$currentDesignatedRequirement" != "$stagedDesignatedRequirement" ]; then
+                log "Apple Development identity changed across the update"
+                exit 1
+            fi
+        fi
 
         stagedVersion="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$stagedAppPath/Contents/Info.plist" 2>/dev/null || true)"
         if [ -z "$stagedVersion" ]; then

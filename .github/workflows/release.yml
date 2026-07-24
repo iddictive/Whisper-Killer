@@ -9,6 +9,8 @@ jobs:
   build:
     name: Build and Release
     runs-on: macos-15
+    env:
+      EXPECTED_TEAM_IDENTIFIER: ML79F87J32
     permissions:
       contents: write
     steps:
@@ -22,6 +24,47 @@ jobs:
 
       - name: Clean DerivedData
         run: rm -rf ~/Library/Developer/Xcode/DerivedData
+
+      - name: Import macOS signing certificate
+        env:
+          MACOS_SIGNING_P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          if [ -z "$MACOS_SIGNING_P12_BASE64" ] || [ -z "$MACOS_SIGNING_P12_PASSWORD" ]; then
+            echo "macOS signing secrets are not configured. Refusing to publish an ad-hoc signed update."
+            exit 1
+          fi
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/whisperkiller-signing.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/whisperkiller-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+
+          printf '%s' "$MACOS_SIGNING_P12_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_SIGNING_P12_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")"
+          SIGNING_IDENTITY="$(printf '%s\n' "$IDENTITIES" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
+          if [ -z "$SIGNING_IDENTITY" ]; then
+            SIGNING_IDENTITY="$(printf '%s\n' "$IDENTITIES" | sed -n 's/.*"\(Apple Development:.*\)"/\1/p' | head -n 1)"
+          fi
+          if [ -z "$SIGNING_IDENTITY" ]; then
+            echo "Imported certificate does not contain a valid Developer ID Application or Apple Development identity."
+            exit 1
+          fi
+
+          echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
       - name: Calculate Version
         id: versioning
@@ -64,23 +107,63 @@ jobs:
             cp Sources/WhisperFree/Resources/AppIcon.icns WhisperKiller.app/Contents/Resources/
           fi
 
-          # Ad-hoc sign after all files are in place
+          # Sign after all files are in place. Keychain access across updates
+          # requires a stable Apple identity; ad-hoc releases are forbidden.
           rm -rf WhisperKiller.app/Contents/_CodeSignature
           dot_clean -m WhisperKiller.app 2>/dev/null || true
           find WhisperKiller.app -name '._*' -delete
           find WhisperKiller.app -print0 | xargs -0 xattr -c 2>/dev/null || true
-          codesign --force --deep --sign - WhisperKiller.app || {
+          codesign \
+            --force \
+            --deep \
+            --options runtime \
+            --timestamp \
+            --entitlements Sources/WhisperFree/Resources/WhisperKiller.entitlements \
+            --keychain "$SIGNING_KEYCHAIN_PATH" \
+            --sign "$SIGNING_IDENTITY" \
+            WhisperKiller.app || {
             echo "First signing pass failed after xattr cleanup. Retrying once..."
             rm -rf WhisperKiller.app/Contents/_CodeSignature
             dot_clean -m WhisperKiller.app 2>/dev/null || true
             find WhisperKiller.app -name '._*' -delete
             find WhisperKiller.app -print0 | xargs -0 xattr -c 2>/dev/null || true
-            codesign --force --deep --sign - WhisperKiller.app
+            codesign \
+              --force \
+              --deep \
+              --options runtime \
+              --timestamp \
+              --entitlements Sources/WhisperFree/Resources/WhisperKiller.entitlements \
+              --keychain "$SIGNING_KEYCHAIN_PATH" \
+              --sign "$SIGNING_IDENTITY" \
+              WhisperKiller.app
           }
           dot_clean -m WhisperKiller.app 2>/dev/null || true
           find WhisperKiller.app -name '._*' -delete
           find WhisperKiller.app -print0 | xargs -0 xattr -c 2>/dev/null || true
           codesign --verify --deep --strict WhisperKiller.app
+
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' WhisperKiller.app/Contents/Info.plist)"
+          TEAM_IDENTIFIER="$(codesign -dv --verbose=4 WhisperKiller.app 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+          SIGNING_AUTHORITY="$(codesign -dv --verbose=4 WhisperKiller.app 2>&1 | sed -n 's/^Authority=//p' | head -n 1)"
+          if [ "$BUNDLE_ID" != "com.whisperkiller.app" ]; then
+            echo "Unexpected bundle identifier: $BUNDLE_ID"
+            exit 1
+          fi
+          if [ "$TEAM_IDENTIFIER" != "$EXPECTED_TEAM_IDENTIFIER" ]; then
+            echo "Unexpected TeamIdentifier: $TEAM_IDENTIFIER"
+            exit 1
+          fi
+          case "$SIGNING_AUTHORITY" in
+            "Developer ID Application:"*) ;;
+            "Apple Development:"*) ;;
+            *)
+              echo "Unexpected signing authority: $SIGNING_AUTHORITY"
+              exit 1
+              ;;
+          esac
+          codesign --verify --deep --strict \
+            --test-requirement "=anchor apple generic and identifier \"com.whisperkiller.app\" and certificate leaf[subject.OU] = \"$EXPECTED_TEAM_IDENTIFIER\"" \
+            WhisperKiller.app
 
       - name: Create DMG
         run: |
@@ -93,6 +176,42 @@ jobs:
           hdiutil create -volname "WhisperKiller" -srcfolder "$DMG_ROOT" -ov -format UDZO "WhisperKiller-${{ env.APP_VERSION }}.dmg"
           rm -rf "$DMG_ROOT"
 
+      - name: Verify DMG app identity
+        run: |
+          MOUNT_PATH="$RUNNER_TEMP/whisperkiller-dmg"
+          mkdir -p "$MOUNT_PATH"
+          cleanup_mount() {
+            hdiutil detach "$MOUNT_PATH" -quiet 2>/dev/null || true
+          }
+          trap cleanup_mount EXIT
+
+          hdiutil attach \
+            "WhisperKiller-${APP_VERSION}.dmg" \
+            -mountpoint "$MOUNT_PATH" \
+            -nobrowse \
+            -readonly \
+            -quiet
+
+          MOUNTED_APP="$MOUNT_PATH/WhisperKiller.app"
+          codesign --verify --deep --strict \
+            --test-requirement "=anchor apple generic and identifier \"com.whisperkiller.app\" and certificate leaf[subject.OU] = \"$EXPECTED_TEAM_IDENTIFIER\"" \
+            "$MOUNTED_APP"
+
+          MOUNTED_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$MOUNTED_APP/Contents/Info.plist")"
+          MOUNTED_TEAM_IDENTIFIER="$(codesign -dv --verbose=4 "$MOUNTED_APP" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+          if [ "$MOUNTED_VERSION" != "$APP_VERSION" ]; then
+            echo "Mounted app version $MOUNTED_VERSION does not match release $APP_VERSION."
+            exit 1
+          fi
+          if [ "$MOUNTED_TEAM_IDENTIFIER" != "$EXPECTED_TEAM_IDENTIFIER" ]; then
+            echo "Mounted app has unexpected TeamIdentifier: $MOUNTED_TEAM_IDENTIFIER"
+            exit 1
+          fi
+
+          codesign -d --entitlements :- "$MOUNTED_APP" 2>/dev/null \
+            | plutil -extract com.apple.security.network.client raw - \
+            | grep -qx true
+
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
@@ -104,3 +223,9 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/whisperkiller-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/whisperkiller-signing.p12"

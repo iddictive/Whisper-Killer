@@ -162,9 +162,15 @@ make install
 Полезные команды:
 
 ```bash
+make dev      # постоянный локальный debug-инстанс с автоматической пересборкой и перезапуском
 make install  # собрать, установить в /Applications и запустить
 make verify   # проверить release build
 ```
+
+`make dev` хранит отдельный `WhisperKiller Dev.app` в `.build/dev-runtime`.
+Изменения Swift-кода и ресурсов запускают инкрементальную debug-сборку и
+перезапуск только после успешной проверки подписи. Команда не создаёт DMG,
+не заменяет `/Applications/WhisperKiller.app` и не сбрасывает разрешения macOS.
 
 ## Требования
 

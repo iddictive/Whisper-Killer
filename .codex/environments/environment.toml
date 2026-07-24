@@ -6,6 +6,6 @@ name = "WhisperFree"
 script = ""
 
 [[actions]]
-name = "Run"
+name = "Run Dev"
 icon = "run"
-command = "make install"
+command = "make dev"
