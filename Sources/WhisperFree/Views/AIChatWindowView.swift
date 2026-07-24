@@ -104,12 +104,15 @@ private struct AIChatSidebar: View {
                             }
                         }
                     } label: {
-                        Label(L.tr("Recent items", "Недавние"), systemImage: "clock")
-                            .font(.system(size: 11, weight: .medium))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        AIChatSidebarActionLabel(
+                            title: L.tr("Recent items", "Недавние"),
+                            icon: "clock",
+                            trailingIcon: "chevron.down"
+                        )
                             .swInteractiveHover()
                     }
                     .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                 }
             }
 
@@ -185,11 +188,37 @@ private struct AIChatAttachButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: icon)
-                .font(.system(size: 11, weight: .medium))
-                .frame(maxWidth: .infinity, alignment: .leading)
+            AIChatSidebarActionLabel(title: title, icon: icon)
         }
         .buttonStyle(.swPlainInteractive)
+    }
+}
+
+private struct AIChatSidebarActionLabel: View {
+    let title: String
+    let icon: String
+    var trailingIcon: String? = nil
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .regular))
+                .frame(width: 14, height: 16, alignment: .center)
+
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            if let trailingIcon {
+                Image(systemName: trailingIcon)
+                    .font(.system(size: 7, weight: .semibold))
+                    .frame(width: 10, height: 16, alignment: .center)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 
