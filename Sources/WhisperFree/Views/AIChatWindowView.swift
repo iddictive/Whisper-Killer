@@ -100,7 +100,7 @@ private struct AIChatSidebar: View {
                             Button {
                                 appState.attachHistoryEntryToAIChat(entry)
                             } label: {
-                                Text(entry.modeName)
+                                Text(AIChatRecentItemLabel.text(for: entry))
                             }
                         }
                     } label: {
@@ -116,6 +116,31 @@ private struct AIChatSidebar: View {
             Spacer(minLength: 0)
         }
         .padding(12)
+    }
+}
+
+enum AIChatRecentItemLabel {
+    private static let previewCharacterLimit = 42
+
+    static func text(for entry: TranscriptionHistoryEntry) -> String {
+        let preview = [entry.summaryText, entry.processedText, entry.rawText]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty })?
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ") ?? ""
+
+        let modeName = entry.modeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let time = entry.date.formatted(date: .omitted, time: .shortened)
+        let context = [modeName, time]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+
+        guard !preview.isEmpty else { return context }
+
+        let clippedPreview = preview.count > previewCharacterLimit
+            ? "\(preview.prefix(previewCharacterLimit))…"
+            : preview
+        return context.isEmpty ? clippedPreview : "\(context) · \(clippedPreview)"
     }
 }
 
