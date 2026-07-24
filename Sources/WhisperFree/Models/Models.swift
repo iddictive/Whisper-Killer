@@ -214,7 +214,8 @@ struct UsageLog: Codable, Identifiable {
 
     // Estimates based on OpenAI transcription pricing per audio minute.
     static func estimateAudioCost(durationSeconds: TimeInterval, model: CloudTranscriptionModel) -> Double? {
-        durationSeconds / 60.0 * model.pricePerMinute
+        guard let pricePerMinute = model.pricePerMinute else { return nil }
+        return durationSeconds / 60.0 * pricePerMinute
     }
 }
 
@@ -370,14 +371,26 @@ enum TranscriptionEngineType: String, Codable, CaseIterable {
     }
 }
 
-enum CloudTranscriptionModel: String, Codable, CaseIterable {
-    case whisper1 = "whisper-1"
-    case gpt4oMiniTranscribe = "gpt-4o-mini-transcribe"
-    case gpt4oTranscribe = "gpt-4o-transcribe"
-    case gpt4oTranscribeDiarize = "gpt-4o-transcribe-diarize"
+struct CloudTranscriptionModel: RawRepresentable, Codable, Hashable {
+    let rawValue: String
 
-    static var allCases: [CloudTranscriptionModel] {
-        [.whisper1, .gpt4oMiniTranscribe, .gpt4oTranscribe]
+    static let whisper1 = CloudTranscriptionModel(rawValue: "whisper-1")
+    static let gpt4oMiniTranscribe = CloudTranscriptionModel(rawValue: "gpt-4o-mini-transcribe")
+    static let gpt4oTranscribe = CloudTranscriptionModel(rawValue: "gpt-4o-transcribe")
+    static let gpt4oTranscribeDiarize = CloudTranscriptionModel(rawValue: "gpt-4o-transcribe-diarize")
+
+    init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        rawValue = try container.decode(String.self)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 
     var apiName: String {
@@ -385,10 +398,10 @@ enum CloudTranscriptionModel: String, Codable, CaseIterable {
     }
 
     var usesNativeDiarization: Bool {
-        self == .gpt4oTranscribeDiarize
+        rawValue.lowercased().hasSuffix("-transcribe-diarize")
     }
 
-    var pricePerMinute: Double {
+    var pricePerMinute: Double? {
         switch self {
         case .whisper1:
             return 0.006
@@ -398,6 +411,8 @@ enum CloudTranscriptionModel: String, Codable, CaseIterable {
             return 0.006
         case .gpt4oTranscribeDiarize:
             return 0.006
+        default:
+            return nil
         }
     }
 }
@@ -650,6 +665,7 @@ struct AppSettings: Codable {
     var apiKey: String = ""
     var appPresenceMode: AppPresenceMode = .menuBarOnly
     var cloudTranscriptionModel: CloudTranscriptionModel = .whisper1
+    var cloudDiarizationModel: CloudTranscriptionModel? = .gpt4oTranscribeDiarize
     var postProcessingEngine: PostProcessingEngine = .openai
     var autoTypeResult: Bool = true
     var enableProfanityFilter: Bool = false
@@ -693,7 +709,7 @@ struct AppSettings: Codable {
     var selectedAIChatConversationID: UUID? = nil
 
     enum CodingKeys: String, CodingKey {
-        case apiKey, appPresenceMode, cloudTranscriptionModel, postProcessingEngine, autoTypeResult, enableProfanityFilter, language,
+        case apiKey, appPresenceMode, cloudTranscriptionModel, cloudDiarizationModel, postProcessingEngine, autoTypeResult, enableProfanityFilter, language,
              selectedModeName, customModes, recordingMode, engineType, localModelSize, qwenASRModel,
              showOverlay, setupCompleted, hotkeyConfig, insertionMethod,
              automaticallyChecksForUpdates, automaticallyDownloadsUpdates,
@@ -712,6 +728,7 @@ struct AppSettings: Codable {
         apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         appPresenceMode = try container.decodeIfPresent(AppPresenceMode.self, forKey: .appPresenceMode) ?? .menuBarOnly
         cloudTranscriptionModel = try container.decodeIfPresent(CloudTranscriptionModel.self, forKey: .cloudTranscriptionModel) ?? .whisper1
+        cloudDiarizationModel = try container.decodeIfPresent(CloudTranscriptionModel.self, forKey: .cloudDiarizationModel) ?? .gpt4oTranscribeDiarize
         postProcessingEngine = try container.decodeIfPresent(PostProcessingEngine.self, forKey: .postProcessingEngine) ?? .openai
         autoTypeResult = try container.decodeIfPresent(Bool.self, forKey: .autoTypeResult) ?? true
         enableProfanityFilter = try container.decodeIfPresent(Bool.self, forKey: .enableProfanityFilter) ?? false
@@ -772,7 +789,7 @@ struct AppSettings: Codable {
     }
 
     var canUseSpeakerDiarization: Bool {
-        engineType == .cloud && hasOpenAIAPIKey
+        engineType == .cloud && hasOpenAIAPIKey && cloudDiarizationModel != nil
     }
 
     var usesNativeCloudSpeakerDiarization: Bool {
@@ -780,7 +797,10 @@ struct AppSettings: Codable {
     }
 
     var effectiveCloudTranscriptionModel: CloudTranscriptionModel {
-        usesNativeCloudSpeakerDiarization ? .gpt4oTranscribeDiarize : cloudTranscriptionModel
+        if usesNativeCloudSpeakerDiarization, let cloudDiarizationModel {
+            return cloudDiarizationModel
+        }
+        return cloudTranscriptionModel
     }
 
     func isModeEnabled(_ mode: TranscriptionMode) -> Bool {

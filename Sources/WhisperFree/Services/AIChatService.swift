@@ -7,41 +7,6 @@ struct AIChatResponse {
 }
 
 enum AIChatService {
-    static func fetchOpenAIChatModels(apiKey: String) async throws -> [String] {
-        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedKey.isEmpty else { throw TranscriptionError.noAPIKey }
-
-        let url = URL(string: "https://api.openai.com/v1/models")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = 20
-        request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw TranscriptionError.invalidResponse
-        }
-
-        if httpResponse.statusCode == 401 {
-            throw TranscriptionError.networkError("Invalid OpenAI API key.")
-        }
-
-        guard httpResponse.statusCode == 200 else {
-            let errorText = openAIErrorMessage(from: data) ?? "HTTP \(httpResponse.statusCode)"
-            throw TranscriptionError.networkError("OpenAI model list failed: \(errorText)")
-        }
-
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let dataArray = json["data"] as? [[String: Any]]
-        else {
-            throw TranscriptionError.invalidResponse
-        }
-
-        return relevantOpenAIChatModels(
-            from: dataArray.compactMap { $0["id"] as? String }
-        )
-    }
-
     static func send(
         messages: [AIChatMessage],
         model: String,

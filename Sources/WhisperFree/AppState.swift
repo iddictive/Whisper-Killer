@@ -50,13 +50,18 @@ final class AppState: ObservableObject {
     @Published private(set) var processingProgress: Float = 0
     @Published var aiChatConversations: [AIChatConversation] = []
     @Published var availableAIChatModels: [String] = []
+    @Published var availableCloudTranscriptionModels: [CloudTranscriptionModel] = []
     @Published var isLoadingAIChatModels = false
+    @Published var hasLoadedOpenAIModelCatalog = false
+    @Published var openAIModelCatalogError: String?
     @Published var isAIChatSending = false
     @Published var isAIChatVoiceRecording = false
     @Published var aiChatError: String?
 
     @Published var copiedFeedback = false
     @Published var availableInputDevices: [AVCaptureDevice] = []
+    private var loadedOpenAIModelCatalogAPIKey = ""
+    private var openAIModelCatalogRequestID: UUID?
 
     // Statistics calculated directly from history for accuracy/self-healing
     var totalWords: Int {
@@ -325,30 +330,96 @@ final class AppState: ObservableObject {
     }
 
     func refreshAIChatModelsIfNeeded(force: Bool = false) {
+        refreshOpenAIModelCatalogIfNeeded(force: force)
+    }
+
+    func refreshCloudTranscriptionModelsIfNeeded(force: Bool = false) {
+        refreshOpenAIModelCatalogIfNeeded(force: force)
+    }
+
+    var selectableCloudTranscriptionModels: [CloudTranscriptionModel] {
+        if hasLoadedOpenAIModelCatalog {
+            return availableCloudTranscriptionModels
+        }
+        if !settings.hasOpenAIAPIKey {
+            return OpenAIModelCatalog.bootstrapTranscriptionModels
+        }
+        return [settings.cloudTranscriptionModel]
+    }
+
+    func invalidateOpenAIModelCatalog() {
+        openAIModelCatalogRequestID = nil
+        loadedOpenAIModelCatalogAPIKey = ""
+        hasLoadedOpenAIModelCatalog = false
+        availableAIChatModels = []
+        availableCloudTranscriptionModels = []
+        openAIModelCatalogError = nil
+        isLoadingAIChatModels = false
+    }
+
+    private func refreshOpenAIModelCatalogIfNeeded(force: Bool) {
         guard settings.hasOpenAIAPIKey else {
-            availableAIChatModels = []
+            invalidateOpenAIModelCatalog()
             return
         }
-        if !force, !availableAIChatModels.isEmpty { return }
+        let apiKey = settings.normalizedAPIKey
+        if !force, hasLoadedOpenAIModelCatalog, loadedOpenAIModelCatalogAPIKey == apiKey { return }
         guard !isLoadingAIChatModels else { return }
 
+        let requestID = UUID()
+        openAIModelCatalogRequestID = requestID
         isLoadingAIChatModels = true
         aiChatError = nil
+        openAIModelCatalogError = nil
 
         Task {
             do {
-                let models = try await AIChatService.fetchOpenAIChatModels(apiKey: settings.normalizedAPIKey)
+                let catalog = try await OpenAIModelCatalog.fetch(apiKey: apiKey)
+                let chatModels = AIChatService.relevantOpenAIChatModels(from: catalog.modelIDs)
+                let transcriptionModels = catalog.baseTranscriptionModels
+                let diarizationModels = catalog.diarizationModels
                 await MainActor.run {
-                    self.availableAIChatModels = models
-                    if !models.isEmpty, !models.contains(self.settings.selectedAIChatModel) {
-                        self.settings.selectedAIChatModel = models[0]
+                    guard self.openAIModelCatalogRequestID == requestID,
+                          self.settings.normalizedAPIKey == apiKey
+                    else { return }
+
+                    self.availableAIChatModels = chatModels
+                    self.availableCloudTranscriptionModels = transcriptionModels
+                    self.loadedOpenAIModelCatalogAPIKey = apiKey
+                    self.hasLoadedOpenAIModelCatalog = true
+                    self.openAIModelCatalogRequestID = nil
+
+                    var settingsChanged = false
+                    if !chatModels.isEmpty, !chatModels.contains(self.settings.selectedAIChatModel) {
+                        self.settings.selectedAIChatModel = chatModels[0]
+                        settingsChanged = true
+                    }
+                    if !transcriptionModels.isEmpty,
+                       !transcriptionModels.contains(self.settings.cloudTranscriptionModel) {
+                        self.settings.cloudTranscriptionModel = transcriptionModels[0]
+                        settingsChanged = true
+                    }
+                    let diarizationModel = diarizationModels.first
+                    if diarizationModel != self.settings.cloudDiarizationModel {
+                        self.settings.cloudDiarizationModel = diarizationModel
+                        settingsChanged = true
+                    }
+                    if diarizationModel == nil, self.settings.enableSpeakerDiarization {
+                        self.settings.enableSpeakerDiarization = false
+                        settingsChanged = true
+                    }
+                    if settingsChanged {
                         self.saveSettings()
                     }
                     self.isLoadingAIChatModels = false
                 }
             } catch {
                 await MainActor.run {
+                    guard self.openAIModelCatalogRequestID == requestID else { return }
                     self.aiChatError = error.localizedDescription
+                    self.openAIModelCatalogError = error.localizedDescription
+                    self.hasLoadedOpenAIModelCatalog = false
+                    self.openAIModelCatalogRequestID = nil
                     self.isLoadingAIChatModels = false
                 }
             }

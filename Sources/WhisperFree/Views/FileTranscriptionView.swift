@@ -229,7 +229,10 @@ struct FileTranscriptionView: View {
             .disabled(!appState.settings.canUseSpeakerDiarization)
             .help(appState.settings.canUseSpeakerDiarization
                   ? L.tr("Use native OpenAI speaker diarization.", "Использовать нативную OpenAI-диаризацию спикеров.")
-                  : L.tr("Cloud (OpenAI) and an OpenAI API key are required for diarization.", "Для диаризации нужны Облако (OpenAI) и OpenAI API key."))
+                  : L.tr(
+                    "Cloud (OpenAI), an API key, and an available compatible diarization model are required.",
+                    "Для диаризации нужны Облако (OpenAI), API-ключ и доступная совместимая модель."
+                  ))
             .fixedSize()
         }
     }

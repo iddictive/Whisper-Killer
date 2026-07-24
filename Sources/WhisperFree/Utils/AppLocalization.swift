@@ -183,6 +183,8 @@ extension CloudTranscriptionModel {
             return "GPT-4o Transcribe"
         case .gpt4oTranscribeDiarize:
             return "GPT-4o Transcribe Diarize"
+        default:
+            return rawValue
         }
     }
 
@@ -196,6 +198,11 @@ extension CloudTranscriptionModel {
             return L.tr("Highest accuracy OpenAI transcription model in this app.", "Самая точная OpenAI-модель транскрибации в этом приложении.")
         case .gpt4oTranscribeDiarize:
             return L.tr("OpenAI transcription model with native speaker diarization.", "OpenAI-модель транскрибации с нативной диаризацией спикеров.")
+        default:
+            return L.tr(
+                "OpenAI transcription model available to this API key. Cost estimate is unavailable.",
+                "OpenAI-модель транскрибации, доступная этому API-ключу. Оценка стоимости недоступна."
+            )
         }
     }
 }

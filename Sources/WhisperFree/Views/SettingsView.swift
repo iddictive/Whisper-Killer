@@ -217,6 +217,7 @@ struct SettingsView: View {
             dependencyInstaller.refreshHomebrewStatus()
             launchAtLogin.refresh()
             modelManager.refreshDownloadedModels()
+            appState.refreshCloudTranscriptionModelsIfNeeded()
         }
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
@@ -717,20 +718,41 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if appState.settings.engineType == .cloud {
                         VStack(alignment: .leading, spacing: 8) {
-                            Picker(L.tr("Cloud model", "Облачная модель"), selection: $appState.settings.cloudTranscriptionModel) {
-                                ForEach(CloudTranscriptionModel.allCases, id: \.self) { model in
-                                    Text(model.localizedTitle).tag(model)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .labelsHidden()
-                            .onChange(of: appState.settings.cloudTranscriptionModel) { _, _ in
-                                appState.saveSettings()
-                            }
-
-                            Text(appState.settings.cloudTranscriptionModel.localizedDescription)
+                            if appState.selectableCloudTranscriptionModels.isEmpty {
+                                Text(L.tr(
+                                    "No compatible transcription models are available for this API key.",
+                                    "Для этого API-ключа нет доступных совместимых моделей транскрибации."
+                                ))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            } else {
+                                Picker(L.tr("Cloud model", "Облачная модель"), selection: $appState.settings.cloudTranscriptionModel) {
+                                    ForEach(appState.selectableCloudTranscriptionModels, id: \.self) { model in
+                                        Text(model.localizedTitle).tag(model)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .labelsHidden()
+                                .disabled(appState.isLoadingAIChatModels)
+                                .onChange(of: appState.settings.cloudTranscriptionModel) { _, _ in
+                                    appState.saveSettings()
+                                }
+                            }
+
+                            if !appState.selectableCloudTranscriptionModels.isEmpty {
+                                Text(appState.settings.cloudTranscriptionModel.localizedDescription)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if appState.openAIModelCatalogError != nil {
+                                Text(L.tr(
+                                    "Could not load the available model catalog. The saved model remains selected but is not verified for this API key.",
+                                    "Не удалось загрузить каталог доступных моделей. Сохранённая модель оставлена выбранной, но не подтверждена для этого API-ключа."
+                                ))
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                            }
                         }
                         .padding(.horizontal)
                     }
@@ -1411,6 +1433,7 @@ struct SettingsView: View {
         apiValidationState = .idle
         modeEditorMessage = nil
         networkDiagnosticLines.removeAll()
+        appState.invalidateOpenAIModelCatalog()
         Storage.shared.saveSettings(appState.settings)
     }
 
@@ -1430,6 +1453,9 @@ struct SettingsView: View {
                 isRunningNetworkDiagnostics = false
                 networkDiagnosticLines = report.lines
                 apiValidationState = result
+                if result == .valid {
+                    appState.refreshCloudTranscriptionModelsIfNeeded(force: true)
+                }
             }
         }
     }
@@ -1663,7 +1689,10 @@ struct AIConfigView: View {
                         }
 
                     if !settings.canUseSpeakerDiarization {
-                        Text(L.tr("Use Cloud (OpenAI) and add an OpenAI API key to enable diarization.", "Для диаризации выберите Облако (OpenAI) и добавьте OpenAI API key."))
+                        Text(L.tr(
+                            "Cloud (OpenAI), an API key, and an available compatible diarization model are required.",
+                            "Для диаризации нужны Облако (OpenAI), API-ключ и доступная совместимая модель."
+                        ))
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
