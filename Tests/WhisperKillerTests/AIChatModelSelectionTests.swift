@@ -2,9 +2,11 @@ import XCTest
 @testable import WhisperKiller
 
 final class AIChatModelSelectionTests: XCTestCase {
-    func testKeepsOnlyCurrentGeneralChatModelAliases() {
+    func testKeepsThreeMostRecentGeneralChatGenerations() {
         let models = AIChatService.relevantOpenAIChatModels(from: [
             "gpt-4o",
+            "gpt-5.3",
+            "gpt-5.4",
             "gpt-5.5",
             "gpt-5.5-pro",
             "gpt-5.5-pro-2026-04-23",
@@ -22,12 +24,17 @@ final class AIChatModelSelectionTests: XCTestCase {
         XCTAssertEqual(models, [
             "gpt-5.6-luna",
             "gpt-5.6-sol",
-            "gpt-5.6-terra"
+            "gpt-5.6-terra",
+            "gpt-5.5",
+            "gpt-5.5-pro",
+            "gpt-5.4"
         ])
     }
 
-    func testFutureGeneralGenerationReplacesOlderGenerationWithoutAllowlistChange() {
+    func testFutureGeneralGenerationMovesWindowWithoutAllowlistChange() {
         let models = AIChatService.relevantOpenAIChatModels(from: [
+            "gpt-5.4",
+            "gpt-5.5",
             "gpt-5.6",
             "gpt-5.6-pro",
             "gpt-5.7",
@@ -38,7 +45,10 @@ final class AIChatModelSelectionTests: XCTestCase {
         XCTAssertEqual(models, [
             "gpt-5.7",
             "gpt-5.7-pro",
-            "gpt-5.7-mini"
+            "gpt-5.7-mini",
+            "gpt-5.6",
+            "gpt-5.6-pro",
+            "gpt-5.5"
         ])
     }
 

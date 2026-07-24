@@ -111,18 +111,21 @@ enum AIChatService {
             return (id, generation)
         }
 
-        guard let latestGeneration = candidates.map(\.generation).max() else {
-            return []
-        }
+        let recentGenerations = Set(candidates.map(\.generation))
+            .sorted(by: >)
+            .prefix(3)
 
         return candidates
-            .filter { $0.generation == latestGeneration }
-            .map(\.id)
+            .filter { recentGenerations.contains($0.generation) }
             .sorted { lhs, rhs in
-                modelVariantScore(lhs) == modelVariantScore(rhs)
-                    ? lhs.localizedStandardCompare(rhs) == .orderedAscending
-                    : modelVariantScore(lhs) < modelVariantScore(rhs)
+                if lhs.generation != rhs.generation {
+                    return lhs.generation > rhs.generation
+                }
+                return modelVariantScore(lhs.id) == modelVariantScore(rhs.id)
+                    ? lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
+                    : modelVariantScore(lhs.id) < modelVariantScore(rhs.id)
             }
+            .map(\.id)
     }
 
     private static func isLikelyGeneralChatModel(_ id: String) -> Bool {
@@ -205,7 +208,7 @@ enum AIChatService {
     }
 }
 
-private struct GPTGeneration: Comparable {
+private struct GPTGeneration: Comparable, Hashable {
     let major: Int
     let minor: Int
 
