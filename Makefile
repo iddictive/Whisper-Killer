@@ -1,13 +1,18 @@
-.PHONY: all help install verify
+.PHONY: all help dev install verify
 
 # Default target: release verification
 all: verify
 
 help:
 	@echo "WhisperKiller Build System"
+	@echo "  make dev     - Run persistent local debug app with automatic rebuilds"
 	@echo "  make install - Reinstall app to /Applications and launch it"
 	@echo "  make verify  - Verify release build for GitHub Releases"
 	@echo "  BUILD_PROGRESS_INTERVAL=10 make verify - Show build heartbeat every 10s"
+
+# Persistent local debug app with incremental rebuild + relaunch
+dev:
+	@bash scripts/dev.command
 
 # Reinstall app locally (verify + build + sign + move to /Applications + launch)
 install: verify

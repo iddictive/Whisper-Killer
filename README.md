@@ -89,9 +89,15 @@ make install
 Useful commands:
 
 ```bash
+make dev      # persistent local debug app with automatic rebuild + relaunch
 make install  # build, install to /Applications, and launch
 make verify   # verify release build
 ```
+
+`make dev` keeps a separate `WhisperKiller Dev.app` under `.build/dev-runtime`.
+Swift and resource changes trigger an incremental debug build and relaunch only
+after the new bundle passes code-signing verification. It does not create a DMG,
+replace `/Applications/WhisperKiller.app`, or reset macOS permissions.
 
 ## Requirements
 
