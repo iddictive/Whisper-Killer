@@ -23,7 +23,11 @@ struct AIChatWindowView: View {
                 VStack(spacing: 0) {
                     AIChatHeader(conversation: selectedConversation)
                     Divider()
-                    AIChatMessageList(messages: selectedConversation?.messages ?? [])
+                    AIChatMessageList(
+                        messages: selectedConversation?.chatMessages ?? [],
+                        hasAttachedContext: !(selectedConversation?.attachments.isEmpty ?? true)
+                    )
+                    AIChatAttachmentShelf(attachments: selectedConversation?.attachments ?? [])
                     Divider()
                     AIChatComposer(draft: $draft, isInputFocused: $isInputFocused)
                 }
@@ -46,6 +50,7 @@ struct AIChatWindowView: View {
 
 private struct AIChatSidebar: View {
     @EnvironmentObject var appState: AppState
+    @State private var isShowingRecentItems = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -95,30 +100,65 @@ private struct AIChatSidebar: View {
                 )
 
                 if !appState.history.isEmpty {
-                    Menu {
-                        ForEach(appState.history.prefix(8), id: \.entryId) { entry in
-                            Button {
-                                appState.attachHistoryEntryToAIChat(entry)
-                            } label: {
-                                Text(AIChatRecentItemLabel.text(for: entry))
-                            }
-                        }
+                    Button {
+                        isShowingRecentItems.toggle()
                     } label: {
                         AIChatSidebarActionLabel(
                             title: L.tr("Recent items", "Недавние"),
                             icon: "clock",
                             trailingIcon: "chevron.down"
                         )
-                            .swInteractiveHover()
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
+                    .buttonStyle(.swPlainInteractive)
+                    .popover(isPresented: $isShowingRecentItems, arrowEdge: .trailing) {
+                        AIChatRecentItemsPopover(isPresented: $isShowingRecentItems)
+                    }
+                }
+
+                if let error = appState.aiChatAttachmentError, !error.isEmpty {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 9))
+                        .foregroundStyle(SW.warning)
+                        .lineLimit(2)
+                        .padding(.top, 2)
                 }
             }
 
             Spacer(minLength: 0)
         }
         .padding(12)
+    }
+}
+
+private struct AIChatRecentItemsPopover: View {
+    @EnvironmentObject var appState: AppState
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: SW.spacingXS) {
+                ForEach(appState.history.prefix(8), id: \.entryId) { entry in
+                    Button {
+                        appState.attachHistoryEntryToAIChat(entry)
+                        isPresented = false
+                    } label: {
+                        Text(AIChatRecentItemLabel.text(for: entry))
+                            .font(SW.compactFont)
+                            .foregroundStyle(SW.primaryText)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.swPlainInteractive)
+                }
+            }
+            .padding(SW.spacingS)
+        }
+        .frame(width: 320)
+        .frame(maxHeight: 280)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -163,10 +203,7 @@ private struct AIChatConversationRow: View {
                 Text(conversation.displayTitle)
                     .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                     .lineLimit(1)
-                Text(L.tr(
-                    "\(conversation.messages.count) messages",
-                    "Сообщений: \(conversation.messages.count)"
-                ))
+                Text(L.aiChatMessageCount(conversation.chatMessages.count))
                     .font(.system(size: 10))
                     .foregroundStyle(SW.secondaryText)
                     .lineLimit(1)
@@ -202,8 +239,10 @@ private struct AIChatSidebarActionLabel: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 11, weight: .regular))
-                .frame(width: 14, height: 16, alignment: .center)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 14, height: 14)
+                .frame(width: 16, height: 20, alignment: .center)
 
             Text(title)
                 .font(.system(size: 11, weight: .medium))
@@ -313,13 +352,14 @@ private struct AIChatModelMenu: View {
 
 private struct AIChatMessageList: View {
     let messages: [AIChatMessage]
+    let hasAttachedContext: Bool
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if messages.isEmpty {
-                        AIChatEmptyState()
+                        AIChatEmptyState(hasAttachedContext: hasAttachedContext)
                     } else {
                         ForEach(messages) { message in
                             AIChatMessageRow(message: message)
@@ -343,18 +383,176 @@ private struct AIChatMessageList: View {
 }
 
 private struct AIChatEmptyState: View {
+    let hasAttachedContext: Bool
+
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: "sparkles")
                 .font(.system(size: 30, weight: .regular))
                 .foregroundStyle(SW.tertiaryText)
-            Text(L.tr("Ask, summarize, translate, or attach recent transcript context.", "Спросите, суммаризируйте, переведите или прикрепите недавнюю транскрипцию."))
+            Text(
+                hasAttachedContext
+                    ? L.tr(
+                        "Context is attached. Ask a question about it.",
+                        "Контекст прикреплён. Задайте вопрос по нему."
+                    )
+                    : L.tr(
+                        "Ask, summarize, translate, or attach recent transcript context.",
+                        "Спросите, суммаризируйте, переведите или прикрепите недавнюю транскрипцию."
+                    )
+            )
                 .font(SW.compactFont)
                 .foregroundStyle(SW.secondaryText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 280)
         }
         .frame(maxWidth: .infinity, minHeight: 280)
+    }
+}
+
+private struct AIChatAttachmentShelf: View {
+    @EnvironmentObject var appState: AppState
+    let attachments: [AIChatMessage]
+    @State private var expandedAttachmentID: UUID?
+
+    var body: some View {
+        if !attachments.isEmpty {
+            VStack(alignment: .leading, spacing: SW.spacingS) {
+                HStack(spacing: SW.spacingXS) {
+                    Text(L.tr("CONTEXT", "КОНТЕКСТ"))
+                        .font(SW.labelFont)
+                        .foregroundStyle(SW.secondaryText)
+
+                    Text("\(attachments.count)")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(SW.secondaryText)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(SW.rowBackground)
+                        .clipShape(Capsule())
+                }
+
+                ScrollView {
+                    LazyVStack(spacing: SW.spacingXS) {
+                        ForEach(attachments) { attachment in
+                            AIChatAttachmentRow(
+                                attachment: attachment,
+                                isExpanded: expandedAttachmentID == attachment.id,
+                                onToggle: {
+                                    withAnimation(.easeInOut(duration: 0.16)) {
+                                        expandedAttachmentID = expandedAttachmentID == attachment.id
+                                            ? nil
+                                            : attachment.id
+                                    }
+                                },
+                                onRemove: {
+                                    appState.removeAIChatAttachment(attachment.id)
+                                }
+                            )
+                        }
+                    }
+                }
+                .frame(maxHeight: 220)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: SW.readableContentMaxWidth)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, SW.spacingXL)
+            .padding(.top, SW.spacingS)
+            .padding(.bottom, SW.spacingM)
+            .background(Color.primary.opacity(0.018))
+            .overlay(alignment: .top) {
+                Divider()
+            }
+            .onChange(of: attachments.map(\.id)) { _, ids in
+                if let expandedAttachmentID, !ids.contains(expandedAttachmentID) {
+                    self.expandedAttachmentID = nil
+                }
+            }
+        }
+    }
+}
+
+private struct AIChatAttachmentRow: View {
+    let attachment: AIChatMessage
+    let isExpanded: Bool
+    let onToggle: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: SW.spacingS) {
+                Button(action: onToggle) {
+                    HStack(spacing: SW.spacingS) {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(SW.secondaryText)
+                            .frame(width: 10, height: 18)
+
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(SW.secondaryText)
+                            .frame(width: 14, height: 18)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(attachment.attachmentTitle ?? L.tr("Attached context", "Прикреплённый контекст"))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(SW.primaryText)
+                                .lineLimit(1)
+
+                            if !isExpanded {
+                                Text(attachment.attachmentText)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(SW.secondaryText)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                        }
+
+                        Spacer(minLength: SW.spacingS)
+
+                        Text(attachment.date.formatted(date: .omitted, time: .shortened))
+                            .font(.system(size: 9))
+                            .foregroundStyle(SW.tertiaryText)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.swPlainInteractive)
+
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(SW.secondaryText)
+                        .frame(width: 22, height: 22)
+                        .background(SW.rowBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                }
+                .buttonStyle(.swPlainInteractive)
+                .accessibilityLabel(L.tr("Remove attached context", "Удалить прикреплённый контекст"))
+                .help(L.tr("Remove attached context", "Удалить прикреплённый контекст"))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+
+            if isExpanded {
+                Divider()
+                    .padding(.horizontal, 10)
+
+                Text(attachment.attachmentText)
+                    .font(.system(size: 11))
+                    .foregroundStyle(SW.primaryText)
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .background(SW.rowBackground)
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
+                .strokeBorder(isExpanded ? SW.accent.opacity(0.28) : SW.border, lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -470,7 +668,6 @@ private struct AIChatComposer: View {
 
 private struct AIChatMessageRow: View {
     let message: AIChatMessage
-    @State private var isAttachmentExpanded = false
 
     private var isUser: Bool {
         message.role == .user
@@ -482,62 +679,20 @@ private struct AIChatMessageRow: View {
                 Spacer(minLength: 64)
             }
 
-            VStack(alignment: .leading, spacing: 5) {
-                if let attachmentTitle = message.attachmentTitle {
-                    Button {
-                        isAttachmentExpanded.toggle()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Label(attachmentTitle, systemImage: "paperclip")
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            Image(systemName: isAttachmentExpanded ? "chevron.up" : "chevron.down")
-                        }
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(SW.secondaryText)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(
-                        isAttachmentExpanded
-                            ? L.tr("Collapse attached context", "Свернуть прикреплённый контекст")
-                            : L.tr("Expand attached context", "Развернуть прикреплённый контекст")
-                    )
-                    .help(
-                        isAttachmentExpanded
-                            ? L.tr("Collapse attached context", "Свернуть прикреплённый контекст")
-                            : L.tr("Expand attached context", "Развернуть прикреплённый контекст")
-                    )
-
-                    Text(attachmentPreview(title: attachmentTitle))
-                        .font(.system(size: 12))
-                        .foregroundStyle(SW.primaryText)
-                        .lineLimit(isAttachmentExpanded ? nil : 5)
-                        .truncationMode(.tail)
-                        .textSelection(.enabled)
-                } else {
-                    Text(message.content)
-                        .font(.system(size: 12))
-                        .foregroundStyle(SW.primaryText)
-                        .textSelection(.enabled)
-                }
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 9)
-            .background(isUser ? SW.accent.opacity(0.13) : Color.primary.opacity(0.055))
-            .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
-            .frame(maxWidth: 430, alignment: isUser ? .trailing : .leading)
+            Text(message.content)
+                .font(.system(size: 12))
+                .foregroundStyle(SW.primaryText)
+                .textSelection(.enabled)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 9)
+                .background(isUser ? SW.accent.opacity(0.13) : Color.primary.opacity(0.055))
+                .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
+                .frame(maxWidth: 430, alignment: isUser ? .trailing : .leading)
 
             if !isUser {
                 Spacer(minLength: 64)
             }
         }
         .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
-    }
-
-    private func attachmentPreview(title: String) -> String {
-        let prefix = "Attached context: \(title)"
-        guard message.content.hasPrefix(prefix) else { return message.content }
-        return String(message.content.dropFirst(prefix.count))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

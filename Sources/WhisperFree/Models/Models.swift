@@ -264,6 +264,19 @@ struct AIChatMessage: Codable, Identifiable, Hashable {
     var content: String
     var date: Date = Date()
     var attachmentTitle: String? = nil
+    var attachmentSourceID: String? = nil
+
+    var isAttachment: Bool {
+        attachmentTitle != nil
+    }
+
+    var attachmentText: String {
+        guard let attachmentTitle else { return content }
+        let prefix = "Attached context: \(attachmentTitle)"
+        guard content.hasPrefix(prefix) else { return content }
+        return String(content.dropFirst(prefix.count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }
 
 struct AIChatConversation: Codable, Identifiable, Hashable {
@@ -272,6 +285,32 @@ struct AIChatConversation: Codable, Identifiable, Hashable {
     var messages: [AIChatMessage] = []
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
+
+    var attachments: [AIChatMessage] {
+        messages.filter(\.isAttachment)
+    }
+
+    var chatMessages: [AIChatMessage] {
+        messages.filter { !$0.isAttachment }
+    }
+
+    mutating func upsertAttachment(_ attachment: AIChatMessage) {
+        guard attachment.isAttachment else { return }
+
+        if let sourceID = attachment.attachmentSourceID,
+           let index = messages.firstIndex(where: { $0.attachmentSourceID == sourceID }) {
+            var replacement = attachment
+            replacement.id = messages[index].id
+            messages[index] = replacement
+            return
+        }
+
+        messages.append(attachment)
+    }
+
+    mutating func removeAttachment(id: UUID) {
+        messages.removeAll { $0.id == id && $0.isAttachment }
+    }
 
     var displayTitle: String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)

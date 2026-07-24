@@ -57,6 +57,7 @@ final class AppState: ObservableObject {
     @Published var isAIChatSending = false
     @Published var isAIChatVoiceRecording = false
     @Published var aiChatError: String?
+    @Published var aiChatAttachmentError: String?
 
     @Published var copiedFeedback = false
     @Published var availableInputDevices: [AVCaptureDevice] = []
@@ -317,6 +318,7 @@ final class AppState: ObservableObject {
     func selectAIChatConversation(_ id: UUID) {
         guard aiChatConversations.contains(where: { $0.id == id }) else { return }
         settings.selectedAIChatConversationID = id
+        aiChatAttachmentError = nil
         saveSettings()
     }
 
@@ -325,6 +327,7 @@ final class AppState: ObservableObject {
         let conversation = AIChatConversation(title: L.tr("Chat \(number)", "Чат \(number)"))
         aiChatConversations.insert(conversation, at: 0)
         settings.selectedAIChatConversationID = conversation.id
+        aiChatAttachmentError = nil
         saveSettings()
         Storage.shared.saveAIChatConversations(aiChatConversations)
     }
@@ -435,14 +438,22 @@ final class AppState: ObservableObject {
         if let last = history.first {
             attachToAIChat(
                 title: L.tr("Latest transcript", "Последняя транскрипция"),
-                content: preferredAIChatText(for: last)
+                content: preferredAIChatText(for: last),
+                sourceID: "history:\(last.entryId.uuidString)"
             )
             return
         }
 
         if let lastTranscription, !lastTranscription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            attachToAIChat(title: L.tr("Latest transcript", "Последняя транскрипция"), content: lastTranscription)
+            attachToAIChat(
+                title: L.tr("Latest transcript", "Последняя транскрипция"),
+                content: lastTranscription,
+                sourceID: "latest-transcription"
+            )
+            return
         }
+
+        aiChatAttachmentError = L.tr("No transcript to attach.", "Нет транскрипции для прикрепления.")
     }
 
     func attachLiveTranslationToAIChat() {
@@ -456,14 +467,33 @@ final class AppState: ObservableObject {
             .joined(separator: "\n-> ")
         let content = segments.isEmpty ? fallback : segments.joined(separator: "\n\n")
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            aiChatError = L.tr("No live translation to attach.", "Нет live-перевода для прикрепления.")
+            aiChatAttachmentError = L.tr("No live translation to attach.", "Нет live-перевода для прикрепления.")
             return
         }
-        attachToAIChat(title: L.tr("Live translation", "Live-перевод"), content: content)
+        attachToAIChat(
+            title: L.tr("Live translation", "Live-перевод"),
+            content: content,
+            sourceID: "live-translation"
+        )
     }
 
     func attachHistoryEntryToAIChat(_ entry: TranscriptionHistoryEntry) {
-        attachToAIChat(title: entry.modeName, content: preferredAIChatText(for: entry))
+        let title = "\(entry.modeName) · \(entry.date.formatted(date: .omitted, time: .shortened))"
+        attachToAIChat(
+            title: title,
+            content: preferredAIChatText(for: entry),
+            sourceID: "history:\(entry.entryId.uuidString)"
+        )
+    }
+
+    func removeAIChatAttachment(_ id: UUID) {
+        let conversationID = ensureSelectedAIChatConversation()
+        guard let index = aiChatConversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        aiChatConversations[index].removeAttachment(id: id)
+        aiChatConversations[index].updatedAt = Date()
+        aiChatConversations.sort { $0.updatedAt > $1.updatedAt }
+        aiChatAttachmentError = nil
+        Storage.shared.saveAIChatConversations(aiChatConversations)
     }
 
     func sendAIChatMessage(_ text: String) {
@@ -490,18 +520,26 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func attachToAIChat(title: String, content: String) {
+    private func attachToAIChat(title: String, content: String, sourceID: String) {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else {
+            aiChatAttachmentError = L.tr("This context is empty.", "Этот контекст пуст.")
+            return
+        }
         let conversationID = ensureSelectedAIChatConversation()
-        appendAIChatMessage(
+        guard let index = aiChatConversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        aiChatConversations[index].upsertAttachment(
             AIChatMessage(
                 role: .user,
                 content: "Attached context: \(title)\n\n\(trimmed)",
-                attachmentTitle: title
-            ),
-            to: conversationID
+                attachmentTitle: title,
+                attachmentSourceID: sourceID
+            )
         )
+        aiChatConversations[index].updatedAt = Date()
+        aiChatConversations.sort { $0.updatedAt > $1.updatedAt }
+        aiChatAttachmentError = nil
+        Storage.shared.saveAIChatConversations(aiChatConversations)
     }
 
     private func appendAIChatMessage(_ message: AIChatMessage, to conversationID: UUID) {
@@ -514,12 +552,10 @@ final class AppState: ObservableObject {
     }
 
     private func updateAIChatTitleIfNeeded(at index: Int, using message: AIChatMessage) {
-        guard aiChatConversations[index].messages.count == 1 else { return }
-        if let attachmentTitle = message.attachmentTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !attachmentTitle.isEmpty {
-            aiChatConversations[index].title = attachmentTitle
-            return
-        }
+        guard message.role == .user,
+              !message.isAttachment,
+              aiChatConversations[index].chatMessages.count == 1
+        else { return }
         let words = message.content
             .split(whereSeparator: { $0.isWhitespace })
             .prefix(5)

@@ -44,6 +44,13 @@ enum L {
             + (files > 0 ? " + \(files) \(russianPlural(files, one: "файл", few: "файла", many: "файлов"))" : "")
     }
 
+    static func aiChatMessageCount(_ count: Int) -> String {
+        if isRussianSystem {
+            return "\(count) \(russianPlural(count, one: "сообщение", few: "сообщения", many: "сообщений"))"
+        }
+        return "\(count) \(count == 1 ? "message" : "messages")"
+    }
+
     static func russianPlural(_ count: Int, one: String, few: String, many: String) -> String {
         let mod10 = count % 10
         let mod100 = count % 100
