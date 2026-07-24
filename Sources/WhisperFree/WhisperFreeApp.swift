@@ -50,10 +50,19 @@ struct WhisperFreeApp: App {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+func requiresRegularActivationPolicy(
+    configuredMode: AppPresenceMode,
+    standaloneWindowCount: Int
+) -> Bool {
+    configuredMode.showsDockIcon || standaloneWindowCount > 0
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     static private(set) var shared: AppDelegate?
 
     private var overlayController = OverlayWindowController()
+    private var standaloneWindowIDs: Set<ObjectIdentifier> = []
     private var mainMenuWindowController: MainMenuWindowController?
     private var setupWizardController: SetupWizardWindowController?
     private var settingsWindowController: SettingsWindowController?
@@ -109,7 +118,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applyConfiguredActivationPolicy(activateIfRegular: Bool = false) {
         let mode = AppState.shared.settings.appPresenceMode
-        let targetPolicy: NSApplication.ActivationPolicy = mode.showsDockIcon ? .regular : .accessory
+        let usesRegularActivationPolicy = requiresRegularActivationPolicy(
+            configuredMode: mode,
+            standaloneWindowCount: standaloneWindowIDs.count
+        )
+        let targetPolicy: NSApplication.ActivationPolicy = usesRegularActivationPolicy ? .regular : .accessory
 
         if NSApp.activationPolicy() != targetPolicy {
             let didChange = NSApp.setActivationPolicy(targetPolicy)
@@ -121,6 +134,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if activateIfRegular && targetPolicy == .regular {
             NSApp.activate(ignoringOtherApps: true)
         }
+    }
+
+    func presentStandaloneWindow(_ window: NSWindow) {
+        standaloneWindowIDs.insert(ObjectIdentifier(window))
+        window.delegate = self
+        applyConfiguredActivationPolicy()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              standaloneWindowIDs.remove(ObjectIdentifier(window)) != nil
+        else { return }
+
+        applyConfiguredActivationPolicy()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -284,9 +313,8 @@ final class SetupWizardWindowController: NSObject {
     private var window: NSWindow?
 
     func show() {
-        if window != nil {
-            window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        if let window {
+            AppDelegate.shared?.presentStandaloneWindow(window)
             return
         }
 
@@ -314,8 +342,7 @@ final class SetupWizardWindowController: NSObject {
         applyAppWindowIcon(window)
 
         self.window = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        AppDelegate.shared?.presentStandaloneWindow(window)
     }
 
     func close() {
@@ -333,9 +360,8 @@ final class MainMenuWindowController: NSObject {
     }
 
     func show() {
-        if window != nil {
-            window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        if let window {
+            AppDelegate.shared?.presentStandaloneWindow(window)
             return
         }
 
@@ -360,8 +386,7 @@ final class MainMenuWindowController: NSObject {
         applyAppWindowIcon(window)
 
         self.window = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        AppDelegate.shared?.presentStandaloneWindow(window)
     }
 }
 
@@ -370,9 +395,8 @@ final class SettingsWindowController: NSObject {
     private var window: NSWindow?
 
     func show() {
-        if window != nil {
-            window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        if let window {
+            AppDelegate.shared?.presentStandaloneWindow(window)
             return
         }
 
@@ -397,8 +421,7 @@ final class SettingsWindowController: NSObject {
         applyAppWindowIcon(window)
 
         self.window = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        AppDelegate.shared?.presentStandaloneWindow(window)
     }
 }
 
@@ -407,9 +430,8 @@ final class HistoryWindowController: NSObject {
     private var window: NSWindow?
 
     func show() {
-        if window != nil {
-            window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        if let window {
+            AppDelegate.shared?.presentStandaloneWindow(window)
             return
         }
 
@@ -433,8 +455,7 @@ final class HistoryWindowController: NSObject {
         applyAppWindowIcon(window)
 
         self.window = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        AppDelegate.shared?.presentStandaloneWindow(window)
     }
 }
 
@@ -443,9 +464,8 @@ final class AIChatWindowController: NSObject {
     private var window: NSWindow?
 
     func show() {
-        if window != nil {
-            window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        if let window {
+            AppDelegate.shared?.presentStandaloneWindow(window)
             return
         }
 
@@ -470,8 +490,7 @@ final class AIChatWindowController: NSObject {
         applyAppWindowIcon(window)
 
         self.window = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        AppDelegate.shared?.presentStandaloneWindow(window)
     }
 }
 
@@ -480,9 +499,8 @@ final class FileTranscriptionWindowController: NSObject {
     private var window: NSWindow?
 
     func show() {
-        if window != nil {
-            window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        if let window {
+            AppDelegate.shared?.presentStandaloneWindow(window)
             return
         }
 
@@ -506,8 +524,7 @@ final class FileTranscriptionWindowController: NSObject {
         applyAppWindowIcon(window)
 
         self.window = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        AppDelegate.shared?.presentStandaloneWindow(window)
     }
 }
 
