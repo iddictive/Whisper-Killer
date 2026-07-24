@@ -30,9 +30,9 @@
 	<key>CFBundleName</key>
 	<string>WhisperKiller</string>
 	<key>CFBundleShortVersionString</key>
-	<string>3.34</string>
+	<string>3.43</string>
 	<key>CFBundleVersion</key>
-	<string>3.34</string>
+	<string>3.43</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Whisper Free needs microphone access to record your voice for transcription.</string>
 	<key>NSServices</key>

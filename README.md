@@ -26,7 +26,7 @@
 
 WhisperKiller turns a global shortcut into speech-to-text for daily writing and audio files. It can run locally through `whisper.cpp`, use OpenAI Whisper for cloud transcription, or use GigaAM for Russian ASR experiments. Cloud features use your own OpenAI API key.
 
-Current release: **3.34**
+Current release: **3.43**
 
 ## What It Handles
 
@@ -108,7 +108,7 @@ replace `/Applications/WhisperKiller.app`, or reset macOS permissions.
 
 WhisperKiller превращает глобальную горячую клавишу в speech-to-text для повседневного письма и аудиофайлов. Приложение может работать локально через `whisper.cpp`, отправлять аудио в OpenAI Whisper или использовать GigaAM для экспериментального русского ASR. Облачные функции работают через ваш OpenAI API key.
 
-Текущий релиз: **3.34**
+Текущий релиз: **3.43**
 
 ## Что умеет приложение
 
