@@ -78,7 +78,8 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
     }
     
     private func applyCurrentSettings() {
-        guard AppState.liveTranslatorFeatureAvailable else {
+        let currentSettings = Storage.shared.loadSettings()
+        guard AppState.liveTranslatorFeatureAvailable, currentSettings.liveTranslatorEnabled else {
             if isRunning {
                 stop()
             }
@@ -105,10 +106,20 @@ final class LiveTranslatorManager: ObservableObject, @unchecked Sendable {
             return
         }
 
+        let currentSettings = Storage.shared.loadSettings()
+        guard currentSettings.liveTranslatorEnabled else {
+            if isRunning {
+                stop()
+            } else {
+                statusMessage = nil
+                NotificationCenter.default.post(name: .liveTranslatorDidStop, object: nil)
+            }
+            return
+        }
+
         guard !isRunning else { return }
         isStoppingProcess = false
-        
-        let currentSettings = Storage.shared.loadSettings()
+
         let targetLanguage = AppSettings.normalizedLiveTranslatorTargetLanguage(currentSettings.liveTranslatorTargetLanguage)
         let sourceLanguage = AppSettings.normalizedLiveTranslatorSourceLanguageCode(currentSettings.liveTranslatorSourceLanguage)
         let engineChoice = currentSettings.liveTranslatorEngine

@@ -228,7 +228,7 @@ struct MenuBarView: View {
                     }
                 }
 
-                if AppState.liveTranslatorFeatureAvailable {
+                if AppState.liveTranslatorFeatureAvailable && appState.settings.liveTranslatorEnabled {
                     menuButton(icon: "mic.badge.plus", title: appState.showLiveTranslatorOverlay ? L.tr("Stop Mic -> Russian", "Остановить микрофон -> русский") : L.tr("Start Mic -> Russian", "Запустить микрофон -> русский")) {
                         appState.toggleRussianMicrophoneTranslator()
                     }
@@ -274,7 +274,7 @@ struct MenuBarView: View {
 
             recordButton
 
-            if AppState.liveTranslatorFeatureAvailable {
+            if AppState.liveTranslatorFeatureAvailable && appState.settings.liveTranslatorEnabled {
                 liveTranslatorButton
             }
 
@@ -436,6 +436,7 @@ struct MenuBarView: View {
             .swInteractiveHover()
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
         .help(selectedInputDeviceName)
     }
 

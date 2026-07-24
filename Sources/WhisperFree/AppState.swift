@@ -719,6 +719,24 @@ final class AppState: ObservableObject {
         setupHotkey()
     }
 
+    func setLiveTranslatorEnabled(_ isEnabled: Bool) {
+        guard settings.liveTranslatorEnabled != isEnabled else { return }
+
+        settings.liveTranslatorEnabled = isEnabled
+        saveSettings()
+
+        if !isEnabled {
+            LiveTranslatorManager.shared.stop()
+            showLiveTranslatorOverlay = false
+        }
+
+        reloadHotkeyManager()
+        NotificationCenter.default.post(
+            name: NSNotification.Name("LiveTranslatorSettingsChanged"),
+            object: nil
+        )
+    }
+
     private func setupHotkey() {
         // Main Dictation Hotkey
         hotkeyManager.config = settings.hotkeyConfig
@@ -1722,6 +1740,7 @@ final class AppState: ObservableObject {
             showError("Live Translator is planned for a future release.")
             return
         }
+        guard settings.liveTranslatorEnabled else { return }
 
         if LiveTranslatorManager.shared.isRunning {
             LiveTranslatorManager.shared.stop()
@@ -1735,6 +1754,7 @@ final class AppState: ObservableObject {
             showError("Live Translator is planned for a future release.")
             return
         }
+        guard settings.liveTranslatorEnabled else { return }
 
         if LiveTranslatorManager.shared.isRunning {
             LiveTranslatorManager.shared.stop()

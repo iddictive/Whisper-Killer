@@ -22,43 +22,63 @@ struct LiveTranslatorSettingsView: View {
     @State private var isOllamaInstalled: Bool = {
         FileManager.default.fileExists(atPath: "/Applications/Ollama.app")
     }()
+
+    private var enabledBinding: Binding<Bool> {
+        Binding(
+            get: { appState.settings.liveTranslatorEnabled },
+            set: { appState.setLiveTranslatorEnabled($0) }
+        )
+    }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            
-            // Header
-            HStack(spacing: 16) {
+        VStack(alignment: .leading, spacing: SW.spacingXL) {
+            HStack(spacing: SW.spacingM) {
                 Image(systemName: "text.bubble.fill")
                     .font(.system(size: 24))
                     .foregroundStyle(SW.accent)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Live Translator")
-                        .font(.title2.bold())
-                }
+                Text("Live Translator")
+                    .font(.title2.bold())
                 Spacer()
-                Button(appState.showLiveTranslatorOverlay ? L.tr("Stop Mic -> RU", "Стоп микрофон -> RU") : L.tr("Mic -> RU", "Микрофон -> RU")) {
-                    appState.toggleRussianMicrophoneTranslator()
-                }
-                .buttonStyle(.borderedProminent)
-                Toggle("", isOn: $appState.settings.liveTranslatorEnabled)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .onChange(of: appState.settings.liveTranslatorEnabled) { _, _ in
-                        appState.saveSettings()
-                        appState.reloadHotkeyManager()
-                        notifyLiveTranslatorSettingsChanged()
-                    }
             }
-            .padding(.bottom, 8)
+
+            VStack(spacing: 0) {
+                Toggle(
+                    L.tr("Enable Live Translator", "Включить Live Translator"),
+                    isOn: enabledBinding
+                )
+                    .toggleStyle(.switch)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if appState.settings.liveTranslatorEnabled {
+                    Divider()
+                        .padding(.vertical, SW.spacingM)
+
+                    HStack {
+                        Label(
+                            L.tr("Microphone to Russian", "Микрофон → русский"),
+                            systemImage: "mic.fill"
+                        )
+                        Spacer()
+                        Button(
+                            appState.showLiveTranslatorOverlay
+                                ? L.tr("Stop", "Остановить")
+                                : L.tr("Start", "Запустить")
+                        ) {
+                            appState.toggleRussianMicrophoneTranslator()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+            .swCard()
             
             if appState.settings.liveTranslatorEnabled {
-                
-                // 1. Languages
-                GroupBox {
+                VStack(alignment: .leading, spacing: SW.spacingS) {
+                    SWSectionHeader(title: L.tr("Languages", "Языки"))
+
                     VStack(alignment: .leading, spacing: 16) {
                         HStack {
-                            Text("Spoken Language")
-                                .font(.headline)
+                            Text(L.tr("Spoken Language", "Исходный язык"))
                             Spacer()
                             Picker("", selection: $appState.settings.liveTranslatorSourceLanguage) {
                                 ForEach(AppSettings.supportedLanguages, id: \.code) { lang in
@@ -76,8 +96,7 @@ struct LiveTranslatorSettingsView: View {
                         Divider()
 
                         HStack {
-                            Text("Target Language")
-                                .font(.headline)
+                            Text(L.tr("Target Language", "Язык перевода"))
                             Spacer()
                             Picker("", selection: $appState.settings.liveTranslatorTargetLanguage) {
                                 ForEach(AppSettings.supportedLanguages, id: \.code) { lang in
@@ -93,14 +112,13 @@ struct LiveTranslatorSettingsView: View {
                             }
                         }
                     }
-                    .padding(8)
+                    .swCard()
                 }
 
-                // 2. Translation Engine
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Translation Engine").font(.headline)
+                VStack(alignment: .leading, spacing: SW.spacingS) {
+                    SWSectionHeader(title: L.tr("Translation Engine", "Движок перевода"))
 
+                    VStack(alignment: .leading, spacing: 16) {
                         Picker("", selection: $appState.settings.liveTranslatorEngine) {
                             ForEach(LiveTranslationEngine.allCases, id: \.self) { engine in
                                 Text(engine.rawValue).tag(engine)
@@ -142,98 +160,92 @@ struct LiveTranslatorSettingsView: View {
                             }
                         }
                     }
-                    .padding(8)
+                    .swCard()
                 }
 
                 ClickableDisclosure(isExpanded: $showAdvanced) {
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack {
-                                Text("Global Hotkey")
-                                Spacer()
-                                Button(action: {
-                                    isRecordingHotkey.toggle()
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Text(L.tr("Global Hotkey", "Глобальная горячая клавиша"))
+                            Spacer()
+                            Button(action: {
+                                isRecordingHotkey.toggle()
+                                if isRecordingHotkey {
+                                    modifierFlags = []
+                                }
+                            }) {
+                                Text(isRecordingHotkey ? hotkeyRecordingText : appState.settings.liveTranslatorHotkeyConfig.displayString)
+                                    .frame(minWidth: 100)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(isRecordingHotkey ? .orange : .none)
+                            .onExitCommand {
+                                isRecordingHotkey = false
+                            }
+                            .background(
+                                Group {
                                     if isRecordingHotkey {
-                                        modifierFlags = []
+                                        KeyEventHandlingView(
+                                            isRecording: $isRecordingHotkey,
+                                            modifierFlags: $modifierFlags,
+                                            onCommit: { keyCode, useOption, useCommand, useControl, useShift in
+                                                let newConfig = HotkeyConfig(
+                                                    keyCode: keyCode,
+                                                    useOption: useOption,
+                                                    useCommand: useCommand,
+                                                    useControl: useControl,
+                                                    useShift: useShift
+                                                )
+                                                appState.settings.liveTranslatorHotkeyConfig = newConfig
+                                                appState.saveSettings()
+                                                appState.reloadHotkeyManager()
+                                                isRecordingHotkey = false
+                                            }
+                                        )
+                                        .frame(width: 0, height: 0)
                                     }
-                                }) {
-                                    Text(isRecordingHotkey ? hotkeyRecordingText : appState.settings.liveTranslatorHotkeyConfig.displayString)
-                                        .frame(minWidth: 100)
                                 }
-                                .buttonStyle(.bordered)
-                                .tint(isRecordingHotkey ? .orange : .none)
-                                .onExitCommand {
-                                    isRecordingHotkey = false
+                            )
+                        }
+
+                        Divider()
+
+                        Toggle(
+                            L.tr("Capture System Audio", "Захватывать системный звук"),
+                            isOn: $appState.settings.useScreenCaptureKit
+                        )
+                        .toggleStyle(.switch)
+                        .onChange(of: appState.settings.useScreenCaptureKit) { _, _ in
+                            appState.saveSettings()
+                            notifyLiveTranslatorSettingsChanged()
+                        }
+
+                        Divider()
+
+                        HStack {
+                            Text(L.tr("Audio Input", "Аудиовход"))
+                            Spacer()
+                            Picker("", selection: $appState.settings.liveTranslatorInputDeviceID) {
+                                Text(L.tr("System Default", "Системный по умолчанию")).tag(String?.none)
+                                Divider()
+                                ForEach(appState.availableInputDevices, id: \.uniqueID) { device in
+                                    Text(device.localizedName).tag(String?.some(device.uniqueID))
                                 }
-                                .background(
-                                    Group {
-                                        if isRecordingHotkey {
-                                            KeyEventHandlingView(
-                                                isRecording: $isRecordingHotkey,
-                                                modifierFlags: $modifierFlags,
-                                                onCommit: { keyCode, useOption, useCommand, useControl, useShift in
-                                                    let newConfig = HotkeyConfig(
-                                                        keyCode: keyCode,
-                                                        useOption: useOption,
-                                                        useCommand: useCommand,
-                                                        useControl: useControl,
-                                                        useShift: useShift
-                                                    )
-                                                    appState.settings.liveTranslatorHotkeyConfig = newConfig
-                                                    appState.saveSettings()
-                                                    appState.reloadHotkeyManager()
-                                                    isRecordingHotkey = false
-                                                }
-                                            )
-                                            .frame(width: 0, height: 0)
-                                        }
-                                    }
-                                )
                             }
-
-                            Divider()
-
-                            HStack {
-                                Text("Capture System Audio")
-                                Spacer()
-                                Toggle("", isOn: $appState.settings.useScreenCaptureKit)
-                                    .toggleStyle(.switch)
-                                    .labelsHidden()
-                                    .onChange(of: appState.settings.useScreenCaptureKit) { _, _ in
-                                        appState.saveSettings()
-                                        notifyLiveTranslatorSettingsChanged()
-                                    }
-                            }
-
-                            Divider()
-
-                            HStack {
-                                Text("Audio Input")
-                                Spacer()
-                                Picker("", selection: $appState.settings.liveTranslatorInputDeviceID) {
-                                    Text("System Default").tag(String?.none)
-                                    Divider()
-                                    ForEach(appState.availableInputDevices, id: \.uniqueID) { device in
-                                        Text(device.localizedName).tag(String?.some(device.uniqueID))
-                                    }
-                                }
-                                .frame(width: 250)
-                                .disabled(appState.settings.useScreenCaptureKit)
-                                .opacity(appState.settings.useScreenCaptureKit ? 0.5 : 1.0)
-                                .onChange(of: appState.settings.liveTranslatorInputDeviceID) { _, _ in
-                                    appState.saveSettings()
-                                    notifyLiveTranslatorSettingsChanged()
-                                }
+                            .frame(width: 250)
+                            .disabled(appState.settings.useScreenCaptureKit)
+                            .opacity(appState.settings.useScreenCaptureKit ? 0.5 : 1.0)
+                            .onChange(of: appState.settings.liveTranslatorInputDeviceID) { _, _ in
+                                appState.saveSettings()
+                                notifyLiveTranslatorSettingsChanged()
                             }
                         }
-                        .padding(8)
                     }
+                    .swCard()
                     .padding(.top, 8)
                 } label: {
-                    Text("Advanced")
+                    Text(L.tr("Advanced", "Дополнительно"))
                 }
-            } else {
-                Spacer()
             }
         }
         .onAppear {
