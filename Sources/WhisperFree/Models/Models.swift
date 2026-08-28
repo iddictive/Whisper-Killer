@@ -413,6 +413,7 @@ enum TranscriptionEngineType: String, Codable, CaseIterable {
 struct CloudTranscriptionModel: RawRepresentable, Codable, Hashable {
     let rawValue: String
 
+    static let gptTranscribe = CloudTranscriptionModel(rawValue: "gpt-transcribe")
     static let whisper1 = CloudTranscriptionModel(rawValue: "whisper-1")
     static let gpt4oMiniTranscribe = CloudTranscriptionModel(rawValue: "gpt-4o-mini-transcribe")
     static let gpt4oTranscribe = CloudTranscriptionModel(rawValue: "gpt-4o-transcribe")
@@ -442,6 +443,8 @@ struct CloudTranscriptionModel: RawRepresentable, Codable, Hashable {
 
     var pricePerMinute: Double? {
         switch self {
+        case .gptTranscribe:
+            return 0.0045
         case .whisper1:
             return 0.006
         case .gpt4oMiniTranscribe:
@@ -558,9 +561,9 @@ enum QwenASRModel: String, Codable, CaseIterable {
     var sizeDescription: String {
         switch self {
         case .fast:
-            return "~1.2 GB RAM · Qwen3-ASR-0.6B"
+            return "~1.9 GB download · ~1.2 GB RAM · Qwen3-ASR-0.6B"
         case .quality:
-            return "~3.4 GB RAM · Qwen3-ASR-1.7B"
+            return "~4.7 GB download · ~3.4 GB RAM · Qwen3-ASR-1.7B"
         }
     }
 
@@ -703,7 +706,7 @@ struct HotkeyConfig: Codable, Equatable, Hashable {
 struct AppSettings: Codable {
     var apiKey: String = ""
     var appPresenceMode: AppPresenceMode = .menuBarOnly
-    var cloudTranscriptionModel: CloudTranscriptionModel = .whisper1
+    var cloudTranscriptionModel: CloudTranscriptionModel = .gptTranscribe
     var cloudDiarizationModel: CloudTranscriptionModel? = .gpt4oTranscribeDiarize
     var postProcessingEngine: PostProcessingEngine = .openai
     var autoTypeResult: Bool = true
@@ -766,7 +769,7 @@ struct AppSettings: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         appPresenceMode = try container.decodeIfPresent(AppPresenceMode.self, forKey: .appPresenceMode) ?? .menuBarOnly
-        cloudTranscriptionModel = try container.decodeIfPresent(CloudTranscriptionModel.self, forKey: .cloudTranscriptionModel) ?? .whisper1
+        cloudTranscriptionModel = try container.decodeIfPresent(CloudTranscriptionModel.self, forKey: .cloudTranscriptionModel) ?? .gptTranscribe
         cloudDiarizationModel = try container.decodeIfPresent(CloudTranscriptionModel.self, forKey: .cloudDiarizationModel) ?? .gpt4oTranscribeDiarize
         postProcessingEngine = try container.decodeIfPresent(PostProcessingEngine.self, forKey: .postProcessingEngine) ?? .openai
         autoTypeResult = try container.decodeIfPresent(Bool.self, forKey: .autoTypeResult) ?? true

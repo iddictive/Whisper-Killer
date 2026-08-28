@@ -4,6 +4,7 @@ struct OpenAIModelCatalog {
     let modelIDs: [String]
 
     static let bootstrapTranscriptionModels: [CloudTranscriptionModel] = [
+        .gptTranscribe,
         .whisper1,
         .gpt4oMiniTranscribe,
         .gpt4oTranscribe
@@ -58,6 +59,9 @@ struct OpenAIModelCatalog {
             ids.compactMap { id -> CloudTranscriptionModel? in
                 let value = id.lowercased()
                 guard !hasSnapshotDate(value) else { return nil }
+                guard !value.contains("-live-transcribe"), !value.contains("-realtime-") else {
+                    return nil
+                }
                 guard value == CloudTranscriptionModel.whisper1.apiName
                         || (value.hasPrefix("gpt-") && value.contains("-transcribe"))
                 else {

@@ -215,6 +215,7 @@ struct SettingsView: View {
         }
         .onAppear {
             dependencyInstaller.refreshHomebrewStatus()
+            dependencyInstaller.refreshQwenASRStatus()
             launchAtLogin.refresh()
             modelManager.refreshDownloadedModels()
             appState.refreshCloudTranscriptionModelsIfNeeded()
@@ -925,7 +926,7 @@ struct SettingsView: View {
                     .foregroundStyle(Color.accentColor)
             }
 
-            Text(L.tr("Private on-device transcription. Models download once and stay on this Mac.", "Приватная транскрибация на устройстве. Модели скачиваются один раз и остаются на этом Mac."))
+            Text(L.tr("Private on-device transcription. Fast prioritizes speed; Quality prioritizes multilingual accuracy.", "Приватная транскрибация на устройстве. «Быстро» — про скорость, «Качество» — про точность на разных языках."))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
@@ -963,7 +964,7 @@ struct SettingsView: View {
 
                 Spacer()
 
-                if dependencyInstaller.isInstallingQwenASR {
+                if dependencyInstaller.isInstallingQwenASR || dependencyInstaller.isCheckingQwenASRRuntime {
                     ProgressView()
                         .controlSize(.small)
                 } else if selectedModelDownloading {
@@ -983,7 +984,7 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.bordered)
                 } else {
-                    Button(L.tr("Install", "Установить")) {
+                    Button(QwenASRTranscriber.isRuntimeInstalled ? L.tr("Repair", "Исправить") : L.tr("Install", "Установить")) {
                         dependencyInstaller.installQwenASRRuntime()
                     }
                     .buttonStyle(.borderedProminent)
@@ -1002,7 +1003,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(model.localizedTitle)
                             .font(.system(size: 13, weight: .semibold))
-                        Text(model.sizeDescription)
+                        Text(model.localizedResourceDescription)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                         if let size = modelManager.qwenModelFileSize(model) {

@@ -6,6 +6,8 @@ import CryptoKit
 
 /// Local Qwen3-ASR inference through an app-managed MLX runtime.
 final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
+    static let runtimePackageVersion = "0.3.5"
+
     private let model: QwenASRModel
     private var currentProcess: Process?
 
@@ -259,7 +261,12 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
 
     static func ensureRuntimeInstalled() async throws -> String {
         if isRuntimeInstalled {
-            return runtimePythonPath
+            do {
+                try await validateRuntime()
+                return runtimePythonPath
+            } catch {
+                // Repair an incomplete or stale environment in place.
+            }
         }
 
         try await installRuntime()
@@ -270,6 +277,32 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = installRuntimeSync()
+                switch result {
+                case .success:
+                    continuation.resume()
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+        try await validateRuntime()
+    }
+
+    static func validateRuntime(at pythonPath: String = runtimePythonPath) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let script = """
+                from importlib.metadata import version
+                import mlx_qwen3_asr
+                installed = version("mlx-qwen3-asr")
+                if installed != "\(runtimePackageVersion)":
+                    raise RuntimeError(f"Expected mlx-qwen3-asr \(runtimePackageVersion), found {installed}")
+                """
+                let result = runProcess(
+                    executable: pythonPath,
+                    arguments: ["-c", script],
+                    outputName: "qwen_asr_runtime_probe"
+                )
                 switch result {
                 case .success:
                     continuation.resume()
@@ -299,7 +332,7 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
             mkdir -p \(shellQuoted(Storage.qwenASRRuntimeDirectory.path))
             \(shellQuoted(basePython)) -m venv \(shellQuoted(venvDirectory))
             \(shellQuoted(runtimePythonPath)) -m pip install --upgrade pip
-            \(shellQuoted(runtimePythonPath)) -m pip install --disable-pip-version-check mlx-qwen3-asr==0.3.5
+            \(shellQuoted(runtimePythonPath)) -m pip install --disable-pip-version-check mlx-qwen3-asr==\(runtimePackageVersion)
             """
         ]
 

@@ -20,6 +20,9 @@ jobs:
       - name: Show Xcode Version
         run: xcodebuild -version
 
+      - name: Test
+        run: swift test
+
       - name: Clean DerivedData
         run: rm -rf ~/Library/Developer/Xcode/DerivedData
 

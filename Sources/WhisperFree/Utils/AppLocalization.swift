@@ -173,8 +173,23 @@ extension TranscriptionEngineType {
 extension QwenASRModel {
     var localizedTitle: String {
         switch self {
-        case .fast: return L.tr("Fast", "Быстро")
-        case .quality: return L.tr("Quality", "Качество")
+        case .fast: return L.tr("Fast · 0.6B", "Быстро · 0.6B")
+        case .quality: return L.tr("Quality · 1.7B", "Качество · 1.7B")
+        }
+    }
+
+    var localizedResourceDescription: String {
+        switch self {
+        case .fast:
+            return L.tr(
+                "~1.9 GB download · ~1.2 GB RAM · speed-first Qwen model",
+                "~1,9 ГБ загрузка · ~1,2 ГБ RAM · Qwen-модель с приоритетом скорости"
+            )
+        case .quality:
+            return L.tr(
+                "~4.7 GB download · ~3.4 GB RAM · accuracy-first Qwen model",
+                "~4,7 ГБ загрузка · ~3,4 ГБ RAM · Qwen-модель с приоритетом точности"
+            )
         }
     }
 }
@@ -182,6 +197,8 @@ extension QwenASRModel {
 extension CloudTranscriptionModel {
     var localizedTitle: String {
         switch self {
+        case .gptTranscribe:
+            return "GPT Transcribe"
         case .whisper1:
             return "Whisper-1"
         case .gpt4oMiniTranscribe:
@@ -197,6 +214,11 @@ extension CloudTranscriptionModel {
 
     var localizedDescription: String {
         switch self {
+        case .gptTranscribe:
+            return L.tr(
+                "High-accuracy OpenAI speech-to-text model for files and dictation.",
+                "Высокоточная OpenAI-модель распознавания речи для файлов и диктовки."
+            )
         case .whisper1:
             return L.tr("Stable Whisper API model with simple per-minute pricing.", "Стабильная Whisper API-модель с простой поминутной ценой.")
         case .gpt4oMiniTranscribe:

@@ -7,7 +7,7 @@ help:
 	@echo "WhisperKiller Build System"
 	@echo "  make dev     - Run persistent local debug app with automatic rebuilds"
 	@echo "  make install - Reinstall app to /Applications and launch it"
-	@echo "  make verify  - Verify release build for GitHub Releases"
+	@echo "  make verify  - Run tests and verify release build for GitHub Releases"
 	@echo "  BUILD_PROGRESS_INTERVAL=10 make verify - Show build heartbeat every 10s"
 
 # Persistent local debug app with incremental rebuild + relaunch
@@ -20,6 +20,8 @@ install: verify
 
 # Verify release build used for GitHub Releases
 verify:
+	@echo "🧪 Running tests..."
+	@swift test
 	@echo "🔍 Verifying release build..."
 	@bash scripts/swift_build_with_progress.sh swift build -c release
 	@echo "✅ Release build succeeded"

@@ -48,6 +48,8 @@ final class DependencyInstaller: ObservableObject {
     @Published var qwenASRStatus: String = ""
     @Published var downloadingQwenASRModel: QwenASRModel?
     @Published var qwenASRModelDownloadProgress: Float = 0
+    @Published private(set) var isCheckingQwenASRRuntime = false
+    @Published private(set) var isQwenASRRuntimeInstalled = false
     
     private init() {}
 
@@ -63,10 +65,6 @@ final class DependencyInstaller: ObservableObject {
 
     var isGigaAMEnvironmentInstalled: Bool {
         FileManager.default.isExecutableFile(atPath: GigaAMTranscriber.virtualEnvironmentPythonPath)
-    }
-
-    var isQwenASRRuntimeInstalled: Bool {
-        QwenASRTranscriber.isRuntimeInstalled
     }
 
     func installHomebrew() {
@@ -181,8 +179,10 @@ final class DependencyInstaller: ObservableObject {
         Task(priority: .userInitiated) {
             do {
                 try await QwenASRTranscriber.installRuntime()
+                self.isQwenASRRuntimeInstalled = true
                 self.qwenASRStatus = "Qwen3-ASR runtime is ready."
             } catch {
+                self.isQwenASRRuntimeInstalled = false
                 self.qwenASRStatus = error.localizedDescription
             }
             self.isInstallingQwenASR = false
@@ -190,14 +190,32 @@ final class DependencyInstaller: ObservableObject {
     }
 
     func refreshQwenASRStatus() {
-        if QwenASRTranscriber.isRuntimeInstalled {
-            qwenASRStatus = "Qwen3-ASR runtime is ready."
-        } else if !QwenASRTranscriber.isAppleSilicon {
+        guard !isCheckingQwenASRRuntime, !isInstallingQwenASR else { return }
+
+        if !QwenASRTranscriber.isAppleSilicon {
+            isQwenASRRuntimeInstalled = false
             qwenASRStatus = "Qwen3-ASR MLX requires Apple Silicon."
-        } else if isInstallingQwenASR {
-            qwenASRStatus = "Preparing Qwen3-ASR..."
-        } else {
+            return
+        }
+
+        guard QwenASRTranscriber.isRuntimeInstalled else {
+            isQwenASRRuntimeInstalled = false
             qwenASRStatus = ""
+            return
+        }
+
+        isCheckingQwenASRRuntime = true
+        qwenASRStatus = "Checking Qwen3-ASR runtime..."
+        Task(priority: .utility) {
+            do {
+                try await QwenASRTranscriber.validateRuntime()
+                self.isQwenASRRuntimeInstalled = true
+                self.qwenASRStatus = "Qwen3-ASR runtime is ready."
+            } catch {
+                self.isQwenASRRuntimeInstalled = false
+                self.qwenASRStatus = "Qwen3-ASR runtime needs repair."
+            }
+            self.isCheckingQwenASRRuntime = false
         }
     }
 

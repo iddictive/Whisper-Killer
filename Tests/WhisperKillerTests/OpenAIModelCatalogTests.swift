@@ -5,12 +5,13 @@ final class OpenAIModelCatalogTests: XCTestCase {
     func testBootstrapCatalogContainsEveryKnownBaseTranscriptionModel() {
         XCTAssertEqual(
             OpenAIModelCatalog.bootstrapTranscriptionModels,
-            [.whisper1, .gpt4oMiniTranscribe, .gpt4oTranscribe]
+            [.gptTranscribe, .whisper1, .gpt4oMiniTranscribe, .gpt4oTranscribe]
         )
     }
 
     func testTranscriptionCatalogIncludesFutureStableModelsWithoutCodeChanges() {
         let models = OpenAIModelCatalog.relevantTranscriptionModels(from: [
+            "gpt-transcribe",
             "whisper-1",
             "gpt-4o-mini-transcribe",
             "gpt-4o-transcribe",
@@ -21,6 +22,7 @@ final class OpenAIModelCatalogTests: XCTestCase {
         ])
 
         XCTAssertEqual(Set(models.map(\.apiName)), Set([
+            "gpt-transcribe",
             "whisper-1",
             "gpt-4o-mini-transcribe",
             "gpt-4o-transcribe",
@@ -45,12 +47,28 @@ final class OpenAIModelCatalogTests: XCTestCase {
             "gpt-5.7",
             "gpt-image-2",
             "gpt-4o-mini-tts",
+            "gpt-live-transcribe",
             "gpt-realtime-whisper",
             "gpt-5.7-transcribe-2026-07-24",
             "omni-moderation-latest"
         ])
 
         XCTAssertTrue(models.isEmpty)
+    }
+
+    func testGPTTranscribeIsTheNewSettingsDefaultWithKnownPricing() throws {
+        let settings = AppSettings()
+
+        XCTAssertEqual(settings.cloudTranscriptionModel, .gptTranscribe)
+        XCTAssertEqual(CloudTranscriptionModel.gptTranscribe.pricePerMinute, 0.0045)
+
+        var savedSettings = settings
+        savedSettings.cloudTranscriptionModel = .whisper1
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: JSONEncoder().encode(savedSettings)
+        )
+        XCTAssertEqual(decoded.cloudTranscriptionModel, .whisper1)
     }
 
     func testUnknownFutureModelRoundTripsAndDoesNotInventPricing() throws {

@@ -24,7 +24,7 @@
 
 > macOS menu bar app for dictation, file transcription, transcript cleanup, and meeting summaries.
 
-WhisperKiller turns a global shortcut into speech-to-text for daily writing and audio files. It can run locally through `whisper.cpp`, use OpenAI Whisper for cloud transcription, or use GigaAM for Russian ASR experiments. Cloud features use your own OpenAI API key.
+WhisperKiller turns a global shortcut into speech-to-text for daily writing and audio files. It can run locally through `whisper.cpp` or Qwen3-ASR, use current OpenAI transcription models in the cloud, or use GigaAM for Russian ASR experiments. Cloud features use your own OpenAI API key.
 
 Current release: **3.43**
 
@@ -40,6 +40,7 @@ Current release: **3.43**
 - Searchable history with raw text, processed text, summaries, playback, and Finder reveal.
 - Live Translator for microphone or system audio.
 - Google Meet recording import from Drive when Google OAuth is configured.
+- AI Chat for follow-up questions about transcripts and attached context.
 
 ## Interface Surfaces
 
@@ -53,7 +54,8 @@ Current release: **3.43**
 | Engine | Use it for | Requirements |
 | --- | --- | --- |
 | Local Whisper | Offline dictation and file transcription | `brew install whisper-cpp` plus a downloaded Whisper model |
-| OpenAI Whisper | Cloud transcription runs | OpenAI API key |
+| Qwen3-ASR MLX | Local transcription on Apple Silicon; 0.6B for speed or 1.7B for higher multilingual accuracy | App-managed Python/MLX runtime and a downloaded Qwen3-ASR model |
+| OpenAI transcription | Cloud transcription runs | OpenAI API key |
 | GigaAM Russian | Experimental Russian ASR | Python runtime and GigaAM packages |
 | Ollama follow-up | Local follow-up summaries where configured | Ollama installed locally |
 
@@ -82,7 +84,7 @@ Useful commands:
 ```bash
 make dev      # persistent local debug app with automatic rebuild + relaunch
 make install  # build, install to /Applications, and launch
-make verify   # verify release build
+make verify   # run tests and verify release build
 ```
 
 `make dev` keeps a separate `WhisperKiller Dev.app` under `.build/dev-runtime`.
@@ -106,7 +108,7 @@ replace `/Applications/WhisperKiller.app`, or reset macOS permissions.
 
 > macOS menu bar приложение для диктовки, транскрибации файлов, очистки текста и саммари встреч.
 
-WhisperKiller превращает глобальную горячую клавишу в speech-to-text для повседневного письма и аудиофайлов. Приложение может работать локально через `whisper.cpp`, отправлять аудио в OpenAI Whisper или использовать GigaAM для экспериментального русского ASR. Облачные функции работают через ваш OpenAI API key.
+WhisperKiller превращает глобальную горячую клавишу в speech-to-text для повседневного письма и аудиофайлов. Приложение может работать локально через `whisper.cpp` или Qwen3-ASR, использовать актуальные модели транскрибации OpenAI в облаке либо GigaAM для экспериментального русского ASR. Облачные функции работают через ваш OpenAI API key.
 
 Текущий релиз: **3.43**
 
@@ -122,6 +124,7 @@ WhisperKiller превращает глобальную горячую клав�
 - История с поиском, raw/processed текстом, саммари, playback и открытием файла в Finder.
 - Live Translator для микрофона и системного аудио.
 - Импорт Google Meet записей из Drive, если настроен Google OAuth.
+- AI Chat для follow-up вопросов по транскриптам и прикреплённому контексту.
 
 ## Интерфейс
 
@@ -135,7 +138,8 @@ WhisperKiller превращает глобальную горячую клав�
 | Движок | Для чего | Требования |
 | --- | --- | --- |
 | Local Whisper | Офлайн-диктовка и транскрибация файлов | `brew install whisper-cpp` и скачанная Whisper-модель |
-| OpenAI Whisper | Облачная транскрибация | OpenAI API key |
+| Qwen3-ASR MLX | Локальная транскрибация на Apple Silicon; 0.6B для скорости или 1.7B для более высокой мультиязычной точности | Управляемый приложением Python/MLX runtime и скачанная Qwen3-ASR модель |
+| OpenAI transcription | Облачная транскрибация | OpenAI API key |
 | GigaAM Russian | Экспериментальный русский ASR | Python runtime и GigaAM packages |
 | Ollama follow-up | Локальные follow-up саммари, если настроено | Ollama на машине |
 
@@ -164,7 +168,7 @@ make install
 ```bash
 make dev      # постоянный локальный debug-инстанс с автоматической пересборкой и перезапуском
 make install  # собрать, установить в /Applications и запустить
-make verify   # проверить release build
+make verify   # запустить тесты и проверить release build
 ```
 
 `make dev` хранит отдельный `WhisperKiller Dev.app` в `.build/dev-runtime`.
