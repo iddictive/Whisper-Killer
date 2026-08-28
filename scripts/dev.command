@@ -6,6 +6,8 @@ SOURCE_DIR="$ROOT_DIR/Sources/WhisperFree"
 DEV_ROOT="$ROOT_DIR/.build/dev-runtime"
 APP_BUNDLE="$DEV_ROOT/WhisperKiller Dev.app"
 APP_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/WhisperKiller"
+STAGED_APP_BUNDLE="$DEV_ROOT/.WhisperKiller Dev.staged.app"
+PREVIOUS_APP_BUNDLE="$DEV_ROOT/.WhisperKiller Dev.previous.app"
 INFO_PLIST="$SOURCE_DIR/Resources/Info.plist"
 ENTITLEMENTS="$SOURCE_DIR/Resources/WhisperKiller.entitlements"
 ICON_FILE="$SOURCE_DIR/Resources/AppIcon.icns"
@@ -38,33 +40,34 @@ resolve_signing_identity() {
 
 prepare_bundle() {
     local binary_path="$1"
+    local bundle_path="$2"
+    local executable_path="$bundle_path/Contents/MacOS/WhisperKiller"
     local signing_identity
 
-    mkdir -p "$APP_BUNDLE/Contents/MacOS"
-    mkdir -p "$APP_BUNDLE/Contents/Resources"
+    rm -rf "$bundle_path"
+    mkdir -p "$bundle_path/Contents/MacOS"
+    mkdir -p "$bundle_path/Contents/Resources"
 
-    cp "$binary_path" "$APP_EXECUTABLE"
-    chmod +x "$APP_EXECUTABLE"
-    cp "$INFO_PLIST" "$APP_BUNDLE/Contents/Info.plist"
+    cp "$binary_path" "$executable_path"
+    chmod +x "$executable_path"
+    cp "$INFO_PLIST" "$bundle_path/Contents/Info.plist"
 
-    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.whisperkiller.app.dev" "$APP_BUNDLE/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c "Set :CFBundleName WhisperKiller Dev" "$APP_BUNDLE/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName WhisperKiller Dev" "$APP_BUNDLE/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.whisperkiller.app.dev" "$bundle_path/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleName WhisperKiller Dev" "$bundle_path/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName WhisperKiller Dev" "$bundle_path/Contents/Info.plist"
 
     if [ -d "$PROFANITY_DIR" ]; then
-        mkdir -p "$APP_BUNDLE/Contents/Resources/Resources"
-        rm -rf "$APP_BUNDLE/Contents/Resources/Resources/Profanity"
-        ditto --norsrc --noextattr "$PROFANITY_DIR" "$APP_BUNDLE/Contents/Resources/Resources/Profanity"
+        mkdir -p "$bundle_path/Contents/Resources/Resources"
+        ditto --norsrc --noextattr "$PROFANITY_DIR" "$bundle_path/Contents/Resources/Resources/Profanity"
     fi
 
     if [ -f "$ICON_FILE" ]; then
-        cp "$ICON_FILE" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+        cp "$ICON_FILE" "$bundle_path/Contents/Resources/AppIcon.icns"
     fi
 
-    rm -rf "$APP_BUNDLE/Contents/_CodeSignature"
-    dot_clean -m "$APP_BUNDLE" 2>/dev/null || true
-    find "$APP_BUNDLE" -name '._*' -delete
-    xattr -cr "$APP_BUNDLE" 2>/dev/null || true
+    dot_clean -m "$bundle_path" 2>/dev/null || true
+    find "$bundle_path" -name '._*' -delete
+    xattr -cr "$bundle_path" 2>/dev/null || true
 
     signing_identity="$(resolve_signing_identity)"
     if [ -n "$signing_identity" ]; then
@@ -74,7 +77,7 @@ prepare_bundle() {
             --deep \
             --entitlements "$ENTITLEMENTS" \
             --sign "$signing_identity" \
-            "$APP_BUNDLE"
+            "$bundle_path"
     else
         echo "⚠️  Apple Development identity not found; using stable-path ad-hoc signing."
         codesign \
@@ -82,10 +85,10 @@ prepare_bundle() {
             --deep \
             --entitlements "$ENTITLEMENTS" \
             --sign - \
-            "$APP_BUNDLE"
+            "$bundle_path"
     fi
 
-    codesign --verify --deep --strict "$APP_BUNDLE"
+    codesign --verify --deep --strict "$bundle_path"
 }
 
 build_bundle() {
@@ -93,12 +96,12 @@ build_bundle() {
 
     echo ""
     echo "🔨 Building incremental debug app..."
-    if ! (cd "$ROOT_DIR" && swift build -c debug --product WhisperKiller); then
+    if ! (cd "$ROOT_DIR" && swift build -c debug --product WhisperKiller --disable-keychain --disable-netrc); then
         echo "❌ Build failed. The last working dev instance is still running."
         return 1
     fi
 
-    if ! bin_dir="$(cd "$ROOT_DIR" && swift build -c debug --show-bin-path)"; then
+    if ! bin_dir="$(cd "$ROOT_DIR" && swift build -c debug --show-bin-path --disable-keychain --disable-netrc)"; then
         echo "❌ Could not resolve the SwiftPM debug output path."
         return 1
     fi
@@ -109,10 +112,29 @@ build_bundle() {
         return 1
     fi
 
-    if ! prepare_bundle "$binary_path"; then
+    if ! prepare_bundle "$binary_path" "$STAGED_APP_BUNDLE"; then
         echo "❌ Bundle preparation failed. The last working dev instance is still running."
         return 1
     fi
+}
+
+activate_staged_bundle() {
+    stop_dev_app
+
+    rm -rf "$PREVIOUS_APP_BUNDLE"
+    if [ -d "$APP_BUNDLE" ]; then
+        mv "$APP_BUNDLE" "$PREVIOUS_APP_BUNDLE"
+    fi
+
+    if ! mv "$STAGED_APP_BUNDLE" "$APP_BUNDLE"; then
+        echo "❌ Could not activate the staged dev bundle."
+        if [ -d "$PREVIOUS_APP_BUNDLE" ]; then
+            mv "$PREVIOUS_APP_BUNDLE" "$APP_BUNDLE"
+        fi
+        return 1
+    fi
+
+    rm -rf "$PREVIOUS_APP_BUNDLE"
 }
 
 stop_dev_app() {
@@ -136,7 +158,6 @@ stop_dev_app() {
 }
 
 launch_dev_app() {
-    stop_dev_app
     echo "🚀 Launching $APP_BUNDLE"
     WHISPERKILLER_DEV=1 "$APP_EXECUTABLE" &
     APP_PID="$!"
@@ -147,6 +168,7 @@ cleanup() {
     echo ""
     echo "🛑 Stopping WhisperKiller Dev..."
     stop_dev_app
+    rm -rf "$STAGED_APP_BUNDLE" "$PREVIOUS_APP_BUNDLE"
     rm -f "$LOCK_DIR/pid"
     rmdir "$LOCK_DIR" 2>/dev/null || true
 }
@@ -194,7 +216,7 @@ main() {
     echo "⌨️  Press Ctrl+C to stop"
 
     last_fingerprint="$(source_fingerprint)"
-    if build_bundle; then
+    if build_bundle && activate_staged_bundle; then
         launch_dev_app
     fi
 
@@ -208,7 +230,7 @@ main() {
         sleep 0.2
         last_fingerprint="$(source_fingerprint)"
         echo "♻️  Source change detected"
-        if build_bundle; then
+        if build_bundle && activate_staged_bundle; then
             launch_dev_app
         fi
     done

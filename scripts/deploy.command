@@ -46,7 +46,7 @@ sleep 1
 
 # 3. Build release
 echo "📦 Building release version $VERSION..."
-bash scripts/swift_build_with_progress.sh swift build -c release --arch arm64
+bash scripts/swift_build_with_progress.sh swift build -c release --arch arm64 --disable-keychain --disable-netrc
 
 if [ $? -eq 0 ]; then
     echo "✅ Build successful!"

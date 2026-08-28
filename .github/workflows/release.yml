@@ -21,7 +21,7 @@ jobs:
         run: xcodebuild -version
 
       - name: Test
-        run: swift test
+        run: swift test --disable-keychain --disable-netrc
 
       - name: Clean DerivedData
         run: rm -rf ~/Library/Developer/Xcode/DerivedData
@@ -37,7 +37,7 @@ jobs:
 
       - name: Build App
         run: |
-          swift build -c release
+          swift build -c release --disable-keychain --disable-netrc
           mkdir -p WhisperKiller.app/Contents/MacOS
           mkdir -p WhisperKiller.app/Contents/Resources
 

@@ -21,7 +21,7 @@ install: verify
 # Verify release build used for GitHub Releases
 verify:
 	@echo "🧪 Running tests..."
-	@swift test
+	@swift test --disable-keychain --disable-netrc
 	@echo "🔍 Verifying release build..."
-	@bash scripts/swift_build_with_progress.sh swift build -c release
+	@bash scripts/swift_build_with_progress.sh swift build -c release --disable-keychain --disable-netrc
 	@echo "✅ Release build succeeded"
