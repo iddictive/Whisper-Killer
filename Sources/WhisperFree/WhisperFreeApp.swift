@@ -403,9 +403,14 @@ final class SettingsWindowController: NSObject {
         let appState = AppState.shared
         let view = SettingsView(modelManager: appState.modelManager, recorder: appState.recorder).environmentObject(appState)
         let hostingView = NSHostingView(rootView: view)
+        let baseStyleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
+        let framePreservingContentSize = NSWindow.frameRect(
+            forContentRect: NSRect(origin: .zero, size: AppWindowGeometry.standardContentSize),
+            styleMask: baseStyleMask
+        )
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: AppWindowGeometry.standardContentSize),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: framePreservingContentSize,
+            styleMask: baseStyleMask.union(.fullSizeContentView),
             backing: .buffered,
             defer: false
         )
@@ -413,8 +418,7 @@ final class SettingsWindowController: NSObject {
         window.contentView = hostingView
         window.title = ""
         window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = false
-        window.titlebarSeparatorStyle = .none
+        window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.backgroundColor = .clear

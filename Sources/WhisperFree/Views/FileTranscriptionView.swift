@@ -103,7 +103,6 @@ struct FileTranscriptionView: View {
                 bottomBar
             }
         }
-        .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(L.tr("File Transcription", "Транскрибация файла"))

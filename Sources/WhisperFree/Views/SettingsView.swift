@@ -220,7 +220,6 @@ struct SettingsView: View {
             modelManager.refreshDownloadedModels()
             appState.refreshCloudTranscriptionModelsIfNeeded()
         }
-        .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(columnTitle)

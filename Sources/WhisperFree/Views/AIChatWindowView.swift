@@ -34,7 +34,6 @@ struct AIChatWindowView: View {
             }
         }
         .frame(minWidth: 680, minHeight: 460)
-        .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("AI Chat")
