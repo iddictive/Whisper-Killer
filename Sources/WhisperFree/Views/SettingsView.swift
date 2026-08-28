@@ -7,6 +7,7 @@ struct SettingsView: View {
     @ObservedObject var recorder: AudioRecorder
     @ObservedObject private var updater = GitHubUpdater.shared
     @ObservedObject private var dependencyInstaller = DependencyInstaller.shared
+    @ObservedObject private var parakeetModelManager = ParakeetModelManager.shared
     @ObservedObject private var launchAtLogin = LaunchAtLoginManager.shared
     @State private var selectedTab: String? = "app"
 
@@ -216,6 +217,7 @@ struct SettingsView: View {
         .onAppear {
             dependencyInstaller.refreshHomebrewStatus()
             dependencyInstaller.refreshQwenASRStatus()
+            parakeetModelManager.refresh()
             launchAtLogin.refresh()
             modelManager.refreshDownloadedModels()
             appState.refreshCloudTranscriptionModelsIfNeeded()
@@ -680,7 +682,7 @@ struct SettingsView: View {
                     }
                     appState.saveSettings()
                 } label: {
-                    Text(type.localizedTitle)
+                    Text(type.localizedShortTitle)
                         .font(.system(size: 12, weight: appState.settings.engineType == type ? .semibold : .regular))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
@@ -693,6 +695,7 @@ struct SettingsView: View {
                         )
                 }
                 .buttonStyle(.swPlainInteractive)
+                .disabled(type == .parakeet && !ParakeetTranscriber.isAppleSilicon)
 
                 if type != TranscriptionEngineType.allCases.last {
                     Divider()
@@ -757,7 +760,7 @@ struct SettingsView: View {
                         .padding(.horizontal)
                     }
 
-                    if shouldShowOpenAIKeyCard {
+                    if appState.settings.engineType == .cloud {
                         OpenAIAPIKeySettingsCard(
                             apiKey: $appState.settings.apiKey,
                             validationState: apiValidationState,
@@ -794,6 +797,11 @@ struct SettingsView: View {
                             .padding(.horizontal)
                     }
 
+                    if appState.settings.engineType == .parakeet {
+                        ParakeetSettingsCard(manager: parakeetModelManager)
+                            .padding(.horizontal)
+                    }
+
                     if appState.settings.engineType == .gigaAM {
                         gigaAMExperimentCard
                             .padding(.horizontal)
@@ -810,6 +818,19 @@ struct SettingsView: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
+            if shouldShowAIRefinementKeyCard {
+                OpenAIAPIKeySettingsCard(
+                    apiKey: $appState.settings.apiKey,
+                    validationState: apiValidationState,
+                    isValidating: isCheckingOpenAI,
+                    statusText: apiValidationText,
+                    statusColor: apiValidationColor,
+                    diagnosticText: networkDiagnosticText,
+                    onValidate: checkOpenAI,
+                    onChanged: handleAPIKeyChanged
+                )
+            }
+
             AIConfigView(settings: $appState.settings, onSave: { appState.saveSettings() })
                 .padding()
                 .background(Color.primary.opacity(0.03))
@@ -817,11 +838,11 @@ struct SettingsView: View {
         }
     }
 
-    private var shouldShowOpenAIKeyCard: Bool {
-        appState.settings.engineType == .cloud ||
+    private var shouldShowAIRefinementKeyCard: Bool {
+        appState.settings.engineType != .cloud && (
         appState.settings.enablePostProcessing ||
         appState.settings.enableSpeakerDiarization ||
-        appState.settings.hasOpenAIAPIKey
+        appState.settings.hasOpenAIAPIKey)
     }
 
     private var integrationsSection: some View {
@@ -990,14 +1011,10 @@ struct SettingsView: View {
                         Text(model.localizedResourceDescription)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                        if let size = modelManager.qwenModelFileSize(model) {
-                            Text(modelPartial ? L.tr("Partial: \(size)", "Частично: \(size)") : L.tr("Cached: \(size)", "В кэше: \(size)"))
+                        if modelPartial, let size = modelManager.qwenModelFileSize(model) {
+                            Text(L.tr("Partial: \(size)", "Частично: \(size)"))
                                 .font(.system(size: 10))
-                                .foregroundStyle(modelPartial ? .orange : .secondary)
-                        } else if modelDownloading {
-                            Text(L.tr("Downloading...", "Скачивается..."))
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.orange)
                         }
                     }
 

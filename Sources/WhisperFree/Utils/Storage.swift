@@ -179,6 +179,17 @@ final class Storage {
         return dir
     }
 
+    static var parakeetDirectory: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let dir = appSupport.appendingPathComponent("WhisperKiller/Parakeet", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    static var parakeetModelDirectory: URL {
+        parakeetDirectory.appendingPathComponent("parakeet-tdt-0.6b-v3", isDirectory: true)
+    }
+
     static var recordingsDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let dir = appSupport.appendingPathComponent("WhisperKiller/Recordings", isDirectory: true)

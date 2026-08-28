@@ -398,6 +398,7 @@ enum TranscriptionEngineType: String, Codable, CaseIterable {
     case cloud = "Cloud (OpenAI)"
     case local = "Local (whisper.cpp)"
     case qwenASR = "Local (Qwen3-ASR MLX)"
+    case parakeet = "Local (Parakeet TDT v3)"
     case gigaAM = "Experimental GigaAM Russian"
 
     var icon: String {
@@ -405,6 +406,7 @@ enum TranscriptionEngineType: String, Codable, CaseIterable {
         case .cloud: return "cloud"
         case .local: return "desktopcomputer"
         case .qwenASR: return "waveform.and.magnifyingglass"
+        case .parakeet: return "bird.fill"
         case .gigaAM: return "waveform.badge.magnifyingglass"
         }
     }

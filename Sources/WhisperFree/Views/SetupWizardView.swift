@@ -5,6 +5,7 @@ struct SetupWizardView: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var modelManager: ModelManager
     @ObservedObject private var dependencyInstaller = DependencyInstaller.shared
+    @ObservedObject private var parakeetModelManager = ParakeetModelManager.shared
     var onComplete: () -> Void
 
     @State private var currentStep = 0
@@ -96,6 +97,7 @@ struct SetupWizardView: View {
             selectedEngine = appState.settings.engineType
             selectedModel = LocalModelSize.recommended
             selectedQwenModel = appState.settings.qwenASRModel
+            parakeetModelManager.refresh()
             animateGlow = true
         }
         .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
@@ -528,10 +530,11 @@ struct SetupWizardView: View {
     private var engineStep: some View {
         VStack(spacing: 14) {
             // Engine picker
-            HStack(spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                 enginePill(type: .cloud, icon: "cloud.fill", label: "Cloud")
-                enginePill(type: .local, icon: "desktopcomputer", label: "Local")
+                enginePill(type: .local, icon: "desktopcomputer", label: "Whisper")
                 enginePill(type: .qwenASR, icon: TranscriptionEngineType.qwenASR.icon, label: "Qwen")
+                enginePill(type: .parakeet, icon: TranscriptionEngineType.parakeet.icon, label: "Parakeet")
                 enginePill(type: .gigaAM, icon: TranscriptionEngineType.gigaAM.icon, label: "GigaAM")
             }
 
@@ -542,6 +545,8 @@ struct SetupWizardView: View {
                 localEngineCard
             } else if selectedEngine == .qwenASR {
                 qwenEngineCard
+            } else if selectedEngine == .parakeet {
+                parakeetEngineCard
             } else {
                 gigaAMEngineCard
             }
@@ -568,6 +573,7 @@ struct SetupWizardView: View {
             )
         }
         .buttonStyle(.swPlainInteractive)
+        .disabled(type == .parakeet && !ParakeetTranscriber.isAppleSilicon)
     }
 
     private var cloudEngineCard: some View {
@@ -629,6 +635,36 @@ struct SetupWizardView: View {
             Text(L.tr("Russian-focused recognition for comparison runs.", "Распознавание под русский для сравнительных прогонов."))
                 .font(.system(size: 11))
                 .foregroundStyle(textSecondary)
+        }
+        .padding(16)
+        .background(bgCard)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
+    }
+
+    private var parakeetEngineCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: TranscriptionEngineType.parakeet.icon)
+                    .foregroundStyle(Color.accentColor)
+                    .font(.system(size: 11))
+                Text(L.tr("Fast · Core ML · Offline", "Быстро · Core ML · Офлайн"))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(textSecondary)
+            }
+
+            tagRow(items: [
+                ("waveform", "Parakeet TDT v3", Color.accentColor),
+                ("memorychip", L.tr("Apple Silicon", "Apple Silicon"), textSecondary),
+                ("arrow.down.circle", L.tr("~460 MB download", "Загрузка ~460 МБ"), .orange),
+            ])
+
+            Text(L.tr(
+                "Download the model later in Settings → Engine.",
+                "Скачайте модель позже в Настройки → Движок."
+            ))
+            .font(.system(size: 11))
+            .foregroundStyle(textSecondary)
         }
         .padding(16)
         .background(bgCard)
@@ -1038,6 +1074,9 @@ struct SetupWizardView: View {
                     readyRow("Apple Silicon", ok: QwenASRTranscriber.isAppleSilicon)
                     readyRow("Qwen3-ASR setup", ok: QwenASRTranscriber.isRuntimeInstalled)
                     readyRow("\(L.tr("Model", "Модель")): \(selectedQwenModel.modelID)", ok: modelManager.isQwenModelDownloaded(selectedQwenModel))
+                } else if selectedEngine == .parakeet {
+                    readyRow("Apple Silicon", ok: ParakeetTranscriber.isAppleSilicon)
+                    readyRow("Parakeet TDT v3", ok: parakeetModelManager.isModelInstalled)
                 } else {
                     readyRow("Python 3", ok: GigaAMTranscriber.findPythonBinary() != nil)
                     readyRow("GigaAM-v3", ok: true)

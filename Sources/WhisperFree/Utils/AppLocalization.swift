@@ -156,6 +156,7 @@ extension TranscriptionEngineType {
         case .cloud: return L.tr("Cloud (OpenAI)", "Облако (OpenAI)")
         case .local: return L.tr("Local (whisper.cpp)", "Локально (whisper.cpp)")
         case .qwenASR: return L.tr("Local (Qwen3-ASR MLX)", "Локально (Qwen3-ASR MLX)")
+        case .parakeet: return L.tr("Local (Parakeet TDT v3)", "Локально (Parakeet TDT v3)")
         case .gigaAM: return L.tr("GigaAM Russian", "GigaAM русский")
         }
     }
@@ -163,8 +164,9 @@ extension TranscriptionEngineType {
     var localizedShortTitle: String {
         switch self {
         case .cloud: return L.tr("Cloud", "Облако")
-        case .local: return L.tr("Local", "Локально")
+        case .local: return "Whisper"
         case .qwenASR: return "Qwen3-ASR"
+        case .parakeet: return "Parakeet"
         case .gigaAM: return "GigaAM"
         }
     }
@@ -182,13 +184,13 @@ extension QwenASRModel {
         switch self {
         case .fast:
             return L.tr(
-                "~1.9 GB download · ~1.2 GB RAM · speed-first Qwen model",
-                "~1,9 ГБ загрузка · ~1,2 ГБ RAM · Qwen-модель с приоритетом скорости"
+                "~1.9 GB download · ~1.2 GB RAM",
+                "~1,9 ГБ загрузка · ~1,2 ГБ RAM"
             )
         case .quality:
             return L.tr(
-                "~4.7 GB download · ~3.4 GB RAM · accuracy-first Qwen model",
-                "~4,7 ГБ загрузка · ~3,4 ГБ RAM · Qwen-модель с приоритетом точности"
+                "~4.7 GB download · ~3.4 GB RAM",
+                "~4,7 ГБ загрузка · ~3,4 ГБ RAM"
             )
         }
     }

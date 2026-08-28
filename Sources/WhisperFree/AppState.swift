@@ -957,6 +957,16 @@ final class AppState: ObservableObject {
             return false
         }
 
+        if settings.engineType == .parakeet && !ParakeetTranscriber.isAppleSilicon {
+            showError("Parakeet TDT v3 requires Apple Silicon. Choose another local engine in Settings.")
+            return false
+        }
+
+        if settings.engineType == .parakeet && !ParakeetModelManager.shared.isModelInstalled {
+            showError("Parakeet TDT v3 is not downloaded. Go to Settings → Engine to download it.")
+            return false
+        }
+
         if settings.engineType == .gigaAM && GigaAMTranscriber.findPythonBinary() == nil {
             showError("Python 3 not found. Install Python 3, then install the GigaAM packages in Settings → Engine & API.")
             return false
@@ -1005,6 +1015,10 @@ final class AppState: ObservableObject {
     }
 
     private func initialTranscriptionStage(for settings: AppSettings) -> ProcessingStage {
+        if settings.engineType == .parakeet {
+            return .preparing
+        }
+
         guard settings.engineType == .qwenASR else {
             return .transcribing
         }
@@ -1396,7 +1410,7 @@ final class AppState: ObservableObject {
             let lang = settings.language == "auto" ? nil : settings.language
             let engineType = settings.engineType
             rawText = try await engine.transcribe(audioURL: audioURL, language: lang, timeRange: nil) { [weak self] progress, _ in
-                let stage: ProcessingStage? = engineType == .qwenASR
+                let stage: ProcessingStage? = engineType == .qwenASR || engineType == .parakeet
                     ? (progress < 0.25 ? .preparing : .transcribing)
                     : nil
                 Task { @MainActor in

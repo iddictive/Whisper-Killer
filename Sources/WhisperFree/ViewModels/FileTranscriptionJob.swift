@@ -77,6 +77,8 @@ struct TranscriptionRunProvenance: Equatable {
             return TranscriptionEngineType.local.localizedShortTitle
         case .qwenASR:
             return TranscriptionEngineType.qwenASR.localizedShortTitle
+        case .parakeet:
+            return TranscriptionEngineType.parakeet.localizedShortTitle
         case .gigaAM:
             return TranscriptionEngineType.gigaAM.localizedShortTitle
         case .cloud:
@@ -254,7 +256,7 @@ final class QueueItem: ObservableObject, Identifiable {
                         self.progress = p
                         let isLocalRuntime = runSettings.engineType != .cloud
 
-                        if runSettings.engineType == .qwenASR && p < 0.25 {
+                        if (runSettings.engineType == .qwenASR || runSettings.engineType == .parakeet) && p < 0.25 {
                             self.status = .preparing
                         } else if p < (isLocalRuntime ? 0.15 : 0.10) {
                             self.status = .extracting

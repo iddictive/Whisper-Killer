@@ -285,6 +285,15 @@ struct FileTranscriptionView: View {
             .disabled(!QwenASRTranscriber.isAppleSilicon)
 
             Button {
+                appState.settings.engineType = .parakeet
+                appState.saveSettings()
+                updateVisibleCosts()
+            } label: {
+                Label(L.tr("Local (Parakeet TDT v3)", "Локально (Parakeet TDT v3)"), systemImage: TranscriptionEngineType.parakeet.icon)
+            }
+            .disabled(!ParakeetTranscriber.isAppleSilicon)
+
+            Button {
                 appState.settings.engineType = .gigaAM
                 appState.settings.language = "ru"
                 appState.saveSettings()
@@ -1298,6 +1307,7 @@ private extension TranscriptionEngineType {
         case .cloud: return "cloud.fill"
         case .local: return "cpu"
         case .qwenASR: return icon
+        case .parakeet: return icon
         case .gigaAM: return icon
         }
     }

@@ -65,6 +65,8 @@ struct TranscriptionEngineFactory {
             return LocalWhisper(modelSize: settings.localModelSize)
         case .qwenASR:
             return QwenASRTranscriber(model: settings.qwenASRModel)
+        case .parakeet:
+            return ParakeetTranscriber()
         case .gigaAM:
             return GigaAMTranscriber()
         }

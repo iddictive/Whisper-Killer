@@ -10,11 +10,13 @@ let package = Package(
         .executable(name: "WhisperKiller", targets: ["WhisperKiller"])
     ],
     dependencies: [
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.15.6")
     ],
     targets: [
         .executableTarget(
             name: "WhisperKiller",
             dependencies: [
+                .product(name: "FluidAudio", package: "FluidAudio")
             ],
             path: "Sources/WhisperFree",
             exclude: [

@@ -24,7 +24,7 @@
 
 > macOS menu bar app for dictation, file transcription, transcript cleanup, and meeting summaries.
 
-WhisperKiller turns a global shortcut into speech-to-text for daily writing and audio files. It can run locally through `whisper.cpp` or Qwen3-ASR, use current OpenAI transcription models in the cloud, or use GigaAM for Russian ASR experiments. Cloud features use your own OpenAI API key.
+WhisperKiller turns a global shortcut into speech-to-text for daily writing and audio files. It can run locally through `whisper.cpp`, Qwen3-ASR, or Parakeet TDT v3, use current OpenAI transcription models in the cloud, or use GigaAM for Russian ASR experiments. Cloud features use your own OpenAI API key.
 
 Current release: **3.43**
 
@@ -55,9 +55,12 @@ Current release: **3.43**
 | --- | --- | --- |
 | Local Whisper | Offline dictation and file transcription | `brew install whisper-cpp` plus a downloaded Whisper model |
 | Qwen3-ASR MLX | Local transcription on Apple Silicon; 0.6B for speed or 1.7B for higher multilingual accuracy | App-managed Python/MLX runtime and a downloaded Qwen3-ASR model |
+| Parakeet TDT v3 | Fast offline multilingual transcription through Core ML | Apple Silicon and a one-time ~460 MiB model download |
 | OpenAI transcription | Cloud transcription runs | OpenAI API key |
 | GigaAM Russian | Experimental Russian ASR | Python runtime and GigaAM packages |
 | Ollama follow-up | Local follow-up summaries where configured | Ollama installed locally |
+
+Parakeet integration uses [FluidAudio](https://github.com/FluidInference/FluidAudio) under Apache-2.0. The downloaded [Parakeet TDT v3 Core ML model](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml) is derived from NVIDIA Parakeet and licensed under CC BY 4.0.
 
 ## Languages
 
@@ -108,7 +111,7 @@ replace `/Applications/WhisperKiller.app`, or reset macOS permissions.
 
 > macOS menu bar приложение для диктовки, транскрибации файлов, очистки текста и саммари встреч.
 
-WhisperKiller превращает глобальную горячую клавишу в speech-to-text для повседневного письма и аудиофайлов. Приложение может работать локально через `whisper.cpp` или Qwen3-ASR, использовать актуальные модели транскрибации OpenAI в облаке либо GigaAM для экспериментального русского ASR. Облачные функции работают через ваш OpenAI API key.
+WhisperKiller превращает глобальную горячую клавишу в speech-to-text для повседневного письма и аудиофайлов. Приложение может работать локально через `whisper.cpp`, Qwen3-ASR или Parakeet TDT v3, использовать актуальные модели транскрибации OpenAI в облаке либо GigaAM для экспериментального русского ASR. Облачные функции работают через ваш OpenAI API key.
 
 Текущий релиз: **3.43**
 
@@ -139,9 +142,12 @@ WhisperKiller превращает глобальную горячую клав�
 | --- | --- | --- |
 | Local Whisper | Офлайн-диктовка и транскрибация файлов | `brew install whisper-cpp` и скачанная Whisper-модель |
 | Qwen3-ASR MLX | Локальная транскрибация на Apple Silicon; 0.6B для скорости или 1.7B для более высокой мультиязычной точности | Управляемый приложением Python/MLX runtime и скачанная Qwen3-ASR модель |
+| Parakeet TDT v3 | Быстрая офлайн-транскрибация на нескольких языках через Core ML | Apple Silicon и однократная загрузка модели ~460 МиБ |
 | OpenAI transcription | Облачная транскрибация | OpenAI API key |
 | GigaAM Russian | Экспериментальный русский ASR | Python runtime и GigaAM packages |
 | Ollama follow-up | Локальные follow-up саммари, если настроено | Ollama на машине |
+
+Интеграция Parakeet использует [FluidAudio](https://github.com/FluidInference/FluidAudio) по лицензии Apache-2.0. Скачиваемая [Core ML модель Parakeet TDT v3](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml) основана на NVIDIA Parakeet и распространяется по CC BY 4.0.
 
 ## Языки
 

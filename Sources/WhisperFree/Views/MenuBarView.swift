@@ -362,6 +362,7 @@ struct MenuBarView: View {
                         }
                     }
                 }
+                .disabled(type == .parakeet && !ParakeetTranscriber.isAppleSilicon)
             }
         } label: {
             HStack(spacing: 4) {
