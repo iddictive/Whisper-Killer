@@ -414,6 +414,7 @@ final class SettingsWindowController: NSObject {
         window.title = ""
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = false
+        window.titlebarSeparatorStyle = .none
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.backgroundColor = .clear
