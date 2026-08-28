@@ -7,9 +7,11 @@ import FoundationNetworking
 final class CloudWhisper: TranscriptionEngine {
     private let apiKey: String
     private let model: CloudTranscriptionModel
-    private let maxUploadBytes = 25 * 1024 * 1024 // OpenAI 25 MB limit
-    /// Fallback chunk duration when a prepared upload still exceeds OpenAI's file-size limit.
-    private let maxChunkDuration: TimeInterval = 600
+    private static let maxUploadBytes = 25_000_000 // OpenAI 25 MB limit
+    private static let targetUploadBytes = 24_500_000
+    private static let speechSampleRate = 24_000
+    private static let speechBitRates = [64_000, 56_000, 48_000, 40_000, 32_000]
+    private static let containerOverheadFactor = 1.02
 
     init(apiKey: String, model: CloudTranscriptionModel) {
         self.apiKey = apiKey
@@ -36,7 +38,7 @@ final class CloudWhisper: TranscriptionEngine {
         let totalDuration = try await asset.load(.duration).seconds
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: uploadURL.path)[.size] as? Int) ?? 0
 
-        if fileSize > maxUploadBytes {
+        if fileSize > Self.maxUploadBytes {
             print("whisper_debug: ☁️ File needs chunking: \(fileSize) bytes, \(String(format: "%.0f", totalDuration))s duration")
             let result = try await transcribeInChunks(fileURL: uploadURL, totalDuration: totalDuration, language: language, startTime: startTime, onProgress: onProgress)
             onProgress?(1.0, nil)
@@ -57,14 +59,16 @@ final class CloudWhisper: TranscriptionEngine {
 
     /// Splits a long audio file into chunks and transcribes each one sequentially.
     private func transcribeInChunks(fileURL: URL, totalDuration: TimeInterval, language: String?, startTime: Date, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> String {
-        let chunkCount = Int(ceil(totalDuration / maxChunkDuration))
-        print("whisper_debug: ☁️ Splitting into \(chunkCount) chunks of \(Int(maxChunkDuration))s each")
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int) ?? 0
+        let chunkCount = Self.requiredChunkCount(fileSize: fileSize)
+        let chunkDuration = totalDuration / Double(chunkCount)
+        print("whisper_debug: ☁️ Splitting into \(chunkCount) size-based chunks of ~\(Int(chunkDuration))s each")
 
         var allTexts: [String] = []
 
         for i in 0..<chunkCount {
-            let chunkStart = TimeInterval(i) * maxChunkDuration
-            let chunkEnd = min(chunkStart + maxChunkDuration, totalDuration)
+            let chunkStart = TimeInterval(i) * chunkDuration
+            let chunkEnd = i == chunkCount - 1 ? totalDuration : min(chunkStart + chunkDuration, totalDuration)
             let chunkProgress = Float(i) / Float(chunkCount)
             let nextChunkProgress = Float(i + 1) / Float(chunkCount)
 
@@ -94,34 +98,13 @@ final class CloudWhisper: TranscriptionEngine {
         return allTexts.joined(separator: "\n\n")
     }
 
-    /// Export a time-range chunk from an audio file using AVAssetExportSession.
+    /// Export a time-range chunk using the same speech-optimized encoding as the full upload.
     private func exportChunk(from fileURL: URL, start: TimeInterval, end: TimeInterval) async throws -> URL {
-        let asset = AVURLAsset(url: fileURL)
-        let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("chunk_\(UUID().uuidString).m4a")
-
-        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
-            throw TranscriptionError.transcriptionFailed("Cannot create export session for chunking")
-        }
-
-        session.outputURL = outputURL
-        session.outputFileType = .m4a
-        session.timeRange = CMTimeRange(
+        let range = CMTimeRange(
             start: CMTime(seconds: start, preferredTimescale: 44100),
             end: CMTime(seconds: end, preferredTimescale: 44100)
         )
-
-        await session.export()
-
-        if let error = session.error {
-            throw TranscriptionError.transcriptionFailed("Chunk export failed: \(error.localizedDescription)")
-        }
-
-        guard session.status == .completed else {
-            throw TranscriptionError.transcriptionFailed("Chunk export ended with status: \(session.status.rawValue)")
-        }
-
-        return outputURL
+        return try await extractAudioAsM4A(fileURL, timeRange: range, onProgress: nil)
     }
 
     // MARK: - Single Upload
@@ -255,14 +238,14 @@ final class CloudWhisper: TranscriptionEngine {
 
     /// Prepares the audio file for upload, extracting audio from video or compressing if too large.
     /// Returns (URL to upload, shouldCleanup).
-    private func prepareAudioFile(_ inputURL: URL, timeRange: CMTimeRange?, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> (URL, Bool) {
+    func prepareAudioFile(_ inputURL: URL, timeRange: CMTimeRange?, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> (URL, Bool) {
         let ext = inputURL.pathExtension.lowercased()
         let videoExtensions = Set(["mp4", "mov", "m4v", "avi", "mkv", "webm"])
         let isVideo = videoExtensions.contains(ext)
 
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: inputURL.path)[.size] as? Int) ?? 0
 
-        if !isVideo && fileSize < maxUploadBytes && timeRange == nil {
+        if !isVideo && fileSize < Self.maxUploadBytes && timeRange == nil {
             // Small audio file and no trimming — upload directly
             print("whisper_debug: ☁️ File is small audio (\(fileSize) bytes), uploading directly")
             return (inputURL, false)
@@ -277,53 +260,174 @@ final class CloudWhisper: TranscriptionEngine {
         return (outputURL, true)
     }
 
-    /// Extracts audio from any media file using AVAssetExportSession (reliable, handles all codecs).
-    private func extractAudioAsM4A(_ inputURL: URL, timeRange: CMTimeRange?, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> URL {
+    /// Extracts speech audio as mono AAC at the highest bitrate that fits the upload budget.
+    func extractAudioAsM4A(_ inputURL: URL, timeRange: CMTimeRange?, onProgress: ((Float, TimeInterval?) -> Void)?) async throws -> URL {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("cloud_audio_\(UUID().uuidString).m4a")
 
         let asset = AVURLAsset(url: inputURL)
+        let duration = if let timeRange {
+            timeRange.duration.seconds
+        } else {
+            try await asset.load(.duration).seconds
+        }
+
+        guard duration.isFinite, duration > 0 else {
+            throw TranscriptionError.transcriptionFailed("Audio is empty")
+        }
 
         // Verify that there is an audio track
-        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-        guard !audioTracks.isEmpty else {
+        guard let audioTrack = try await asset.loadTracks(withMediaType: .audio).first else {
             throw TranscriptionError.transcriptionFailed("No audio track found in file")
         }
 
-        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
-            throw TranscriptionError.transcriptionFailed("Cannot create AVAssetExportSession")
+        let reader = try AVAssetReader(asset: asset)
+        if let timeRange {
+            reader.timeRange = timeRange
         }
 
-        session.outputURL = outputURL
-        session.outputFileType = .m4a
-        
-        if let range = timeRange {
-            session.timeRange = range
+        let readerSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: Self.speechSampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false
+        ]
+        let trackOutput = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: readerSettings)
+        guard reader.canAdd(trackOutput) else {
+            throw TranscriptionError.transcriptionFailed("Cannot read the audio track")
         }
+        reader.add(trackOutput)
 
-        // Report progress during extraction
-        let progressTask = Task {
-            while !Task.isCancelled {
-                let p = session.progress
-                // Map extraction to 2–10% of total progress
-                onProgress?(0.02 + p * 0.08, nil)
-                try await Task.sleep(nanoseconds: 200_000_000) // 200ms
+        let bitRate = Self.speechBitRate(for: duration)
+        let writerSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: Self.speechSampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: bitRate,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+        ]
+        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .m4a)
+        let writerInput = AVAssetWriterInput(mediaType: .audio, outputSettings: writerSettings)
+        writerInput.expectsMediaDataInRealTime = false
+        guard writer.canAdd(writerInput) else {
+            throw TranscriptionError.transcriptionFailed("Cannot encode the audio track")
+        }
+        writer.add(writerInput)
+
+        guard reader.startReading() else {
+            throw TranscriptionError.transcriptionFailed(reader.error?.localizedDescription ?? "Audio reading failed")
+        }
+        guard writer.startWriting() else {
+            reader.cancelReading()
+            throw TranscriptionError.transcriptionFailed(writer.error?.localizedDescription ?? "Audio encoding failed")
+        }
+        writer.startSession(atSourceTime: timeRange?.start ?? .zero)
+
+        final class EncodingContext: @unchecked Sendable {
+            let reader: AVAssetReader
+            let writer: AVAssetWriter
+            let writerInput: AVAssetWriterInput
+            let trackOutput: AVAssetReaderTrackOutput
+            let duration: TimeInterval
+            let startTime: TimeInterval
+            let onProgress: ((Float, TimeInterval?) -> Void)?
+            var didResume = false
+
+            init(
+                reader: AVAssetReader,
+                writer: AVAssetWriter,
+                writerInput: AVAssetWriterInput,
+                trackOutput: AVAssetReaderTrackOutput,
+                duration: TimeInterval,
+                startTime: TimeInterval,
+                onProgress: ((Float, TimeInterval?) -> Void)?
+            ) {
+                self.reader = reader
+                self.writer = writer
+                self.writerInput = writerInput
+                self.trackOutput = trackOutput
+                self.duration = duration
+                self.startTime = startTime
+                self.onProgress = onProgress
             }
         }
 
-        await session.export()
-        progressTask.cancel()
+        let context = EncodingContext(
+            reader: reader,
+            writer: writer,
+            writerInput: writerInput,
+            trackOutput: trackOutput,
+            duration: duration,
+            startTime: timeRange?.start.seconds ?? 0,
+            onProgress: onProgress
+        )
 
-        if let error = session.error {
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let queue = DispatchQueue(label: "cloudSpeechAudioEncodeQueue", qos: .userInitiated)
+                context.writerInput.requestMediaDataWhenReady(on: queue) {
+                    while context.writerInput.isReadyForMoreMediaData {
+                        if let buffer = context.trackOutput.copyNextSampleBuffer() {
+                            let timestamp = CMSampleBufferGetPresentationTimeStamp(buffer).seconds
+                            let relativeTime = max(0, timestamp - context.startTime)
+                            let progress = Float(min(1, relativeTime / context.duration))
+                            context.onProgress?(0.02 + progress * 0.08, nil)
+
+                            if !context.writerInput.append(buffer) {
+                                guard !context.didResume else { return }
+                                context.didResume = true
+                                continuation.resume(throwing: context.writer.error ?? TranscriptionError.transcriptionFailed("Audio encoding failed"))
+                                return
+                            }
+                        } else {
+                            guard !context.didResume else { return }
+                            context.didResume = true
+                            context.writerInput.markAsFinished()
+                            if let error = context.reader.error ?? context.writer.error {
+                                continuation.resume(throwing: error)
+                            } else {
+                                continuation.resume()
+                            }
+                            return
+                        }
+                    }
+                }
+            }
+
+            await writer.finishWriting()
+        } catch {
+            reader.cancelReading()
+            writer.cancelWriting()
+            try? FileManager.default.removeItem(at: outputURL)
             throw TranscriptionError.transcriptionFailed("Audio extraction failed: \(error.localizedDescription)")
         }
 
-        guard session.status == .completed else {
-            throw TranscriptionError.transcriptionFailed("Audio extraction ended with status: \(session.status.rawValue)")
+        guard writer.status == .completed else {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw TranscriptionError.transcriptionFailed(writer.error?.localizedDescription ?? "Audio encoding did not complete")
         }
 
         onProgress?(0.10, nil)
+        let outputSize = (try? FileManager.default.attributesOfItem(atPath: outputURL.path)[.size] as? Int) ?? 0
+        print("whisper_debug: ☁️ Encoded speech audio at \(bitRate) bps mono/\(Self.speechSampleRate) Hz: \(outputSize) bytes")
         return outputURL
+    }
+
+    static func speechBitRate(for duration: TimeInterval) -> Int {
+        guard duration.isFinite, duration > 0 else { return speechBitRates.last! }
+
+        return speechBitRates.first { bitRate in
+            let projectedBytes = duration * Double(bitRate) / 8 * containerOverheadFactor
+            return projectedBytes <= Double(targetUploadBytes)
+        } ?? speechBitRates.last!
+    }
+
+    static func requiredChunkCount(fileSize: Int) -> Int {
+        guard fileSize > 0 else { return 1 }
+        return max(1, Int(ceil(Double(fileSize) / Double(targetUploadBytes))))
     }
 
     // MARK: - Helpers
