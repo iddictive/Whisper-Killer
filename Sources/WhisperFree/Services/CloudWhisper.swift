@@ -251,13 +251,131 @@ final class CloudWhisper: TranscriptionEngine {
             return (inputURL, false)
         }
 
-        // Extract audio track using AVAssetExportSession (reliable for all codecs)
+        // A compatible compressed audio track does not need another lossy encode.
+        // Remuxing keeps its original packets and is substantially faster for short videos.
+        if let passthroughURL = try await extractPassthroughM4AIfEligible(
+            inputURL,
+            timeRange: timeRange,
+            onProgress: onProgress
+        ) {
+            let outputSize = (try? FileManager.default.attributesOfItem(atPath: passthroughURL.path)[.size] as? Int) ?? 0
+            print("whisper_debug: ☁️ Remuxed original audio without re-encoding: \(outputSize) bytes")
+            return (passthroughURL, true)
+        }
+
+        // Decode and encode only when the original track cannot be safely remuxed under the limit.
         print("whisper_debug: ☁️ Extracting/compressing audio from \(ext) file (\(fileSize) bytes)...")
         let outputURL = try await extractAudioAsM4A(inputURL, timeRange: timeRange, onProgress: onProgress)
         let outputSize = (try? FileManager.default.attributesOfItem(atPath: outputURL.path)[.size] as? Int) ?? 0
         print("whisper_debug: ☁️ Extracted audio: \(outputSize) bytes")
 
         return (outputURL, true)
+    }
+
+    /// Copies a compatible compressed audio track into an M4A container when it is predicted
+    /// to fit comfortably below the upload limit. Returns nil when re-encoding is required.
+    private func extractPassthroughM4AIfEligible(
+        _ inputURL: URL,
+        timeRange: CMTimeRange?,
+        onProgress: ((Float, TimeInterval?) -> Void)?
+    ) async throws -> URL? {
+        do {
+            return try await attemptPassthroughM4A(
+                inputURL,
+                timeRange: timeRange,
+                onProgress: onProgress
+            )
+        } catch {
+            if Task.isCancelled || error is CancellationError {
+                throw CancellationError()
+            }
+            return nil
+        }
+    }
+
+    private func attemptPassthroughM4A(
+        _ inputURL: URL,
+        timeRange: CMTimeRange?,
+        onProgress: ((Float, TimeInterval?) -> Void)?
+    ) async throws -> URL? {
+        let asset = AVURLAsset(url: inputURL)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        guard let audioTrack = audioTracks.first else {
+            return nil
+        }
+
+        let duration = if let timeRange {
+            timeRange.duration.seconds
+        } else {
+            try await asset.load(.duration).seconds
+        }
+        let estimatedDataRate = Double(try await audioTrack.load(.estimatedDataRate))
+        guard duration.isFinite, duration > 0, estimatedDataRate > 0 else {
+            return nil
+        }
+
+        guard Self.isPassthroughEligible(
+            audioTrackCount: audioTracks.count,
+            duration: duration,
+            estimatedDataRate: estimatedDataRate
+        ) else {
+            return nil
+        }
+
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough),
+              session.supportedFileTypes.contains(.m4a) else {
+            return nil
+        }
+
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cloud_audio_passthrough_\(UUID().uuidString).m4a")
+        session.outputURL = outputURL
+        session.outputFileType = .m4a
+        if let timeRange {
+            session.timeRange = timeRange
+        }
+
+        final class PassthroughExportContext: @unchecked Sendable {
+            let session: AVAssetExportSession
+
+            init(session: AVAssetExportSession) {
+                self.session = session
+            }
+        }
+        let context = PassthroughExportContext(session: session)
+
+        let progressTask = Task {
+            while !Task.isCancelled {
+                onProgress?(0.02 + context.session.progress * 0.08, nil)
+                try await Task.sleep(nanoseconds: 200_000_000)
+            }
+        }
+
+        await withTaskCancellationHandler {
+            await context.session.export()
+        } onCancel: {
+            context.session.cancelExport()
+        }
+        progressTask.cancel()
+
+        if Task.isCancelled {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw CancellationError()
+        }
+
+        guard session.status == .completed else {
+            try? FileManager.default.removeItem(at: outputURL)
+            return nil
+        }
+
+        let outputSize = (try? FileManager.default.attributesOfItem(atPath: outputURL.path)[.size] as? Int) ?? 0
+        guard outputSize > 0, outputSize <= Self.targetUploadBytes else {
+            try? FileManager.default.removeItem(at: outputURL)
+            return nil
+        }
+
+        onProgress?(0.10, nil)
+        return outputURL
     }
 
     /// Extracts speech audio as mono AAC at the highest bitrate that fits the upload budget.
@@ -428,6 +546,22 @@ final class CloudWhisper: TranscriptionEngine {
     static func requiredChunkCount(fileSize: Int) -> Int {
         guard fileSize > 0 else { return 1 }
         return max(1, Int(ceil(Double(fileSize) / Double(targetUploadBytes))))
+    }
+
+    static func isPassthroughEligible(
+        audioTrackCount: Int,
+        duration: TimeInterval,
+        estimatedDataRate: Double
+    ) -> Bool {
+        guard audioTrackCount == 1,
+              duration.isFinite,
+              duration > 0,
+              estimatedDataRate.isFinite,
+              estimatedDataRate > 0 else {
+            return false
+        }
+        let projectedBytes = duration * estimatedDataRate / 8 * containerOverheadFactor
+        return projectedBytes <= Double(targetUploadBytes)
     }
 
     // MARK: - Helpers
