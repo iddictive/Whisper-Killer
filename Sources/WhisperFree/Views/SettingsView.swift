@@ -914,27 +914,12 @@ struct SettingsView: View {
         let qwenReady = runtimeReady && selectedModelReady
 
         return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: TranscriptionEngineType.qwenASR.icon)
-                    .foregroundStyle(SW.accent)
-                Text(L.tr("Local Qwen3-ASR", "Локальный Qwen3-ASR"))
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Text(L.tr("Local only", "Только локально"))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
-            }
-
-            Text(L.tr("Private on-device transcription. Fast prioritizes speed; Quality prioritizes multilingual accuracy.", "Приватная транскрибация на устройстве. «Быстро» — про скорость, «Качество» — про точность на разных языках."))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-
             HStack(spacing: 10) {
                 Image(systemName: qwenReady ? "checkmark.circle.fill" : (selectedModelPartial ? "exclamationmark.circle.fill" : "xmark.circle.fill"))
                     .foregroundStyle(qwenReady ? Color.accentColor : .orange)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(selectedModelDownloading ? L.tr("Downloading model", "Скачивание модели") : qwenStatusTitle(runtimeReady: runtimeReady, modelReady: selectedModelReady, partial: selectedModelPartial))
+                    Text(selectedModelDownloading ? L.tr("Downloading Qwen3-ASR model", "Скачивание модели Qwen3-ASR") : qwenStatusTitle(runtimeReady: runtimeReady, modelReady: selectedModelReady, partial: selectedModelPartial))
                         .font(.system(size: 13, weight: .semibold))
 
                     if selectedModelDownloading {
@@ -1068,10 +1053,10 @@ struct SettingsView: View {
             return L.tr("Qwen3-ASR ready", "Qwen3-ASR готов")
         }
         if partial {
-            return L.tr("Model download incomplete", "Модель скачана не полностью")
+            return L.tr("Qwen3-ASR download incomplete", "Qwen3-ASR скачан не полностью")
         }
         if runtimeReady {
-            return L.tr("Model not installed", "Модель не установлена")
+            return L.tr("Qwen3-ASR model not installed", "Модель Qwen3-ASR не установлена")
         }
         return L.tr("Qwen3-ASR runtime not ready", "Runtime Qwen3-ASR не готов")
     }
@@ -1142,23 +1127,12 @@ struct SettingsView: View {
         let hasPython = GigaAMTranscriber.findBasePythonBinary() != nil
 
         return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: TranscriptionEngineType.gigaAM.icon)
-                    .foregroundStyle(SW.accent)
-                Text(L.tr("Russian ASR experiment", "Эксперимент для русского ASR"))
-                    .font(.system(size: 13, weight: .semibold))
-            }
-
-            Text(L.tr("Best for Russian comparison runs. First launch downloads the model cache.", "Для сравнения качества на русском. Первый запуск скачает кэш модели."))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-
             HStack(spacing: 10) {
                 Image(systemName: isInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .foregroundStyle(isInstalled ? Color.accentColor : .orange)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(isInstalled ? L.tr("GigaAM runtime detected", "GigaAM runtime найден") : L.tr("GigaAM runtime not found", "GigaAM runtime не найден"))
+                    Text(L.tr("GigaAM · Russian ASR experiment", "GigaAM · эксперимент для русского ASR"))
                         .font(.system(size: 13, weight: .semibold))
 
                     if dependencyInstaller.isInstallingGigaAM {
@@ -1166,7 +1140,7 @@ struct SettingsView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     } else if !hasPython {
-                        Text(L.tr("Python 3.10-3.13 required", "Нужен Python 3.10-3.13"))
+                        Text(L.tr("Runtime not found · Python 3.10-3.13 required", "Runtime не найден · нужен Python 3.10-3.13"))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     } else if !dependencyInstaller.gigaAMStatus.isEmpty {
@@ -1175,7 +1149,11 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(3)
                     } else {
-                        Text(L.tr("Installs into an isolated app venv.", "Ставит зависимости в отдельный venv приложения."))
+                        Text(
+                            isInstalled
+                                ? L.tr("Runtime detected · isolated app environment", "Runtime найден · отдельное окружение приложения")
+                                : L.tr("Runtime not found · installs into an isolated app environment", "Runtime не найден · установка в отдельное окружение приложения")
+                        )
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
