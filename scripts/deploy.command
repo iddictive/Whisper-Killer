@@ -139,22 +139,8 @@ if [ $? -eq 0 ]; then
     # 5. Build a classic drag-to-Applications DMG for releases
     echo "💿 Creating drag-to-Applications DMG..."
     mkdir -p "$DIST_DIR"
-    DMG_ROOT="$(mktemp -d)"
     DMG_PATH="$DIST_DIR/$APP_NAME-$VERSION.dmg"
-    ditto --norsrc --noextattr "$APP_BUNDLE_PATH" "$DMG_ROOT/$BUNDLE_NAME"
-    dot_clean -m "$DMG_ROOT/$BUNDLE_NAME" 2>/dev/null || true
-    find "$DMG_ROOT/$BUNDLE_NAME" -name '._*' -delete
-    find "$DMG_ROOT/$BUNDLE_NAME" -print0 | xargs -0 xattr -c 2>/dev/null || true
-    ln -s /Applications "$DMG_ROOT/Applications"
-    rm -f "$DMG_PATH"
-    hdiutil create \
-        -volname "$APP_NAME" \
-        -srcfolder "$DMG_ROOT" \
-        -ov \
-        -format UDZO \
-        "$DMG_PATH"
-    rm -rf "$DMG_ROOT"
-    echo "✅ DMG created: $DMG_PATH"
+    bash scripts/create_dmg.sh "$APP_BUNDLE_PATH" "$DMG_PATH" "$APP_NAME" "$BUNDLE_NAME"
 
     # 6. Fix Permissions & Relocate
     echo "🏗️ Relocating to /Applications and fixing permissions..."

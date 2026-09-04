@@ -86,15 +86,7 @@ jobs:
           codesign --verify --deep --strict WhisperKiller.app
 
       - name: Create DMG
-        run: |
-          DMG_ROOT="$(mktemp -d)"
-          ditto --norsrc --noextattr "WhisperKiller.app" "$DMG_ROOT/WhisperKiller.app"
-          dot_clean -m "$DMG_ROOT/WhisperKiller.app" 2>/dev/null || true
-          find "$DMG_ROOT/WhisperKiller.app" -name '._*' -delete
-          find "$DMG_ROOT/WhisperKiller.app" -print0 | xargs -0 xattr -c 2>/dev/null || true
-          ln -s /Applications "$DMG_ROOT/Applications"
-          hdiutil create -volname "WhisperKiller" -srcfolder "$DMG_ROOT" -ov -format UDZO "WhisperKiller-${{ env.APP_VERSION }}.dmg"
-          rm -rf "$DMG_ROOT"
+        run: bash scripts/create_dmg.sh "WhisperKiller.app" "WhisperKiller-${{ env.APP_VERSION }}.dmg" "WhisperKiller"
 
       - name: Release
         uses: softprops/action-gh-release@v1
