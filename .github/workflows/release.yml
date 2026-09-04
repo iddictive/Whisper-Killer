@@ -20,6 +20,16 @@ jobs:
       - name: Show Xcode Version
         run: xcodebuild -version
 
+      - name: Cache SwiftPM Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/repositories
+            .build/checkouts
+            .build/artifacts
+            .build/workspace-state.json
+          key: swiftpm-dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+
       - name: Test
         run: swift test --disable-keychain --disable-netrc
 
