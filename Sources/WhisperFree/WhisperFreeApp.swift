@@ -10,21 +10,15 @@ import Foundation
 @main
 struct WhisperFreeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var appState = AppState.shared
 
     init() {
         print("🚀 WhisperKillerApp initializing...")
     }
 
     var body: some Scene {
-        MenuBarExtra(isInserted: menuBarExtraIsInserted) {
-            MenuBarView()
-                .environmentObject(appState)
-        } label: {
-            MenuBarIconView()
-                .environmentObject(appState)
+        Settings {
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button(L.tr("Settings...", "Настройки...")) {
@@ -40,13 +34,6 @@ struct WhisperFreeApp: App {
             }
         }
     }
-
-    private var menuBarExtraIsInserted: Binding<Bool> {
-        Binding(
-            get: { appState.settings.appPresenceMode.showsMenuBarExtra },
-            set: { _ in }
-        )
-    }
 }
 
 @MainActor
@@ -57,12 +44,157 @@ func requiresRegularActivationPolicy(
     configuredMode.showsDockIcon || standaloneWindowCount > 0
 }
 
+enum StatusItemClickKind {
+    case primary
+    case secondary
+}
+
+enum StatusItemClickAction: Equatable {
+    case restoreStandaloneWindow
+    case toggleMenu
+}
+
+func statusItemClickAction(
+    for clickKind: StatusItemClickKind,
+    hasStandaloneWindow: Bool
+) -> StatusItemClickAction {
+    if clickKind == .primary && hasStandaloneWindow {
+        return .restoreStandaloneWindow
+    }
+
+    return .toggleMenu
+}
+
+@MainActor
+private final class MouseTransparentHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
+@MainActor
+private final class StatusBarController: NSObject, NSPopoverDelegate {
+    private weak var appDelegate: AppDelegate?
+    private let appState: AppState
+    private let popover = NSPopover()
+    private var statusItem: NSStatusItem?
+    private var cancellables = Set<AnyCancellable>()
+
+    init(appState: AppState, appDelegate: AppDelegate) {
+        self.appState = appState
+        self.appDelegate = appDelegate
+        super.init()
+
+        let hostingController = NSHostingController(
+            rootView: MenuBarView().environmentObject(appState)
+        )
+        hostingController.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = hostingController
+        popover.behavior = .transient
+        popover.delegate = self
+
+        appState.$settings
+            .map(\.appPresenceMode)
+            .removeDuplicates()
+            .sink { [weak self] mode in
+                self?.updateStatusItemVisibility(for: mode)
+            }
+            .store(in: &cancellables)
+
+        updateStatusItemVisibility(for: appState.settings.appPresenceMode)
+    }
+
+    func closePopover() {
+        popover.performClose(nil)
+    }
+
+    func tearDown() {
+        closePopover()
+        removeStatusItem()
+        cancellables.removeAll()
+    }
+
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        let clickKind: StatusItemClickKind = NSApp.currentEvent?.type == .rightMouseUp
+            ? .secondary
+            : .primary
+        let action = statusItemClickAction(
+            for: clickKind,
+            hasStandaloneWindow: appDelegate?.hasStandaloneWindows == true
+        )
+
+        switch action {
+        case .restoreStandaloneWindow:
+            closePopover()
+            _ = appDelegate?.restoreMostRecentStandaloneWindow()
+        case .toggleMenu:
+            togglePopover(relativeTo: sender)
+        }
+    }
+
+    private func updateStatusItemVisibility(for mode: AppPresenceMode) {
+        if mode.showsMenuBarExtra {
+            installStatusItemIfNeeded()
+        } else {
+            closePopover()
+            removeStatusItem()
+        }
+    }
+
+    private func installStatusItemIfNeeded() {
+        guard statusItem == nil else { return }
+
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        guard let button = statusItem.button else {
+            NSStatusBar.system.removeStatusItem(statusItem)
+            return
+        }
+
+        button.target = self
+        button.action = #selector(statusItemClicked(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.toolTip = "WhisperKiller"
+        button.setAccessibilityLabel("WhisperKiller")
+
+        let iconView = MouseTransparentHostingView(
+            rootView: MenuBarIconView().environmentObject(appState)
+        )
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(iconView)
+        NSLayoutConstraint.activate([
+            iconView.leadingAnchor.constraint(equalTo: button.leadingAnchor),
+            iconView.trailingAnchor.constraint(equalTo: button.trailingAnchor),
+            iconView.topAnchor.constraint(equalTo: button.topAnchor),
+            iconView.bottomAnchor.constraint(equalTo: button.bottomAnchor)
+        ])
+
+        self.statusItem = statusItem
+    }
+
+    private func removeStatusItem() {
+        guard let statusItem else { return }
+        NSStatusBar.system.removeStatusItem(statusItem)
+        self.statusItem = nil
+    }
+
+    private func togglePopover(relativeTo button: NSStatusBarButton) {
+        if popover.isShown {
+            closePopover()
+        } else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     static private(set) var shared: AppDelegate?
 
     private var overlayController = OverlayWindowController()
-    private var standaloneWindowIDs: Set<ObjectIdentifier> = []
+    private var standaloneWindows: [ObjectIdentifier: NSWindow] = [:]
+    private var standaloneWindowOrder: [ObjectIdentifier] = []
+    private weak var mostRecentStandaloneWindow: NSWindow?
+    private var statusBarController: StatusBarController?
     private var mainMenuWindowController: MainMenuWindowController?
     private var setupWizardController: SetupWizardWindowController?
     private var settingsWindowController: SettingsWindowController?
@@ -79,10 +211,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Obse
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
 
+        let appState = AppState.shared
+        statusBarController = StatusBarController(appState: appState, appDelegate: self)
         applyConfiguredActivationPolicy()
 
         // Bridge AppState.showOverlayWindow → OverlayWindowController
-        let appState = AppState.shared
         appState.$showOverlayWindow
             .sink { [weak self] show in
                 guard let self = self else { return }
@@ -120,7 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Obse
         let mode = AppState.shared.settings.appPresenceMode
         let usesRegularActivationPolicy = requiresRegularActivationPolicy(
             configuredMode: mode,
-            standaloneWindowCount: standaloneWindowIDs.count
+            standaloneWindowCount: standaloneWindows.count
         )
         let targetPolicy: NSApplication.ActivationPolicy = usesRegularActivationPolicy ? .regular : .accessory
 
@@ -137,19 +270,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Obse
     }
 
     func presentStandaloneWindow(_ window: NSWindow) {
-        standaloneWindowIDs.insert(ObjectIdentifier(window))
+        rememberStandaloneWindow(window)
         window.delegate = self
+        statusBarController?.closePopover()
         applyConfiguredActivationPolicy()
-        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    var hasStandaloneWindows: Bool {
+        !standaloneWindows.isEmpty
+    }
+
+    @discardableResult
+    func restoreMostRecentStandaloneWindow() -> Bool {
+        let window = mostRecentStandaloneWindow
+            ?? standaloneWindowOrder.last.flatMap { standaloneWindows[$0] }
+        guard let window, standaloneWindows[ObjectIdentifier(window)] != nil else { return false }
+
+        presentStandaloneWindow(window)
+        return true
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              standaloneWindows[ObjectIdentifier(window)] != nil
+        else { return }
+
+        rememberStandaloneWindow(window)
     }
 
     func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow,
-              standaloneWindowIDs.remove(ObjectIdentifier(window)) != nil
+        guard let window = notification.object as? NSWindow
         else { return }
 
+        let identifier = ObjectIdentifier(window)
+        guard standaloneWindows.removeValue(forKey: identifier) != nil else { return }
+        standaloneWindowOrder.removeAll { $0 == identifier }
+        if mostRecentStandaloneWindow === window {
+            mostRecentStandaloneWindow = standaloneWindowOrder.last.flatMap { standaloneWindows[$0] }
+        }
         applyConfiguredActivationPolicy()
+    }
+
+    private func rememberStandaloneWindow(_ window: NSWindow) {
+        let identifier = ObjectIdentifier(window)
+        standaloneWindows[identifier] = window
+        standaloneWindowOrder.removeAll { $0 == identifier }
+        standaloneWindowOrder.append(identifier)
+        mostRecentStandaloneWindow = window
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -185,6 +357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Obse
 
     func applicationWillTerminate(_ notification: Notification) {
         print("🛑 applicationWillTerminate: Cleaning up resources...")
+        statusBarController?.tearDown()
         AppState.shared.stopAll()
     }
 

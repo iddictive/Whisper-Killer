@@ -39,4 +39,32 @@ struct AppActivationPolicyTests {
             )
         )
     }
+
+    @Test("primary status click restores an existing standalone window")
+    func primaryStatusClickRestoresWindow() {
+        #expect(
+            statusItemClickAction(for: .primary, hasStandaloneWindow: true)
+                == .restoreStandaloneWindow
+        )
+    }
+
+    @Test("primary status click opens the menu without standalone windows")
+    func primaryStatusClickWithoutWindowOpensMenu() {
+        #expect(
+            statusItemClickAction(for: .primary, hasStandaloneWindow: false)
+                == .toggleMenu
+        )
+    }
+
+    @Test("secondary status click opens the menu without restoring a window")
+    func secondaryStatusClickAlwaysOpensMenu() {
+        #expect(
+            statusItemClickAction(for: .secondary, hasStandaloneWindow: true)
+                == .toggleMenu
+        )
+        #expect(
+            statusItemClickAction(for: .secondary, hasStandaloneWindow: false)
+                == .toggleMenu
+        )
+    }
 }
