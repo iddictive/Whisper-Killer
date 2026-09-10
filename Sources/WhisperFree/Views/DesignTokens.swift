@@ -76,7 +76,7 @@ struct SWInteractiveHover: ViewModifier {
     private var targetScale: CGFloat {
         guard isInteractive else { return 1 }
         if isPressed { return 0.985 }
-        return isHovering ? 1.01 : 1
+        return 1
     }
 
     private var targetBrightness: Double {
