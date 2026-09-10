@@ -347,23 +347,23 @@ struct MenuBarView: View {
 
     private var sourceMenu: some View {
         Menu {
-            Picker("", selection: Binding(
-                get: { appState.settings.engineType },
-                set: { type in
-                    appState.settings.engineType = type
-                    if type == .gigaAM {
-                        appState.settings.language = "ru"
+            ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
+                Toggle(isOn: Binding(
+                    get: { appState.settings.engineType == type },
+                    set: { isSelected in
+                        if isSelected {
+                            appState.settings.engineType = type
+                            if type == .gigaAM {
+                                appState.settings.language = "ru"
+                            }
+                            appState.saveSettings()
+                        }
                     }
-                    appState.saveSettings()
-                }
-            )) {
-                ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
+                )) {
                     Label(type.localizedTitle, systemImage: type.icon)
-                        .tag(type)
-                        .disabled(type == .parakeet && !ParakeetTranscriber.isAppleSilicon)
                 }
+                .disabled(type == .parakeet && !ParakeetTranscriber.isAppleSilicon)
             }
-            .pickerStyle(.inline)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: appState.settings.engineType.icon)
@@ -387,22 +387,33 @@ struct MenuBarView: View {
 
     private var inputDeviceMenu: some View {
         Menu {
-            Picker("", selection: Binding(
-                get: { appState.settings.selectedInputDeviceID },
-                set: { newID in
-                    appState.settings.selectedInputDeviceID = newID
-                    appState.saveSettings()
+            Toggle(isOn: Binding(
+                get: { appState.settings.selectedInputDeviceID == nil },
+                set: { isSelected in
+                    if isSelected {
+                        appState.settings.selectedInputDeviceID = nil
+                        appState.saveSettings()
+                    }
                 }
             )) {
                 Text(L.tr("System Default", "Системный"))
-                    .tag(nil as String?)
+            }
 
-                ForEach(appState.availableInputDevices, id: \.uniqueID) { device in
+            Divider()
+
+            ForEach(appState.availableInputDevices, id: \.uniqueID) { device in
+                Toggle(isOn: Binding(
+                    get: { appState.settings.selectedInputDeviceID == device.uniqueID },
+                    set: { isSelected in
+                        if isSelected {
+                            appState.settings.selectedInputDeviceID = device.uniqueID
+                            appState.saveSettings()
+                        }
+                    }
+                )) {
                     Text(device.localizedName)
-                        .tag(device.uniqueID as String?)
                 }
             }
-            .pickerStyle(.inline)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "mic.fill")
