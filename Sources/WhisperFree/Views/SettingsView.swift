@@ -30,6 +30,7 @@ struct SettingsView: View {
     @State private var isProfanityDictionaryDropTarget = false
     @State private var profanityDictionaryMessage: String?
     @State private var showProfanityDictionaries = false
+    @State private var showPunctuationCustomization = false
     @State private var showGigaAMManualCommand = false
     @State private var showRecentActivityDetails = false
     private let sidebarWidth: CGFloat = 250
@@ -559,24 +560,113 @@ struct SettingsView: View {
                     .font(.headline)
                     .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 12) {
-                Toggle(L.tr("Profanity filter", "Мат-фильтр"), isOn: $appState.settings.enableProfanityFilter)
-                    .onChange(of: appState.settings.enableProfanityFilter) { _, _ in
-                        appState.saveSettings()
+                VStack(spacing: 0) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L.tr("Text Casing", "Регистр букв"))
+                            Text(L.tr("Control capital letters in output", "Управление заглавными буквами в выводе"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("", selection: $appState.settings.textCasing) {
+                            ForEach(TextCasing.allCases) { casing in
+                                Text(casing.localizedTitle).tag(casing)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .onChange(of: appState.settings.textCasing) { _, _ in
+                            appState.saveSettings()
+                        }
                     }
+                    .padding()
 
-                ClickableDisclosure(isExpanded: $showProfanityDictionaries) {
-                    profanityDictionaryManager
-                } label: {
-                    Text(L.tr("Custom dictionaries", "Пользовательские словари"))
+                    Divider().padding(.horizontal)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(L.tr("Punctuation marks", "Знаки препинания"), isOn: $appState.settings.enablePunctuation)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .onChange(of: appState.settings.enablePunctuation) { _, _ in
+                                appState.saveSettings()
+                            }
+
+                        Text(L.tr("When disabled, removes dots, commas, question marks and other punctuation.", "Когда выключено, полностью убирает точки, запятые, знаки вопроса и прочую пунктуацию."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if appState.settings.enablePunctuation {
+                            ClickableDisclosure(isExpanded: $showPunctuationCustomization) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Toggle(L.tr("Remove periods (.) and ellipsis (…)", "Убирать точки (.) и многоточия (…)"), isOn: $appState.settings.removePeriods)
+                                        .onChange(of: appState.settings.removePeriods) { _, _ in appState.saveSettings() }
+                                    Toggle(L.tr("Remove commas (,)", "Убирать запятые (,)"), isOn: $appState.settings.removeCommas)
+                                        .onChange(of: appState.settings.removeCommas) { _, _ in appState.saveSettings() }
+                                    Toggle(L.tr("Remove question and exclamation marks (?! )", "Убирать знаки вопроса и восклицания (?! )"), isOn: $appState.settings.removeQuestionExclamation)
+                                        .onChange(of: appState.settings.removeQuestionExclamation) { _, _ in appState.saveSettings() }
+                                    Toggle(L.tr("Remove hyphens and dashes (- —)", "Убирать тире и дефисы (- —)"), isOn: $appState.settings.removeHyphensDashes)
+                                        .onChange(of: appState.settings.removeHyphensDashes) { _, _ in appState.saveSettings() }
+                                    Toggle(L.tr(#"Remove quotes and brackets ("" «» ())"#, #"Убирать кавычки и скобки ("" «» ())"#), isOn: $appState.settings.removeQuotesBrackets)
+                                        .onChange(of: appState.settings.removeQuotesBrackets) { _, _ in appState.saveSettings() }
+                                    Toggle(L.tr("Remove colons and semicolons (:;)", "Убирать двоеточия и точки с запятой (:;)"), isOn: $appState.settings.removeColonsSemicolons)
+                                        .onChange(of: appState.settings.removeColonsSemicolons) { _, _ in appState.saveSettings() }
+                                }
+                                .font(.caption)
+                                .padding(.top, 4)
+                            } label: {
+                                Text(L.tr("Selective punctuation removal", "Выборочное удаление знаков"))
+                            }
+                            .font(.subheadline)
+                            .padding(.top, 4)
+                        }
+                    }
+                    .padding()
+
+                    Divider().padding(.horizontal)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L.tr("Formatting preview", "Предпросмотр результата"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        let sampleText = L.tr(
+                            "Hello, world! How are you? This is a test note — check it: 1, 2, 3.",
+                            "Привет, мир! Как дела? Это тестовая запись — проверка: 1, 2, 3."
+                        )
+                        let formattedSample = OutputTextFormatter.apply(to: sampleText, settings: appState.settings)
+
+                        Text(formattedSample)
+                            .font(.system(.body, design: .rounded))
+                            .foregroundStyle(.primary)
+                            .textSelection(.enabled)
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.primary.opacity(0.04))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .padding()
+
+                    Divider().padding(.horizontal)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle(L.tr("Profanity filter", "Мат-фильтр"), isOn: $appState.settings.enableProfanityFilter)
+                            .onChange(of: appState.settings.enableProfanityFilter) { _, _ in
+                                appState.saveSettings()
+                            }
+
+                        ClickableDisclosure(isExpanded: $showProfanityDictionaries) {
+                            profanityDictionaryManager
+                        } label: {
+                            Text(L.tr("Custom dictionaries", "Пользовательские словари"))
+                        }
+                        .font(.subheadline)
+                    }
+                    .padding()
                 }
-                .font(.subheadline)
+                .background(Color.primary.opacity(0.03))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .padding()
-            .background(Color.primary.opacity(0.03))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-    }
 
     private var profanityDictionaryManager: some View {
         VStack(alignment: .leading, spacing: 8) {

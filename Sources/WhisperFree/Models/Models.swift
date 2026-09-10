@@ -53,6 +53,33 @@ enum AppPresenceMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Text Casing
+
+enum TextCasing: String, Codable, CaseIterable, Identifiable {
+    case original = "original"
+    case lowercase = "lowercase"
+    case uppercase = "uppercase"
+    case sentenceCase = "sentenceCase"
+    case titleCase = "titleCase"
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .original:
+            return L.tr("As is (Default)", "Как есть (по умолчанию)")
+        case .lowercase:
+            return L.tr("lowercase (no caps)", "строчные (без заглавных)")
+        case .uppercase:
+            return L.tr("UPPERCASE (CAPS)", "ЗАГЛАВНЫЕ (CAPS)")
+        case .sentenceCase:
+            return L.tr("Sentence case", "Первая буква предложения")
+        case .titleCase:
+            return L.tr("Title Case", "Каждое Слово С Заглавной")
+        }
+    }
+}
+
 // MARK: - Transcription Mode
 
 struct TranscriptionMode: Codable, Identifiable, Hashable {
@@ -713,6 +740,16 @@ struct AppSettings: Codable {
     var postProcessingEngine: PostProcessingEngine = .openai
     var autoTypeResult: Bool = true
     var enableProfanityFilter: Bool = false
+
+    // Output Formatting
+    var textCasing: TextCasing = .original
+    var enablePunctuation: Bool = true
+    var removePeriods: Bool = false
+    var removeCommas: Bool = false
+    var removeQuestionExclamation: Bool = false
+    var removeHyphensDashes: Bool = false
+    var removeQuotesBrackets: Bool = false
+    var removeColonsSemicolons: Bool = false
     var language: String = "auto"
     var selectedModeName: String = TranscriptionMode.dictation.name
     var customModes: [TranscriptionMode] = []
@@ -762,7 +799,9 @@ struct AppSettings: Codable {
              lifetimeWords, lifetimeDuration, audioRetentionPolicy,
              liveTranslatorEnabled, liveTranslatorTargetLanguage, liveTranslatorSourceLanguage, liveTranslatorEngine, liveTranslatorLocalModel,
              liveTranslatorInputDeviceID, liveTranslatorHotkeyConfig, useScreenCaptureKit, liveTranslatorCompactMode,
-             selectedAIChatModel, selectedAIChatConversationID
+             selectedAIChatModel, selectedAIChatConversationID,
+             textCasing, enablePunctuation, removePeriods, removeCommas,
+             removeQuestionExclamation, removeHyphensDashes, removeQuotesBrackets, removeColonsSemicolons
     }
 
     init() {}
@@ -810,6 +849,14 @@ struct AppSettings: Codable {
         liveTranslatorCompactMode = try container.decodeIfPresent(Bool.self, forKey: .liveTranslatorCompactMode) ?? false
         selectedAIChatModel = try container.decodeIfPresent(String.self, forKey: .selectedAIChatModel) ?? "gpt-4o-mini"
         selectedAIChatConversationID = try container.decodeIfPresent(UUID.self, forKey: .selectedAIChatConversationID)
+        textCasing = try container.decodeIfPresent(TextCasing.self, forKey: .textCasing) ?? .original
+        enablePunctuation = try container.decodeIfPresent(Bool.self, forKey: .enablePunctuation) ?? true
+        removePeriods = try container.decodeIfPresent(Bool.self, forKey: .removePeriods) ?? false
+        removeCommas = try container.decodeIfPresent(Bool.self, forKey: .removeCommas) ?? false
+        removeQuestionExclamation = try container.decodeIfPresent(Bool.self, forKey: .removeQuestionExclamation) ?? false
+        removeHyphensDashes = try container.decodeIfPresent(Bool.self, forKey: .removeHyphensDashes) ?? false
+        removeQuotesBrackets = try container.decodeIfPresent(Bool.self, forKey: .removeQuotesBrackets) ?? false
+        removeColonsSemicolons = try container.decodeIfPresent(Bool.self, forKey: .removeColonsSemicolons) ?? false
     }
 
     var allModes: [TranscriptionMode] {

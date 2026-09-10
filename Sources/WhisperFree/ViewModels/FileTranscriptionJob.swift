@@ -308,11 +308,13 @@ final class QueueItem: ObservableObject, Identifiable {
 
                 let filteredRawText = ProfanityFilter.apply(to: text, settings: runSettings)
                 let filteredProcessedText = ProfanityFilter.apply(to: processedText, settings: runSettings)
+                let formattedProcessedText = OutputTextFormatter.apply(to: filteredProcessedText, settings: runSettings)
+                let formattedRawText = OutputTextFormatter.apply(to: filteredRawText, settings: runSettings)
 
                 await MainActor.run {
                     self.updateCost(settings: runSettings)
-                    self.rawResult = filteredRawText
-                    self.result = filteredProcessedText
+                    self.rawResult = formattedRawText
+                    self.result = formattedProcessedText
                     self.summary = nil
                     self.summaryError = nil
                     self.markdownSaveURL = nil
@@ -329,8 +331,8 @@ final class QueueItem: ObservableObject, Identifiable {
                     }
 
                     let entry = TranscriptionHistoryEntry(
-                        rawText: filteredRawText,
-                        processedText: filteredProcessedText,
+                        rawText: formattedRawText,
+                        processedText: formattedProcessedText,
                         modeName: runSettings.selectedMode.name,
                         duration: self.selectedDuration,
                         engineUsed: provenance.displayName + (totalPromptTokens + totalCompletionTokens > 0 ? " + AI" : "") + (shouldUseNativeDiarization ? " + Diarization" : ""),

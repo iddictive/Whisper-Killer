@@ -1301,11 +1301,13 @@ final class AppState: ObservableObject {
 
             let filteredRawText = ProfanityFilter.apply(to: rawText, settings: settings)
             let filteredProcessedText = ProfanityFilter.apply(to: processedText, settings: settings)
+            let formattedProcessedText = OutputTextFormatter.apply(to: filteredProcessedText, settings: settings)
+            let formattedRawText = OutputTextFormatter.apply(to: filteredRawText, settings: settings)
 
             guard let index = history.firstIndex(where: { $0.entryId == entry.entryId }) else { return }
 
-            history[index].rawText = filteredRawText
-            history[index].processedText = filteredProcessedText
+            history[index].rawText = formattedRawText
+            history[index].processedText = formattedProcessedText
             history[index].summaryText = nil
             history[index].processingError = processingErrorMessage
             history[index].modeName = settings.selectedMode.name
@@ -1322,7 +1324,7 @@ final class AppState: ObservableObject {
                 saveSettings()
             }
 
-            lastTranscription = filteredProcessedText
+            lastTranscription = formattedProcessedText
         } catch {
             if let index = history.firstIndex(where: { $0.entryId == entry.entryId }) {
                 history[index].processingError = error.localizedDescription
@@ -1492,6 +1494,8 @@ final class AppState: ObservableObject {
 
             let filteredRawText = ProfanityFilter.apply(to: rawText, settings: settings)
             processedText = ProfanityFilter.apply(to: processedText, settings: settings)
+            processedText = OutputTextFormatter.apply(to: processedText, settings: settings)
+            let formattedRawText = OutputTextFormatter.apply(to: filteredRawText, settings: settings)
             try Task.checkCancellation()
 
             if settings.autoTypeResult {
@@ -1520,7 +1524,7 @@ final class AppState: ObservableObject {
             let persistentAudioPath = persistRecordingAudio(from: audioURL)
 
             let entry = TranscriptionHistoryEntry(
-                rawText: filteredRawText,
+                rawText: formattedRawText,
                 processedText: processedText,
                 processingError: processingErrorMessage,
                 modeName: selectedModeName,
