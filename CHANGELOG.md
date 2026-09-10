@@ -2,10 +2,24 @@
 
 All notable changes to WhisperKiller are documented in this file.
 
+## [3.51] - 2026-09-10
+
+### Added
+- **OpenAI API Key Validation & Real-Time Mode Locking**: Real-time detection of invalid, expired, or revoked OpenAI API keys. When an API key fails validation or returns HTTP 401, dependent AI modes are automatically locked with warning banners and tooltips, preventing failed dictation attempts.
+- **In-Wizard Model Management**: Direct downloads, progress bars, and status checks for Parakeet TDT v3, Qwen3-ASR (Fast/Quality), and GigaAM directly within the Setup Wizard.
+
+### Changed
+- **Setup Wizard Modernization**: Redesigned Setup Wizard with native macOS glass translucency, centered engine selection with live readiness indicators, and a clean, spacious final slide featuring a GitHub star callout and hotkey guide.
+- **Parakeet Auto-Readiness**: Automatically marked complete Parakeet models as ready without requiring manual verification on every app launch.
+
+### Fixed
+- **Bundled Changelog Synchronization**: Bundled `CHANGELOG.md` into the application resources, ensuring the installed version's release notes are immediately accessible offline without displaying stale cached changelogs.
+
+---
+
 ## [3.50] - 2026-09-10
 
 ### Added
-- **OpenAI API Key Validation State & Mode Locking**: Real-time detection and handling of invalid, expired, or revoked OpenAI API keys. Dependent AI modes are automatically locked with warning banners and tooltips when a key fails validation or returns HTTP 401, preventing failed dictation attempts.
 - **Text Casing Settings**: Options to format output as `lowercase` (no caps), `UPPERCASE` (CAPS), `Sentence case`, or `Title Case`.
 - **Punctuation Controls**: Global toggle to strip all punctuation marks from transcribed speech, with preserved decimal numbers (`3.14`, `10,5`).
 - **Selective Punctuation Removal**: Granular controls to selectively remove periods/ellipsis, commas, question/exclamation marks, hyphens/dashes, quotes/brackets, or colons/semicolons.
@@ -16,15 +30,13 @@ All notable changes to WhisperKiller are documented in this file.
 - **Native Interaction UX**: Removed artificial hover scale and brightness shifts from buttons, returning to Apple-standard interaction feedback.
 - **Menu Bar Engine Picker**: Simplified engine labels to clean model names (`OpenAI`, `whisper.cpp`, `Parakeet TDT v3`, `Qwen3-ASR MLX`, `GigaAM`), removing redundant text prefixes.
 - **Unified Control Plane**: Unified Makefile with single-purpose commands (`make dev`, `make install`, `make test`, `make verify`, `make clean`, `make clean-legacy`, `make uninstall`).
-- **Setup Wizard Modernization**: Redesigned Setup Wizard with native macOS translucency, centered engine selection with readiness indicators, in-wizard model downloads/setup for Parakeet, Qwen3-ASR, and GigaAM, and a clean final slide with GitHub star callout and hotkey guide.
-- **Parakeet Auto-Readiness**: Automatically marked complete Parakeet models as ready without requiring manual verification on every app launch.
 
 ### Fixed
-- **Bundled Changelog Synchronization**: Bundled `CHANGELOG.md` into the application resources, ensuring the installed version's release notes are immediately accessible offline without displaying stale cached changelogs.
 - **Settings Titlebar Overlap**: Added smooth top content dissolve at the toolbar boundary to prevent scrolled content from overlapping the floating title.
 - **Menu Top Gap**: Eliminated empty header gap in menu bar dropdowns caused by inline picker section headers.
 
 ---
+
 
 ## [3.49] - 2026-09-10
 
