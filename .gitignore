@@ -9,6 +9,8 @@ Icon?
 
 # --- Swift / Build ---
 .build/
+.build-local/
+dist/
 DerivedData/
 *.app
 *.dmg
