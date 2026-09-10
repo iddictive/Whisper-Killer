@@ -164,6 +164,8 @@ struct SettingsView: View {
                                 Label(L.tr("Live Translator", "Live Translator"), systemImage: "text.bubble.fill")
                                     .tag("liveTranslator")
                             }
+                            Label(L.tr("Changelog", "История версий"), systemImage: "clock.arrow.circlepath")
+                                .tag("changelog")
                             Label(L.tr("Usage & About", "Использование и О программе"), systemImage: "info.circle.fill")
                                 .tag("info")
                         }
@@ -202,6 +204,8 @@ struct SettingsView: View {
                                 } else {
                                     EmptyView()
                                 }
+                            case "changelog":
+                                ChangelogView()
                             case "info": infoSection
                             default: EmptyView()
                             }
@@ -272,6 +276,7 @@ struct SettingsView: View {
         case "integrations": return L.tr("Integrations", "Интеграции")
         case "modes": return L.tr("AI Modes", "AI-режимы")
         case "liveTranslator": return L.tr("Live Translator", "Live Translator")
+        case "changelog": return L.tr("Changelog", "История изменений")
         case "info": return L.tr("Usage & About", "Использование и О программе")
         default: return L.tr("Settings", "Настройки")
         }
