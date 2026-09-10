@@ -352,7 +352,7 @@ final class ParakeetModelManager: ObservableObject {
         case .partial:
             return .partial
         case .candidate:
-            return .installed
+            return .ready
         }
     }
 }

@@ -15,6 +15,8 @@ All notable changes to WhisperKiller are documented in this file.
 - **Native Interaction UX**: Removed artificial hover scale and brightness shifts from buttons, returning to Apple-standard interaction feedback.
 - **Menu Bar Engine Picker**: Simplified engine labels to clean model names (`OpenAI`, `whisper.cpp`, `Parakeet TDT v3`, `Qwen3-ASR MLX`, `GigaAM`), removing redundant text prefixes.
 - **Unified Control Plane**: Unified Makefile with single-purpose commands (`make dev`, `make install`, `make test`, `make verify`, `make clean`, `make clean-legacy`, `make uninstall`).
+- **Setup Wizard Modernization**: Redesigned Setup Wizard with native macOS translucency, centered engine selection with readiness indicators, in-wizard model downloads/setup for Parakeet, Qwen3-ASR, and GigaAM, and a clean final slide with GitHub star callout and hotkey guide.
+- **Parakeet Auto-Readiness**: Automatically marked complete Parakeet models as ready without requiring manual verification on every app launch.
 
 ### Fixed
 - **Settings Titlebar Overlap**: Added smooth top content dissolve at the toolbar boundary to prevent scrolled content from overlapping the floating title.

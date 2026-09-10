@@ -18,20 +18,17 @@ struct SetupWizardView: View {
     @State private var homebrewInstalled = false
     @State private var whisperInstalled = false
     @State private var animateGlow = false
+    @State private var hasStarredGitHub = false
 
     private let totalSteps = 5
 
-    // MARK: - Colors
+    // MARK: - Design & Tokens
 
-    private let accentGold = SW.accent
-    private let accentPink = SW.accentBlue
-    private let accentMag  = SW.accentIndigo
-    private let bgDark = SW.bg
-    private let bgCard = SW.card
-    private let bgCardHover = SW.cardHover
-    private let borderSubtle = SW.border
-    private let textPrimary = Color.white
-    private let textSecondary = Color(white: 0.55)
+    private let accentColor = Color.accentColor
+    private let cardBackground = Color.primary.opacity(0.045)
+    private let subtleBorder = Color.primary.opacity(0.08)
+    private let textPrimary = Color.primary
+    private let textSecondary = Color.secondary
 
     private var apiValidationText: String? {
         switch apiValidationState {
@@ -64,12 +61,21 @@ struct SetupWizardView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            bgDark.ignoresSafeArea()
+        ZStack {
+            VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+                .ignoresSafeArea()
+
+            // Subtle ambient accent glow at top
+            Circle()
+                .fill(accentColor.opacity(0.09))
+                .frame(width: 320, height: 320)
+                .blur(radius: 50)
+                .offset(y: -190)
+                .allowsHitTesting(false)
 
             VStack(spacing: 0) {
                 header
-                    .padding(.top, 22)
+                    .padding(.top, 24)
                     .padding(.bottom, 12)
 
                 progressBar
@@ -78,19 +84,14 @@ struct SetupWizardView: View {
 
                 stepContent
                     .frame(maxHeight: .infinity)
-                    .padding(.bottom, 68)
-            }
 
-            NonDraggableContainer {
                 bottomBar
                     .padding(.horizontal, 36)
-                    .padding(.vertical, 12)
+                    .padding(.top, 12)
+                    .padding(.bottom, 20)
             }
-            .frame(height: 64)
-            .background(bgDark.opacity(0.97))
         }
         .frame(width: 580, height: 600)
-        .preferredColorScheme(.dark)
         .onAppear {
             refreshStatus()
             apiKey = appState.settings.apiKey
@@ -116,26 +117,22 @@ struct SetupWizardView: View {
     @ViewBuilder
     private var stepContent: some View {
         if currentStep == 0 {
-            NonDraggableContainer {
-                welcomeStep
-                    .padding(.horizontal, 36)
-                    .frame(maxHeight: .infinity, alignment: .top)
-            }
+            welcomeStep
+                .padding(.horizontal, 36)
+                .frame(maxHeight: .infinity, alignment: .top)
         } else {
             ScrollView(showsIndicators: false) {
-                NonDraggableContainer {
-                    Group {
-                        switch currentStep {
-                        case 1: permissionsStep
-                        case 2: engineStep
-                        case 3: apiKeyStep
-                        case 4: readyStep
-                        default: EmptyView()
-                        }
+                Group {
+                    switch currentStep {
+                    case 1: permissionsStep
+                    case 2: engineStep
+                    case 3: apiKeyStep
+                    case 4: readyStep
+                    default: EmptyView()
                     }
-                    .padding(.horizontal, 36)
-                    .padding(.bottom, 78)
                 }
+                .padding(.horizontal, 36)
+                .padding(.bottom, 12)
             }
         }
     }
@@ -149,23 +146,30 @@ struct SetupWizardView: View {
             ZStack {
                 // Outer ring glow
                 Circle()
-                    .stroke(LinearGradient(colors: [accentGold, accentPink], startPoint: .top, endPoint: .bottom).opacity(0.3), lineWidth: 2)
-                    .frame(width: 56, height: 56)
-                    .blur(radius: 3)
+                    .stroke(
+                        LinearGradient(
+                            colors: [stepIconColor.opacity(0.4), stepIconColor.opacity(0.1)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 2
+                    )
+                    .frame(width: 54, height: 54)
+                    .blur(radius: 2)
 
                 Circle()
                     .fill(
                         LinearGradient(
-                            colors: [accentGold.opacity(0.2), accentPink.opacity(0.1)],
+                            colors: [stepIconColor.opacity(0.18), stepIconColor.opacity(0.06)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 50, height: 50)
+                    .frame(width: 48, height: 48)
 
                 Image(systemName: stepIcon)
                     .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(accentPink)
+                    .foregroundStyle(stepIconColor)
             }
 
             Text(stepTitle)
@@ -181,34 +185,40 @@ struct SetupWizardView: View {
         }
     }
 
+    private var stepIconColor: Color {
+        accentColor
+    }
+
     private var stepIcon: String {
         ["waveform.circle.fill", "lock.shield", "cpu", "key.fill", "checkmark.seal.fill"][currentStep]
     }
 
     private var stepTitle: String {
-        ["Whisper Free", "Permissions", "Engine", "API Key", "Ready"][currentStep]
-            .replacingOccurrences(of: "Permissions", with: L.tr("Permissions", "Разрешения"))
-            .replacingOccurrences(of: "Engine", with: L.tr("Engine", "Движок"))
-            .replacingOccurrences(of: "API Key", with: L.tr("API Key", "API Key"))
-            .replacingOccurrences(of: "Ready", with: L.tr("Ready", "Готово"))
+        switch currentStep {
+        case 0: return "WhisperKiller"
+        case 1: return L.tr("Permissions", "Разрешения")
+        case 2: return L.tr("Engine", "Движок")
+        case 3: return "API Key"
+        case 4: return L.tr("All Set!", "Всё готово!")
+        default: return ""
+        }
     }
 
     private var stepSubtitle: String {
-        let subtitles = [
-            "AI voice-to-text, built for macOS",
-            "Two quick permissions to enable",
-            "Cloud or local — your choice",
-            "For cloud transcription & AI modes",
-            "Everything's set up"
-        ]
-
-        return [
-            L.tr(subtitles[0], "Голос в текст с AI для macOS"),
-            L.tr(subtitles[1], "Нужно выдать два разрешения"),
-            L.tr(subtitles[2], "Облако или локально — на ваш выбор"),
-            L.tr(subtitles[3], "Для облачной транскрибации и AI-режимов"),
-            L.tr(subtitles[4], "Всё готово к работе")
-        ][currentStep]
+        switch currentStep {
+        case 0:
+            return L.tr("AI voice-to-text, built natively for macOS", "Голос в текст с AI для macOS")
+        case 1:
+            return L.tr("Two quick permissions to enable", "Нужно выдать два разрешения")
+        case 2:
+            return L.tr("Cloud or local — your choice", "Облако или локально — на ваш выбор")
+        case 3:
+            return L.tr("For cloud transcription & AI modes", "Для облачной транскрибации и AI-режимов")
+        case 4:
+            return L.tr("WhisperKiller is ready. Good luck!", "WhisperKiller готов к работе. Удачи!")
+        default:
+            return ""
+        }
     }
 
     // ═══════════════════════════════════════════════
@@ -219,15 +229,15 @@ struct SetupWizardView: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 // Track
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.white.opacity(0.08))
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Color.primary.opacity(0.08))
                     .frame(height: 4)
 
                 // Fill
-                RoundedRectangle(cornerRadius: 2)
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [accentGold, accentPink, accentMag],
+                            colors: [accentColor, accentColor.opacity(0.8)],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -239,11 +249,11 @@ struct SetupWizardView: View {
                 HStack {
                     ForEach(0..<totalSteps, id: \.self) { step in
                         Circle()
-                            .fill(step <= currentStep ? accentPink : Color.white.opacity(0.15))
+                            .fill(step <= currentStep ? accentColor : Color.primary.opacity(0.15))
                             .frame(width: 8, height: 8)
                             .overlay(
                                 Circle()
-                                    .fill(step == currentStep ? accentPink : .clear)
+                                    .fill(step == currentStep ? accentColor : .clear)
                                     .frame(width: 12, height: 12)
                                     .opacity(0.3)
                             )
@@ -267,25 +277,37 @@ struct SetupWizardView: View {
             ],
             spacing: 10
         ) {
-            featureCard(icon: "mic.fill", color: .red,
-                        title: L.tr("\(appState.settings.hotkeyConfig.displayString) to record", "\(appState.settings.hotkeyConfig.displayString) для записи"),
-                        desc: L.tr("Hold, Toggle, or Push-to-Talk — pick your style", "Удержание, toggle или push-to-talk — выберите свой режим"))
-            featureCard(icon: "waveform", color: accentPink,
-                        title: L.tr("AI transcription", "AI-транскрибация"),
-                        desc: L.tr("Cloud (OpenAI) or Local (whisper.cpp with GPU/NPU)", "Облако (OpenAI) или локально (whisper.cpp с GPU/NPU)"))
-            featureCard(icon: "sparkles", color: SW.accent,
-                        title: L.tr("Smart post-processing", "Умная постобработка"),
-                        desc: L.tr("Dictation · Email · Code · Notes — or create your own", "Dictation · Email · Code · Notes — или создайте свой режим"))
-            featureCard(icon: "keyboard", color: .orange,
-                        title: L.tr("Auto-paste anywhere", "Автовставка куда угодно"),
-                        desc: L.tr("Result instantly typed into whichever app is focused", "Результат сразу печатается в активное приложение"))
+            featureCard(
+                icon: "mic.fill",
+                color: .red,
+                title: L.tr("\(appState.settings.hotkeyConfig.displayString) to record", "\(appState.settings.hotkeyConfig.displayString) для записи"),
+                desc: L.tr("Hold, Toggle, or Push-to-Talk — pick your style", "Удержание, toggle или push-to-talk — выберите свой режим")
+            )
+            featureCard(
+                icon: "waveform",
+                color: accentColor,
+                title: L.tr("AI transcription", "AI-транскрибация"),
+                desc: L.tr("Cloud (OpenAI) or Local (whisper.cpp with GPU/NPU)", "Облако (OpenAI) или локально (whisper.cpp с GPU/NPU)")
+            )
+            featureCard(
+                icon: "sparkles",
+                color: Color.purple,
+                title: L.tr("Smart post-processing", "Умная постобработка"),
+                desc: L.tr("Dictation · Email · Code · Notes — or create your own", "Dictation · Email · Code · Notes — или создайте свой режим")
+            )
+            featureCard(
+                icon: "keyboard",
+                color: .orange,
+                title: L.tr("Auto-paste anywhere", "Автовставка куда угодно"),
+                desc: L.tr("Result instantly typed into whichever app is focused", "Результат сразу печатается в активное приложение")
+            )
         }
     }
 
     private func featureCard(icon: String, color: Color, title: String, desc: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack {
-                RoundedRectangle(cornerRadius: 9)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(color.opacity(0.12))
                     .frame(width: 36, height: 36)
                 Image(systemName: icon)
@@ -307,11 +329,11 @@ struct SetupWizardView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 116, alignment: .topLeading)
         .padding(13)
-        .background(bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(borderSubtle, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(subtleBorder, lineWidth: 1)
         )
     }
 
@@ -345,7 +367,6 @@ struct SetupWizardView: View {
                     DispatchQueue.main.async {
                         micGranted = granted
                         if !granted {
-                            // If denied, guide to settings
                             let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
                             NSWorkspace.shared.open(url)
                         }
@@ -361,7 +382,7 @@ struct SetupWizardView: View {
                     Text(L.tr("Refresh", "Обновить"))
                 }
                 .font(.system(size: 12))
-                .foregroundStyle(accentGold)
+                .foregroundStyle(accentColor)
             }
             .buttonStyle(.swPlainInteractive)
             .padding(.top, 4)
@@ -375,7 +396,7 @@ struct SetupWizardView: View {
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(.red)
                     }
-                    Text(L.tr("To ensure permissions like Accessibility and Microphone work correctly, please move WhisperFree to your Applications folder.", "Чтобы разрешения вроде Accessibility и Microphone работали корректно, переместите WhisperFree в папку Applications."))
+                    Text(L.tr("To ensure permissions like Accessibility and Microphone work correctly, please move WhisperKiller to your Applications folder.", "Чтобы разрешения вроде Accessibility и Microphone работали корректно, переместите WhisperKiller в папку Applications."))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -396,8 +417,8 @@ struct SetupWizardView: View {
                 }
                 .padding(14)
                 .background(Color.red.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.red.opacity(0.2), lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.red.opacity(0.2), lineWidth: 1))
                 .padding(.top, 8)
             }
         }
@@ -479,11 +500,11 @@ struct SetupWizardView: View {
             }
         }
         .padding(14)
-        .background(bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(granted ? Color.accentColor.opacity(0.15) : borderSubtle, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(granted ? Color.accentColor.opacity(0.2) : subtleBorder, lineWidth: 1)
         )
     }
 
@@ -491,10 +512,10 @@ struct SetupWizardView: View {
         let tile = HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(draggable ? accentPink : textSecondary)
+                .foregroundStyle(draggable ? accentColor : textSecondary)
                 .frame(width: 22, height: 22)
-                .background((draggable ? accentPink : textSecondary).opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .background((draggable ? accentColor : textSecondary).opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
@@ -510,9 +531,9 @@ struct SetupWizardView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, minHeight: 48)
-        .background(Color.white.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(borderSubtle, lineWidth: 1))
+        .background(Color.primary.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(subtleBorder, lineWidth: 1))
 
         if draggable {
             return AnyView(tile.onDrag {
@@ -553,23 +574,46 @@ struct SetupWizardView: View {
         }
     }
 
+    private func isEngineReady(_ type: TranscriptionEngineType) -> Bool {
+        switch type {
+        case .cloud:
+            return !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .local:
+            return whisperInstalled && modelManager.isModelDownloaded(selectedModel)
+        case .qwenASR:
+            return dependencyInstaller.isQwenASRRuntimeInstalled && modelManager.isQwenModelDownloaded(selectedQwenModel)
+        case .parakeet:
+            return parakeetModelManager.isModelInstalled
+        case .gigaAM:
+            return dependencyInstaller.isGigaAMEnvironmentInstalled
+        }
+    }
+
     private func enginePill(type: TranscriptionEngineType, icon: String, label: String) -> some View {
         let selected = type == selectedEngine
+        let ready = isEngineReady(type)
+
         return Button {
             withAnimation(.spring(response: 0.3)) { selectedEngine = type }
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 14))
-                Text(label).font(.system(size: 13, weight: .semibold))
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 13))
+                Text(label).font(.system(size: 12, weight: .semibold))
+                if ready {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(selected ? accentColor : Color.accentColor)
+                }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(selected ? accentGold.opacity(0.15) : bgCard)
-            .foregroundStyle(selected ? accentGold : textSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 11)
+            .background(selected ? accentColor.opacity(0.14) : cardBackground)
+            .foregroundStyle(selected ? accentColor : textSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(selected ? accentGold.opacity(0.4) : borderSubtle, lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(selected ? accentColor.opacity(0.4) : subtleBorder, lineWidth: 1.5)
             )
         }
         .buttonStyle(.swPlainInteractive)
@@ -595,9 +639,9 @@ struct SetupWizardView: View {
                 .foregroundStyle(textSecondary)
         }
         .padding(16)
-        .background(bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(subtleBorder, lineWidth: 1))
     }
 
     private var localEngineCard: some View {
@@ -613,33 +657,9 @@ struct SetupWizardView: View {
             }
         }
         .padding(16)
-        .background(bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
-    }
-
-    private var gigaAMEngineCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: TranscriptionEngineType.gigaAM.icon).foregroundStyle(Color.accentColor).font(.system(size: 11))
-                Text(L.tr("Russian · Local · Experimental", "Русский · Локально · Эксперимент"))
-                    .font(.system(size: 12, weight: .medium)).foregroundStyle(textSecondary)
-            }
-
-            tagRow(items: [
-                ("text.bubble", "GigaAM-v3", Color.accentColor),
-                ("terminal", "Python 3", .orange),
-                ("arrow.down.circle", "Downloads model cache", .orange),
-            ])
-
-            Text(L.tr("Russian-focused recognition for comparison runs.", "Распознавание под русский для сравнительных прогонов."))
-                .font(.system(size: 11))
-                .foregroundStyle(textSecondary)
-        }
-        .padding(16)
-        .background(bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(subtleBorder, lineWidth: 1))
     }
 
     private var parakeetEngineCard: some View {
@@ -656,61 +676,475 @@ struct SetupWizardView: View {
             tagRow(items: [
                 ("waveform", "Parakeet TDT v3", Color.accentColor),
                 ("memorychip", L.tr("Apple Silicon", "Apple Silicon"), textSecondary),
-                ("arrow.down.circle", L.tr("~460 MB download", "Загрузка ~460 МБ"), .orange),
+                ("arrow.down.circle", L.tr("~460 MB download", "Загрузка ~460 МБ"), textSecondary),
             ])
 
+            Divider()
+
+            parakeetStatusRow
+
             Text(L.tr(
-                "Download the model later in Settings → Engine.",
-                "Скачайте модель позже в Настройки → Движок."
+                "Runs 100% on Apple Silicon Neural Engine. Instant transcription with zero cloud latency.",
+                "Работает на Apple Silicon Neural Engine. Мгновенная транскрибация без облачной задержки."
             ))
             .font(.system(size: 11))
             .foregroundStyle(textSecondary)
         }
         .padding(16)
-        .background(bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(subtleBorder, lineWidth: 1))
     }
 
-    private var qwenEngineCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 6) {
-                Image(systemName: "lock.shield.fill").foregroundStyle(Color.accentColor).font(.system(size: 11))
-                Text(L.tr("Private · MLX · Apple Silicon", "Приватно · MLX · Apple Silicon"))
-                    .font(.system(size: 12, weight: .medium)).foregroundStyle(textSecondary)
-            }
-
-            tagRow(items: [
-                ("waveform.and.magnifyingglass", selectedQwenModel.modelID, Color.accentColor),
-                ("arrow.down.circle", "Downloads once", .orange),
-                ("memorychip", selectedQwenModel.sizeDescription, textSecondary),
-            ])
-
+    @ViewBuilder
+    private var parakeetStatusRow: some View {
+        if !ParakeetTranscriber.isAppleSilicon {
             HStack(spacing: 8) {
-                ForEach(QwenASRModel.allCases, id: \.self) { model in
-                    Button {
-                        selectedQwenModel = model
-                    } label: {
-                        Text(model.localizedTitle)
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(.orange)
+                Text(L.tr("Requires Apple Silicon (M1/M2/M3/M4)", "Требуется Apple Silicon (M1/M2/M3/M4)"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.orange)
+            }
+            .padding(10)
+            .background(Color.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        } else {
+            HStack(spacing: 10) {
+                switch parakeetModelManager.state {
+                case .ready, .installed:
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L.tr("Parakeet TDT v3 ready", "Parakeet TDT v3 готова к работе"))
                             .font(.system(size: 12, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(selectedQwenModel == model ? accentGold.opacity(0.15) : Color.white.opacity(0.05))
-                            .foregroundStyle(selectedQwenModel == model ? accentGold : textSecondary)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .foregroundStyle(textPrimary)
+                        Text(L.tr("Model is cached locally.", "Модель сохранена локально."))
+                            .font(.system(size: 10))
+                            .foregroundStyle(textSecondary)
+                    }
+                    Spacer()
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.accentColor)
+
+                case .downloading(let progress, let stage):
+                    ProgressView()
+                        .controlSize(.small)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(stageTitle(stage)) · \(Int(progress * 100))%")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(textPrimary)
+                        ProgressView(value: progress)
+                            .progressViewStyle(.linear)
+                            .frame(maxWidth: 160)
+                    }
+                    Spacer()
+                    Button {
+                        parakeetModelManager.cancelDownload()
+                    } label: {
+                        Text(L.tr("Cancel", "Отмена"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.primary.opacity(0.08))
+                            .foregroundStyle(textPrimary)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.swPlainInteractive)
+
+                case .partial:
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L.tr("Download incomplete", "Скачивание не завершено"))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.orange)
+                        Text(L.tr("Retry continues the download", "Повторение продолжит загрузку"))
+                            .font(.system(size: 10))
+                            .foregroundStyle(textSecondary)
+                    }
+                    Spacer()
+                    Button {
+                        parakeetModelManager.download()
+                    } label: {
+                        Text(L.tr("Retry", "Повторить"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(accentColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.swPlainInteractive)
+
+                case .validating:
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(L.tr("Checking model…", "Проверяю модель…"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(textSecondary)
+                    Spacer()
+
+                case .failed(let message):
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.red)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L.tr("Model error", "Ошибка модели"))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.red)
+                        Text(message)
+                            .font(.system(size: 10))
+                            .foregroundStyle(textSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Button {
+                        parakeetModelManager.download(force: true)
+                    } label: {
+                        Text(L.tr("Repair", "Исправить"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(accentColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.swPlainInteractive)
+
+                case .notInstalled, .deleting:
+                    Image(systemName: "arrow.down.circle")
+                        .foregroundStyle(accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L.tr("Model not downloaded", "Модель не скачана"))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(textPrimary)
+                        Text(L.tr("~460 MB download", "~460 МБ загрузка"))
+                            .font(.system(size: 10))
+                            .foregroundStyle(textSecondary)
+                    }
+                    Spacer()
+                    Button {
+                        parakeetModelManager.download()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.down.circle.fill")
+                            Text(L.tr("Download", "Скачать"))
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(accentColor)
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
                     }
                     .buttonStyle(.swPlainInteractive)
                 }
             }
+            .padding(10)
+            .background(parakeetRowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
 
-            Text(L.tr("Runs fully on this Mac. No cloud transcription fallback is enabled.", "Работает полностью на этом Mac. Облачный fallback для транскрибации не включается."))
+    private var parakeetRowBackground: Color {
+        switch parakeetModelManager.state {
+        case .ready, .installed:
+            return Color.accentColor.opacity(0.08)
+        case .failed:
+            return Color.red.opacity(0.08)
+        case .partial:
+            return Color.orange.opacity(0.08)
+        default:
+            return Color.primary.opacity(0.04)
+        }
+    }
+
+    private func stageTitle(_ stage: ParakeetDownloadStage) -> String {
+        switch stage {
+        case .listing: return L.tr("Preparing", "Подготовка")
+        case .downloading: return L.tr("Downloading", "Скачивание")
+        case .compiling: return L.tr("Compiling", "Компиляция")
+        }
+    }
+
+    private var qwenEngineCard: some View {
+        let runtimeReady = dependencyInstaller.isQwenASRRuntimeInstalled
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 6) {
+                Image(systemName: "lock.shield.fill")
+                    .foregroundStyle(Color.accentColor)
+                    .font(.system(size: 11))
+                Text(L.tr("Private · Apple MLX · On-device", "Приватно · Apple MLX · На устройстве"))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(textSecondary)
+            }
+
+            // Runtime row
+            HStack(spacing: 10) {
+                Image(systemName: runtimeReady ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(runtimeReady ? Color.accentColor : .orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(runtimeReady
+                        ? L.tr("Qwen3-ASR runtime ready", "Runtime Qwen3-ASR готов")
+                        : (dependencyInstaller.isInstallingQwenASR
+                            ? L.tr("Installing runtime...", "Устанавливаю runtime...")
+                            : L.tr("Runtime not installed", "Runtime не установлен"))
+                    )
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(runtimeReady ? Color.accentColor : textPrimary)
+
+                    if !runtimeReady && !dependencyInstaller.qwenASRStatus.isEmpty {
+                        Text(dependencyInstaller.qwenASRStatus)
+                            .font(.system(size: 10))
+                            .foregroundStyle(textSecondary)
+                    }
+                }
+                Spacer()
+
+                if dependencyInstaller.isInstallingQwenASR || dependencyInstaller.isCheckingQwenASRRuntime {
+                    ProgressView().controlSize(.mini)
+                } else if !runtimeReady {
+                    Button {
+                        dependencyInstaller.installQwenASRRuntime()
+                    } label: {
+                        Text(L.tr("Install", "Установить"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(accentColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.swPlainInteractive)
+                    .disabled(!QwenASRTranscriber.isAppleSilicon)
+                }
+            }
+            .padding(10)
+            .background(Color.primary.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            // Models section
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L.tr("MODELS", "МОДЕЛИ"))
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(textSecondary)
+
+                ForEach(QwenASRModel.allCases, id: \.self) { model in
+                    qwenModelRow(model, runtimeReady: runtimeReady)
+                }
+            }
+
+            Text(L.tr("Runs fully on this Mac with Apple MLX. No cloud connection needed.", "Работает полностью на этом Mac через Apple MLX. Подключение к сети не требуется."))
                 .font(.system(size: 11))
                 .foregroundStyle(textSecondary)
         }
         .padding(16)
-        .background(bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(subtleBorder, lineWidth: 1))
+    }
+
+    private func qwenModelRow(_ model: QwenASRModel, runtimeReady: Bool) -> some View {
+        let isCurrent = selectedQwenModel == model
+        let isDownloaded = modelManager.isQwenModelDownloaded(model)
+        let isPartial = modelManager.hasPartialQwenModelDownload(model)
+        let isDownloading = dependencyInstaller.downloadingQwenASRModel == model
+        let isRecommended = model == QwenASRModel.recommended
+
+        return HStack(spacing: 10) {
+            Image(systemName: isCurrent ? "largecircle.fill.circle" : "circle")
+                .font(.system(size: 14))
+                .foregroundStyle(isCurrent ? accentColor : textSecondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(model.localizedTitle)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(textPrimary)
+                    if isRecommended {
+                        Text(L.tr("REC", "РЕК"))
+                            .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(accentColor.opacity(0.15))
+                            .foregroundStyle(accentColor)
+                            .clipShape(Capsule())
+                    }
+                }
+                Text(model.sizeDescription)
+                    .font(.system(size: 10))
+                    .foregroundStyle(textSecondary)
+            }
+
+            Spacer()
+
+            if isDownloaded {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.accentColor)
+                        .font(.system(size: 14))
+                    Text(L.tr("Ready", "Готово"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                }
+            } else if isDownloading {
+                VStack(alignment: .trailing, spacing: 3) {
+                    ProgressView(value: Double(dependencyInstaller.qwenASRModelDownloadProgress))
+                        .progressViewStyle(.linear)
+                        .frame(width: 80)
+                    Text("\(Int(dependencyInstaller.qwenASRModelDownloadProgress * 100))%")
+                        .font(.system(size: 8, design: .monospaced))
+                        .foregroundStyle(textSecondary)
+                }
+            } else if isPartial {
+                Button {
+                    modelManager.deleteQwenModel(model)
+                    dependencyInstaller.downloadQwenASRModel(model, modelManager: modelManager) {
+                        selectedQwenModel = model
+                    }
+                } label: {
+                    Text(L.tr("Retry", "Повторить"))
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundStyle(.orange)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.swPlainInteractive)
+            } else {
+                Button {
+                    dependencyInstaller.downloadQwenASRModel(model, modelManager: modelManager) {
+                        selectedQwenModel = model
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.circle.fill")
+                        Text(L.tr("Get", "Скачать"))
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(accentColor.opacity(0.14))
+                    .foregroundStyle(accentColor)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.swPlainInteractive)
+                .disabled(!runtimeReady || dependencyInstaller.downloadingQwenASRModel != nil)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(isCurrent ? accentColor.opacity(0.08) : .clear)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(Rectangle())
+        .swInteractiveHover()
+        .onTapGesture {
+            selectedQwenModel = model
+        }
+    }
+
+    private var gigaAMEngineCard: some View {
+        let isInstalled = dependencyInstaller.isGigaAMEnvironmentInstalled
+        let hasPython = GigaAMTranscriber.findBasePythonBinary() != nil
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: TranscriptionEngineType.gigaAM.icon).foregroundStyle(Color.accentColor).font(.system(size: 11))
+                Text(L.tr("Russian · Local · Experimental", "Русский · Локально · Эксперимент"))
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(textSecondary)
+            }
+
+            tagRow(items: [
+                ("text.bubble", "GigaAM-v3", Color.accentColor),
+                ("terminal", hasPython ? "Python 3 detected" : "Python 3 needed", hasPython ? Color.accentColor : .orange),
+                ("arrow.down.circle", isInstalled ? "Environment ready" : "Needs setup", isInstalled ? Color.accentColor : .orange),
+            ])
+
+            Divider()
+
+            // Python check row
+            HStack(spacing: 10) {
+                Image(systemName: hasPython ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(hasPython ? Color.accentColor : .orange)
+                Text(hasPython
+                    ? L.tr("Python 3 found", "Python 3 найден")
+                    : L.tr("Python 3.10-3.13 not found", "Python 3.10-3.13 не найден")
+                )
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(hasPython ? Color.accentColor : .orange)
+                Spacer()
+            }
+            .padding(10)
+            .background(hasPython ? Color.accentColor.opacity(0.08) : Color.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            // Environment row
+            HStack(spacing: 10) {
+                Image(systemName: isInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(isInstalled ? Color.accentColor : .orange)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isInstalled
+                        ? L.tr("GigaAM runtime installed", "Окружение GigaAM установлено")
+                        : (dependencyInstaller.isInstallingGigaAM ? L.tr("Installing runtime...", "Устанавливаю runtime...") : L.tr("Runtime not installed", "Окружение не установлено"))
+                    )
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isInstalled ? Color.accentColor : textPrimary)
+
+                    if !dependencyInstaller.gigaAMStatus.isEmpty && !isInstalled {
+                        Text(dependencyInstaller.gigaAMStatus)
+                            .font(.system(size: 10))
+                            .foregroundStyle(textSecondary)
+                    }
+                }
+                Spacer()
+
+                if dependencyInstaller.isInstallingGigaAM {
+                    ProgressView().controlSize(.mini)
+                } else if isInstalled {
+                    Button {
+                        dependencyInstaller.refreshGigaAMStatus()
+                    } label: {
+                        Text(L.tr("Refresh", "Обновить"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.primary.opacity(0.08))
+                            .foregroundStyle(textPrimary)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.swPlainInteractive)
+                } else {
+                    Button {
+                        dependencyInstaller.installGigaAMDependencies()
+                    } label: {
+                        Text(L.tr("Install", "Установить"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(accentColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.swPlainInteractive)
+                    .disabled(!hasPython)
+                }
+            }
+            .padding(10)
+            .background(isInstalled ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            Text(L.tr("Russian-focused recognition for comparison runs.", "Распознавание под русский для сравнительных прогонов."))
+                .font(.system(size: 11))
+                .foregroundStyle(textSecondary)
+        }
+        .padding(16)
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(subtleBorder, lineWidth: 1))
     }
 
     private var localEngineStatusRow: some View {
@@ -761,8 +1195,8 @@ struct SetupWizardView: View {
                             .font(.system(size: 11, weight: .semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
-                            .background(accentPink.opacity(0.2))
-                            .foregroundStyle(accentPink)
+                            .background(accentColor.opacity(0.14))
+                            .foregroundStyle(accentColor)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.swPlainInteractive)
@@ -774,8 +1208,8 @@ struct SetupWizardView: View {
                             .font(.system(size: 11, weight: .semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
-                            .background(accentPink.opacity(0.2))
-                            .foregroundStyle(accentPink)
+                            .background(accentColor.opacity(0.14))
+                            .foregroundStyle(accentColor)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.swPlainInteractive)
@@ -783,8 +1217,8 @@ struct SetupWizardView: View {
             }
         }
         .padding(10)
-        .background(homebrewInstalled ? Color.accentColor.opacity(0.06) : Color.red.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(homebrewInstalled ? Color.accentColor.opacity(0.08) : Color.red.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var whisperCppDependencyRow: some View {
@@ -811,8 +1245,8 @@ struct SetupWizardView: View {
                             .font(.system(size: 11, weight: .semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
-                            .background(accentPink.opacity(0.2))
-                            .foregroundStyle(accentPink)
+                            .background(accentColor.opacity(0.14))
+                            .foregroundStyle(accentColor)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.swPlainInteractive)
@@ -820,8 +1254,8 @@ struct SetupWizardView: View {
             }
         }
         .padding(10)
-        .background(whisperInstalled ? Color.accentColor.opacity(0.06) : Color.red.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(whisperInstalled ? Color.accentColor.opacity(0.08) : Color.red.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func modelRow(_ size: LocalModelSize) -> some View {
@@ -835,7 +1269,7 @@ struct SetupWizardView: View {
         return HStack(spacing: 10) {
             Image(systemName: isCurrent ? "largecircle.fill.circle" : "circle")
                 .font(.system(size: 14))
-                .foregroundStyle(isCurrent ? accentPink : textSecondary)
+                .foregroundStyle(isCurrent ? accentColor : textSecondary)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -843,12 +1277,12 @@ struct SetupWizardView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(textPrimary)
                     if isRecommended {
-                    Text(L.tr("REC", "РЕК"))
+                        Text(L.tr("REC", "РЕК"))
                             .font(.system(size: 8, weight: .heavy, design: .monospaced))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
-                            .background(accentGold.opacity(0.2))
-                            .foregroundStyle(accentGold)
+                            .background(accentColor.opacity(0.15))
+                            .foregroundStyle(accentColor)
                             .clipShape(Capsule())
                     }
                 }
@@ -913,10 +1347,10 @@ struct SetupWizardView: View {
                             Text(L.tr("Get", "Скачать"))
                                 .font(.system(size: 11, weight: .semibold))
                         }
-                        .foregroundStyle(accentGold)
+                        .foregroundStyle(accentColor)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(accentGold.opacity(0.15))
+                        .background(accentColor.opacity(0.14))
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.swPlainInteractive)
@@ -925,8 +1359,8 @@ struct SetupWizardView: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .background(isCurrent ? accentGold.opacity(0.06) : .clear)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(isCurrent ? accentColor.opacity(0.08) : .clear)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
         .swInteractiveHover()
         .onTapGesture {
@@ -953,14 +1387,14 @@ struct SetupWizardView: View {
         VStack(spacing: 16) {
             if selectedEngine != .cloud {
                 HStack(spacing: 10) {
-                    Image(systemName: "info.circle.fill").foregroundStyle(accentGold)
+                    Image(systemName: "info.circle.fill").foregroundStyle(accentColor)
                     Text(L.tr("Optional for local engines. Only needed for AI post-processing modes.", "Необязательно для локальных движков. Нужно только для AI-режимов постобработки."))
                         .font(.system(size: 12)).foregroundStyle(textSecondary)
                 }
                 .padding(14)
-                .background(accentGold.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(accentGold.opacity(0.15), lineWidth: 1))
+                .background(accentColor.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(accentColor.opacity(0.2), lineWidth: 1))
             }
 
             VStack(alignment: .leading, spacing: 12) {
@@ -982,7 +1416,7 @@ struct SetupWizardView: View {
                     } label: {
                         Group {
                             if apiValidationState == .checking {
-                                ProgressView().controlSize(.mini).tint(accentGold)
+                                ProgressView().controlSize(.mini).tint(accentColor)
                             } else {
                                 Text(L.tr("Test", "Проверить"))
                                     .font(.system(size: 12, weight: .semibold))
@@ -990,9 +1424,9 @@ struct SetupWizardView: View {
                         }
                         .frame(width: 50)
                         .padding(.vertical, 10)
-                        .background(accentGold.opacity(0.15))
-                        .foregroundStyle(accentGold)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .background(accentColor.opacity(0.14))
+                        .foregroundStyle(accentColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                     .buttonStyle(.swPlainInteractive)
                     .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || apiValidationState == .checking)
@@ -1013,13 +1447,13 @@ struct SetupWizardView: View {
                         Text(L.tr("Get API key at platform.openai.com", "Получить API key на platform.openai.com"))
                     }
                     .font(.system(size: 11))
-                    .foregroundStyle(accentGold)
+                    .foregroundStyle(accentColor)
                 }
             }
             .padding(16)
-            .background(bgCard)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
+            .background(cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(subtleBorder, lineWidth: 1))
 
             if selectedEngine == .cloud && apiKey.isEmpty {
                 HStack(spacing: 8) {
@@ -1030,120 +1464,121 @@ struct SetupWizardView: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.orange.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
     }
 
     // ═══════════════════════════════════════════════
-    // MARK: – Step 4: Ready
+    // MARK: – Step 4: Ready (Final Slide)
     // ═══════════════════════════════════════════════
 
     private var readyStep: some View {
-        VStack(spacing: 18) {
-            // Checklist
-            VStack(spacing: 8) {
-                readyRow(L.tr("Accessibility", "Accessibility"), ok: appState.isHotkeyTrusted)
-                readyRow(L.tr("Microphone", "Микрофон"), ok: micGranted)
-                readyRow("\(L.tr("Engine", "Движок")): \(selectedEngine.localizedTitle)", ok: true)
-                if selectedEngine == .cloud {
-                    readyRow(L.tr("API Key", "API Key"), ok: !apiKey.isEmpty)
-                } else if selectedEngine == .local {
-                    readyRow("whisper-cpp", ok: whisperInstalled)
-                    if modelManager.isModelDownloaded(selectedModel) {
-                        readyRow("\(L.tr("Model", "Модель")): \(selectedModel.rawValue)", ok: true)
-                    } else if let state = modelManager.activeDownloads[selectedModel.rawValue] {
-                        VStack(alignment: .leading, spacing: 6) {
-                            readyRow("\(L.tr("Model", "Модель")): \(selectedModel.rawValue)", ok: false)
-                            HStack(spacing: 8) {
-                                ProgressView(value: state.progress)
-                                    .progressViewStyle(.linear)
-                                    .controlSize(.small)
-                                if state.speed > 0 {
-                                    Text("\(formatSpeed(state.speed)) • \(formatDuration(state.timeRemaining ?? 0))")
-                                        .font(.system(size: 9, design: .monospaced))
-                                        .foregroundStyle(textSecondary)
-                                }
-                            }
-                            .padding(.leading, 24)
-                        }
-                    } else {
-                        readyRow("\(L.tr("Model", "Модель")): \(selectedModel.rawValue)", ok: false)
-                    }
-                } else if selectedEngine == .qwenASR {
-                    readyRow("Apple Silicon", ok: QwenASRTranscriber.isAppleSilicon)
-                    readyRow("Qwen3-ASR setup", ok: QwenASRTranscriber.isRuntimeInstalled)
-                    readyRow("\(L.tr("Model", "Модель")): \(selectedQwenModel.modelID)", ok: modelManager.isQwenModelDownloaded(selectedQwenModel))
-                } else if selectedEngine == .parakeet {
-                    readyRow("Apple Silicon", ok: ParakeetTranscriber.isAppleSilicon)
-                    readyRow("Parakeet TDT v3", ok: parakeetModelManager.isModelInstalled)
-                } else {
-                    readyRow("Python 3", ok: GigaAMTranscriber.findPythonBinary() != nil)
-                    readyRow("GigaAM-v3", ok: true)
+        VStack(spacing: 0) {
+            // Hotkey row
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(accentColor.opacity(0.12))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: "keyboard")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(accentColor)
                 }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L.tr("Record shortcut", "Горячая клавиша"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(textPrimary)
+                    Text(L.tr("Hold or press in any app to dictate", "Нажмите в любом приложении для записи"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(textSecondary)
+                }
+
+                Spacer()
+
+                Text(appState.settings.hotkeyConfig.displayString)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.primary.opacity(0.06))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                    )
+                    .foregroundStyle(textPrimary)
             }
-            .padding(16)
-            .background(bgCard)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderSubtle, lineWidth: 1))
+            .padding(14)
 
-            // Shortcuts
-            VStack(spacing: 10) {
-                Text(L.tr("SHORTCUTS", "ГОРЯЧИЕ КЛАВИШИ"))
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(textSecondary)
-                shortcutBadge(
-                    key: appState.settings.hotkeyConfig.displayString,
-                    label: appState.settings.recordingMode.localizedTitle
-                )
-                Text(appState.settings.recordingMode.localizedDescription(hotkey: appState.settings.hotkeyConfig.displayString))
-                    .font(.system(size: 11))
-                    .foregroundStyle(textSecondary)
-                    .multilineTextAlignment(.center)
+            Divider()
+                .padding(.horizontal, 14)
+                .opacity(0.1)
+
+            // GitHub Star row
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.yellow.opacity(0.14))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.yellow)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L.tr("Star on GitHub ⭐", "Пж, поставь звезду на GitHub ⭐"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(textPrimary)
+                    Text(L.tr("Free & open source project", "Бесплатный проект с открытым кодом"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(textSecondary)
+                }
+
+                Spacer()
+
+                Button {
+                    if let url = URL(string: "https://github.com/iddictive/Whisper-Killer") {
+                        NSWorkspace.shared.open(url)
+                        hasStarredGitHub = true
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: hasStarredGitHub ? "star.fill" : "star")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(hasStarredGitHub
+                            ? L.tr("Thank you! ❤️", "Спасибо! ❤️")
+                            : L.tr("Star on GitHub", "Поставить звезду")
+                        )
+                        .font(.system(size: 12, weight: .medium))
+                        if !hasStarredGitHub {
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                    }
+                    .foregroundStyle(hasStarredGitHub ? accentColor : textPrimary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.primary.opacity(0.06))
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.swPlainInteractive)
             }
-            .padding(16)
-            .background(bgCard)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-
-            Text(L.tr("You can change everything later in Settings", "Позже это всё можно изменить в настройках"))
-                .font(.system(size: 11))
-                .foregroundStyle(textSecondary)
+            .padding(14)
         }
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(subtleBorder, lineWidth: 1)
+        )
     }
 
-    private func readyRow(_ label: String, ok: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.circle")
-                .font(.system(size: 14))
-                .foregroundStyle(ok ? Color.accentColor : .orange)
-            Text(label).font(.system(size: 13)).foregroundStyle(textPrimary)
-            Spacer()
-            Text(ok ? L.tr("Ready", "Готово") : L.tr("Skipped", "Пропущено"))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(ok ? Color.accentColor : .orange)
-        }
-    }
 
-    private func shortcutBadge(key: String, label: String) -> some View {
-        VStack(spacing: 6) {
-            Text(key)
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color.white.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                )
-                .foregroundStyle(textPrimary)
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(textSecondary)
-        }
-    }
-
-    // ═══════════════════════════════════════════════
     // MARK: – Bottom bar
     // ═══════════════════════════════════════════════
 
@@ -1174,12 +1609,12 @@ struct SetupWizardView: View {
                 if currentStep > 0 {
                     Button {
                         withAnimation(.spring(response: 0.35)) { currentStep -= 1 }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left").font(.system(size: 10, weight: .bold))
-                        Text(L.tr("Back", "Назад")).font(.system(size: 13))
-                    }
-                    .foregroundStyle(textSecondary)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left").font(.system(size: 10, weight: .bold))
+                            Text(L.tr("Back", "Назад")).font(.system(size: 13))
+                        }
+                        .foregroundStyle(textSecondary)
                     }
                     .buttonStyle(.swPlainInteractive)
                 }
@@ -1198,13 +1633,7 @@ struct SetupWizardView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .padding(.horizontal, 22)
                         .padding(.vertical, 10)
-                        .background(
-                            LinearGradient(
-                                colors: [accentGold, accentPink],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        .background(accentColor)
                         .foregroundStyle(.white)
                         .clipShape(Capsule())
                     }
@@ -1215,14 +1644,14 @@ struct SetupWizardView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
-                            Text(L.tr("Launch", "Запустить"))
+                            Text(L.tr("Launch WhisperKiller", "Запустить WhisperKiller"))
                         }
                         .font(.system(size: 13, weight: .semibold))
                         .padding(.horizontal, 22)
                         .padding(.vertical, 10)
                         .background(
                             LinearGradient(
-                                colors: [.green, .green.opacity(0.7)],
+                                colors: [Color.green, Color.green.opacity(0.85)],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -1292,3 +1721,4 @@ struct SetupWizardView: View {
         onComplete()
     }
 }
+

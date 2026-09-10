@@ -583,11 +583,13 @@ final class SetupWizardWindowController: NSObject {
         )
         window.center()
         window.contentView = hostingView
+        window.title = ""
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = false
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.backgroundColor = .clear
+        window.isOpaque = false
         applyAppWindowIcon(window)
 
         self.window = window
