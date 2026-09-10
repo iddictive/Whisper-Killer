@@ -431,10 +431,7 @@ enum TranscriptionEngineType: String, Codable, CaseIterable {
     var icon: String {
         switch self {
         case .cloud: return "cloud"
-        case .local: return "desktopcomputer"
-        case .qwenASR: return "waveform.and.magnifyingglass"
-        case .parakeet: return "bird.fill"
-        case .gigaAM: return "waveform.badge.magnifyingglass"
+        case .local, .qwenASR, .parakeet, .gigaAM: return "desktopcomputer"
         }
     }
 }

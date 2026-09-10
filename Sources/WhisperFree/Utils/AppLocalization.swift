@@ -153,17 +153,17 @@ extension InsertionMethod {
 extension TranscriptionEngineType {
     var localizedTitle: String {
         switch self {
-        case .cloud: return L.tr("Cloud (OpenAI)", "Облако (OpenAI)")
-        case .local: return L.tr("Local (whisper.cpp)", "Локально (whisper.cpp)")
-        case .qwenASR: return L.tr("Local (Qwen3-ASR MLX)", "Локально (Qwen3-ASR MLX)")
-        case .parakeet: return L.tr("Local (Parakeet TDT v3)", "Локально (Parakeet TDT v3)")
-        case .gigaAM: return L.tr("GigaAM Russian", "GigaAM русский")
+        case .cloud: return "OpenAI"
+        case .local: return "whisper.cpp"
+        case .qwenASR: return "Qwen3-ASR MLX"
+        case .parakeet: return "Parakeet TDT v3"
+        case .gigaAM: return L.tr("GigaAM (Russian)", "GigaAM (русский)")
         }
     }
 
     var localizedShortTitle: String {
         switch self {
-        case .cloud: return L.tr("Cloud", "Облако")
+        case .cloud: return "OpenAI"
         case .local: return "Whisper"
         case .qwenASR: return "Qwen3-ASR"
         case .parakeet: return "Parakeet"

@@ -348,19 +348,17 @@ struct MenuBarView: View {
     private var sourceMenu: some View {
         Menu {
             ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
-                Toggle(isOn: Binding(
-                    get: { appState.settings.engineType == type },
-                    set: { isSelected in
-                        if isSelected {
-                            appState.settings.engineType = type
-                            if type == .gigaAM {
-                                appState.settings.language = "ru"
-                            }
-                            appState.saveSettings()
-                        }
+                Button {
+                    appState.settings.engineType = type
+                    if type == .gigaAM {
+                        appState.settings.language = "ru"
                     }
-                )) {
-                    Label(type.localizedTitle, systemImage: type.icon)
+                    appState.saveSettings()
+                } label: {
+                    Label(
+                        type.localizedTitle + (appState.settings.engineType == type ? "  ✓" : ""),
+                        systemImage: type.icon
+                    )
                 }
                 .disabled(type == .parakeet && !ParakeetTranscriber.isAppleSilicon)
             }
