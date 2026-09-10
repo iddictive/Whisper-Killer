@@ -209,19 +209,18 @@ struct SettingsView: View {
                     }
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
-                    .padding(.top, 32)
+                    .padding(.top, 24)
                 }
                 .scrollContentBackground(.hidden)
                 .background(SW.contentBackground.opacity(0.12))
                 .mask(
                     VStack(spacing: 0) {
-                        Color.clear.frame(height: 28)
                         LinearGradient(
                             colors: [.clear, .black],
                             startPoint: .top,
                             endPoint: .bottom
                         )
-                        .frame(height: 8)
+                        .frame(height: 12)
                         Rectangle()
                     }
                 )
