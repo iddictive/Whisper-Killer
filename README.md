@@ -1,7 +1,7 @@
 # WhisperKiller
 
 <p align="center">
-  <img src="assets/banner.png" alt="WhisperKiller banner" width="860">
+  <img src="assets/banner.webp" alt="WhisperKiller banner" width="860">
 </p>
 
 <p align="center">
@@ -11,8 +11,8 @@
 ## Interface Tour
 
 <p align="center">
-  <a href="assets/interface-collage.png">
-    <img src="assets/interface-collage.png" alt="WhisperKiller menu bar, file transcription, AI chat, and recording overlay" width="1040">
+  <a href="assets/interface-collage.webp">
+    <img src="assets/interface-collage.webp" alt="WhisperKiller menu bar, file transcription, AI chat, and recording overlay" width="1040">
   </a>
 </p>
 
