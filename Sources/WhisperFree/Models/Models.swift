@@ -895,14 +895,15 @@ struct AppSettings: Codable {
         return cloudTranscriptionModel
     }
 
-    func isModeEnabled(_ mode: TranscriptionMode) -> Bool {
+    func isModeEnabled(_ mode: TranscriptionMode, isAPIKeyInvalid: Bool = false) -> Bool {
         // Raw is always available (it's the only non-AI mode).
         if mode.name == TranscriptionMode.raw.name { return true }
 
-        // All other modes (Dictation, Email, etc.) require global AI enablement AND keys
+        // All other modes (Dictation, Email, etc.) require global AI enablement AND valid keys
         guard enablePostProcessing else { return false }
+        guard hasOpenAIAPIKey, !isAPIKeyInvalid else { return false }
 
-        return hasOpenAIAPIKey
+        return true
     }
 
     func validatedModeName(currentName: String) -> String {

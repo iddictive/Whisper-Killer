@@ -5,6 +5,7 @@ All notable changes to WhisperKiller are documented in this file.
 ## [3.50] - 2026-09-10
 
 ### Added
+- **OpenAI API Key Validation State & Mode Locking**: Real-time detection and handling of invalid, expired, or revoked OpenAI API keys. Dependent AI modes are automatically locked with warning banners and tooltips when a key fails validation or returns HTTP 401, preventing failed dictation attempts.
 - **Text Casing Settings**: Options to format output as `lowercase` (no caps), `UPPERCASE` (CAPS), `Sentence case`, or `Title Case`.
 - **Punctuation Controls**: Global toggle to strip all punctuation marks from transcribed speech, with preserved decimal numbers (`3.14`, `10,5`).
 - **Selective Punctuation Removal**: Granular controls to selectively remove periods/ellipsis, commas, question/exclamation marks, hyphens/dashes, quotes/brackets, or colons/semicolons.
@@ -19,6 +20,7 @@ All notable changes to WhisperKiller are documented in this file.
 - **Parakeet Auto-Readiness**: Automatically marked complete Parakeet models as ready without requiring manual verification on every app launch.
 
 ### Fixed
+- **Bundled Changelog Synchronization**: Bundled `CHANGELOG.md` into the application resources, ensuring the installed version's release notes are immediately accessible offline without displaying stale cached changelogs.
 - **Settings Titlebar Overlap**: Added smooth top content dissolve at the toolbar boundary to prevent scrolled content from overlapping the floating title.
 - **Menu Top Gap**: Eliminated empty header gap in menu bar dropdowns caused by inline picker section headers.
 

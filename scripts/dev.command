@@ -69,6 +69,9 @@ prepare_bundle() {
     if [ -f "$ICON_FILE" ]; then
         cp "$ICON_FILE" "$bundle_path/Contents/Resources/AppIcon.icns"
     fi
+    if [ -f "$ROOT_DIR/CHANGELOG.md" ]; then
+        cp "$ROOT_DIR/CHANGELOG.md" "$bundle_path/Contents/Resources/CHANGELOG.md"
+    fi
 
     dot_clean -m "$bundle_path" 2>/dev/null || true
     find "$bundle_path" -name '._*' -delete

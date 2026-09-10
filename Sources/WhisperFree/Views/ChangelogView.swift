@@ -67,7 +67,7 @@ enum ChangelogCategory {
 
 struct ChangelogView: View {
     @ObservedObject private var manager = ChangelogManager.shared
-    private let installedVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.49"
+    private let installedVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.50"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

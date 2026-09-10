@@ -52,6 +52,59 @@ final class AppState: ObservableObject {
     @Published var availableAIChatModels: [String] = []
     @Published var availableCloudTranscriptionModels: [CloudTranscriptionModel] = []
     @Published var isLoadingAIChatModels = false
+    @Published var isAPIKeyInvalid = false
+    @Published var apiKeyValidationError: String? = nil
+
+    var hasUsableOpenAIAPIKey: Bool {
+        settings.hasOpenAIAPIKey && !isAPIKeyInvalid
+    }
+
+    func isModeEnabled(_ mode: TranscriptionMode) -> Bool {
+        settings.isModeEnabled(mode, isAPIKeyInvalid: isAPIKeyInvalid)
+    }
+
+    func markAPIKeyInvalid(reason: String? = nil) {
+        guard !isAPIKeyInvalid || apiKeyValidationError != reason else { return }
+        isAPIKeyInvalid = true
+        apiKeyValidationError = reason ?? L.tr("OpenAI API key is invalid or expired.", "OpenAI API key недействителен или истёк.")
+        if settings.selectedMode.requiresAI {
+            settings.selectedModeName = TranscriptionMode.raw.name
+            saveSettings()
+        }
+    }
+
+    func markAPIKeyValid() {
+        guard isAPIKeyInvalid || apiKeyValidationError != nil else { return }
+        isAPIKeyInvalid = false
+        apiKeyValidationError = nil
+    }
+
+    func validateAPIKeyIfNeeded() {
+        guard settings.hasOpenAIAPIKey else {
+            isAPIKeyInvalid = false
+            apiKeyValidationError = nil
+            return
+        }
+        let key = settings.normalizedAPIKey
+        Task {
+            let state = await OpenAIAPIKeyValidator.validate(key)
+            await MainActor.run {
+                guard self.settings.normalizedAPIKey == key else { return }
+                switch state {
+                case .valid:
+                    self.markAPIKeyValid()
+                case .invalid:
+                    self.markAPIKeyInvalid(reason: L.tr("OpenAI API key is invalid or expired.", "OpenAI API key недействителен или истёк."))
+                case .failed(let code) where code == 401:
+                    self.markAPIKeyInvalid(reason: L.tr("OpenAI API key rejected (401).", "OpenAI API key отклонён (401)."))
+                case .failed(let code) where code == 429:
+                    self.markAPIKeyInvalid(reason: L.tr("OpenAI quota exceeded. Check billing.", "Превышена квота OpenAI. Проверьте баланс."))
+                default:
+                    break
+                }
+            }
+        }
+    }
     @Published var hasLoadedOpenAIModelCatalog = false
     @Published var openAIModelCatalogError: String?
     @Published var isAIChatSending = false
@@ -424,6 +477,9 @@ final class AppState: ObservableObject {
                     self.hasLoadedOpenAIModelCatalog = false
                     self.openAIModelCatalogRequestID = nil
                     self.isLoadingAIChatModels = false
+                    if error.localizedDescription.contains("401") || error.localizedDescription.contains("Invalid") {
+                        self.markAPIKeyInvalid(reason: L.tr("OpenAI API key is invalid or expired.", "OpenAI API key недействителен или истёк."))
+                    }
                 }
             }
         }

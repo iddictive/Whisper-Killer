@@ -71,6 +71,10 @@ struct MenuBarView: View {
 
             Divider()
 
+            if appState.isAPIKeyInvalid {
+                apiKeyWarningBanner
+            }
+
             modeToolbar
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -284,8 +288,32 @@ struct MenuBarView: View {
         }
     }
 
+    private var apiKeyWarningBanner: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.orange)
+            Text(L.tr("OpenAI API key is invalid", "OpenAI API key недействителен"))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.orange)
+            Spacer()
+            Button(L.tr("Settings", "Настройки")) {
+                AppDelegate.shared?.showSettings()
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .buttonStyle(.plain)
+            .foregroundStyle(SW.accent)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.orange.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .padding(.horizontal, 14)
+        .padding(.top, 4)
+    }
+
     private var modeToolbar: some View {
-        let activeModeName = appState.settings.isModeEnabled(appState.settings.selectedMode)
+        let activeModeName = appState.isModeEnabled(appState.settings.selectedMode)
             ? appState.settings.selectedModeName
             : TranscriptionMode.raw.name
 
@@ -293,7 +321,7 @@ struct MenuBarView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(appState.settings.allModes) { mode in
-                        let isEnabled = appState.settings.isModeEnabled(mode)
+                        let isEnabled = appState.isModeEnabled(mode)
                         let isSelected = activeModeName == mode.name
 
                         Button {
@@ -332,6 +360,10 @@ struct MenuBarView: View {
     private func modeHelpText(for mode: TranscriptionMode, isEnabled: Bool) -> String {
         if isEnabled {
             return mode.localizedDescription
+        }
+
+        if appState.isAPIKeyInvalid {
+            return L.tr("OpenAI API key is invalid or expired. Check Settings → Engine & API.", "OpenAI API key недействителен или истёк. Проверьте в Настройки → Движок.")
         }
 
         if !appState.settings.hasOpenAIAPIKey {

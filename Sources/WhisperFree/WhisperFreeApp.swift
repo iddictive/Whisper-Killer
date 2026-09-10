@@ -314,6 +314,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Obse
             }
             .store(in: &appState.overlayCancellables)
 
+        // Validate OpenAI API key in background if present
+        appState.validateAPIKeyIfNeeded()
+
         // Show setup wizard if needed
         if !appState.settings.setupCompleted {
             print("🪄 Showing Setup Wizard...")

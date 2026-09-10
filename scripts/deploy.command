@@ -88,6 +88,9 @@ if [ $? -eq 0 ]; then
     if [ -f "$ICON_FILE" ]; then
         cp "$ICON_FILE" "$BUNDLE_NAME/Contents/Resources/AppIcon.icns"
     fi
+    if [ -f "CHANGELOG.md" ]; then
+        cp "CHANGELOG.md" "$BUNDLE_NAME/Contents/Resources/CHANGELOG.md"
+    fi
 
     APP_BUNDLE_PATH="$BUNDLE_NAME"
     ENTITLEMENTS="Sources/WhisperFree/Resources/WhisperKiller.entitlements"

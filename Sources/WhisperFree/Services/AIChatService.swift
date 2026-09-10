@@ -43,6 +43,9 @@ enum AIChatService {
         let (data, httpResponse) = try await TransientHTTPRetry.data(for: request, label: "AI chat")
 
         if httpResponse.statusCode == 401 {
+            await MainActor.run {
+                AppState.shared.markAPIKeyInvalid()
+            }
             throw TranscriptionError.networkError("Invalid OpenAI API key.")
         }
 

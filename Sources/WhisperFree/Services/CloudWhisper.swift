@@ -152,6 +152,9 @@ final class CloudWhisper: TranscriptionEngine {
         onProgress?(progressRange.1, nil)
 
         if httpResponse.statusCode == 401 {
+            await MainActor.run {
+                AppState.shared.markAPIKeyInvalid()
+            }
             throw TranscriptionError.networkError("Invalid API key. Please check your OpenAI API key in Settings → Engine & API.")
         }
 

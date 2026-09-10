@@ -273,6 +273,9 @@ final class PostProcessor {
         let (data, httpResponse) = try await TransientHTTPRetry.data(for: request, label: "OpenAI chat")
 
         if httpResponse.statusCode == 401 {
+            await MainActor.run {
+                AppState.shared.markAPIKeyInvalid()
+            }
             throw TranscriptionError.networkError("Invalid API Key for \(engine.rawValue).")
         }
 

@@ -1557,7 +1557,10 @@ struct SettingsView: View {
                 networkDiagnosticLines = report.lines
                 apiValidationState = result
                 if result == .valid {
+                    appState.markAPIKeyValid()
                     appState.refreshCloudTranscriptionModelsIfNeeded(force: true)
+                } else if result == .invalid {
+                    appState.markAPIKeyInvalid(reason: L.tr("OpenAI API key is invalid.", "OpenAI API key недействителен."))
                 }
             }
         }

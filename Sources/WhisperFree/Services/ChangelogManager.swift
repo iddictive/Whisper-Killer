@@ -31,19 +31,16 @@ final class ChangelogManager: ObservableObject {
     }
 
     func loadInitialContent() {
-        // 1. Try local cache
-        if let data = try? Data(contentsOf: cacheURL),
-           let cachedString = String(data: data, encoding: .utf8),
-           !cachedString.isEmpty {
-            applyContent(cachedString)
-        } else if let bundledURL = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md") ?? localRepoChangelogURL(),
-                  let bundledString = try? String(contentsOf: bundledURL, encoding: .utf8),
-                  !bundledString.isEmpty {
-            // 2. Try bundled or repo root file
+        let bundledURL = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md") ?? localRepoChangelogURL()
+        let bundledString = bundledURL.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+        let cachedString = (try? Data(contentsOf: cacheURL)).flatMap { String(data: $0, encoding: .utf8) }
+
+        if let bundledString, !bundledString.isEmpty {
             applyContent(bundledString)
+        } else if let cachedString, !cachedString.isEmpty {
+            applyContent(cachedString)
         }
 
-        // 3. Fetch latest from remote in background
         fetchRemoteContent()
     }
 
@@ -62,7 +59,8 @@ final class ChangelogManager: ObservableObject {
         errorMessage = nil
 
         var request = URLRequest(url: remoteURL)
-        request.cachePolicy = force ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         request.timeoutInterval = 10
         request.setValue("WhisperKiller", forHTTPHeaderField: "User-Agent")
 
