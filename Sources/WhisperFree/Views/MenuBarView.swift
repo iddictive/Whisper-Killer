@@ -347,23 +347,23 @@ struct MenuBarView: View {
 
     private var sourceMenu: some View {
         Menu {
-            ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
-                Button {
+            Picker("", selection: Binding(
+                get: { appState.settings.engineType },
+                set: { type in
                     appState.settings.engineType = type
                     if type == .gigaAM {
                         appState.settings.language = "ru"
                     }
                     appState.saveSettings()
-                } label: {
-                    HStack {
-                        Label(type.localizedTitle, systemImage: type.icon)
-                        if appState.settings.engineType == type {
-                            Image(systemName: "checkmark")
-                        }
-                    }
                 }
-                .disabled(type == .parakeet && !ParakeetTranscriber.isAppleSilicon)
+            )) {
+                ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
+                    Label(type.localizedTitle, systemImage: type.icon)
+                        .tag(type)
+                        .disabled(type == .parakeet && !ParakeetTranscriber.isAppleSilicon)
+                }
             }
+            .pickerStyle(.inline)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: appState.settings.engineType.icon)
@@ -387,36 +387,22 @@ struct MenuBarView: View {
 
     private var inputDeviceMenu: some View {
         Menu {
-            Button {
-                appState.settings.selectedInputDeviceID = nil
-                appState.saveSettings()
-            } label: {
-                HStack {
-                    Text(L.tr("System Default", "Системный"))
-                    if appState.settings.selectedInputDeviceID == nil {
-                        Image(systemName: "checkmark")
-                    }
-                }
-            }
-
-            Divider()
-
-            ForEach(appState.availableInputDevices, id: \.uniqueID) { device in
-                Button {
-                    appState.settings.selectedInputDeviceID = device.uniqueID
+            Picker("", selection: Binding(
+                get: { appState.settings.selectedInputDeviceID },
+                set: { newID in
+                    appState.settings.selectedInputDeviceID = newID
                     appState.saveSettings()
-                } label: {
-                    HStack {
-                        Text(device.localizedName)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(maxWidth: 280, alignment: .leading)
-                        if appState.settings.selectedInputDeviceID == device.uniqueID {
-                            Image(systemName: "checkmark")
-                        }
-                    }
+                }
+            )) {
+                Text(L.tr("System Default", "Системный"))
+                    .tag(nil as String?)
+
+                ForEach(appState.availableInputDevices, id: \.uniqueID) { device in
+                    Text(device.localizedName)
+                        .tag(device.uniqueID as String?)
                 }
             }
+            .pickerStyle(.inline)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "mic.fill")
