@@ -1753,6 +1753,21 @@ final class AppState: ObservableObject {
         }
     }
 
+    func copyLastTranscription() {
+        guard let text = lastTranscription ?? history.first?.preferredDisplayText, !text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    func toggleDiarization() {
+        if settings.canUseSpeakerDiarization {
+            settings.enableSpeakerDiarization.toggle()
+            saveSettings()
+        } else {
+            showError(L.tr("Use Cloud (OpenAI) and add an OpenAI API key to use diarization.", "Для диаризации выберите Облако (OpenAI) и добавьте OpenAI API key."))
+        }
+    }
+
     func toggleLiveTranslator() {
         guard Self.liveTranslatorFeatureAvailable else {
             showError("Live Translator is planned for a future release.")

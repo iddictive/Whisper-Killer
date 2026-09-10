@@ -276,6 +276,10 @@ struct TranscriptionHistoryEntry: Codable {
         self.audioFilePath = audioFilePath
         self.ownsAudioFile = ownsAudioFile
     }
+
+    var preferredDisplayText: String {
+        processedText.isEmpty ? rawText : processedText
+    }
 }
 
 // MARK: - AI Chat

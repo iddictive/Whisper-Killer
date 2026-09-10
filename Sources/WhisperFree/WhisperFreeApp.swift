@@ -27,10 +27,86 @@ struct WhisperFreeApp: App {
                 .keyboardShortcut(",", modifiers: .command)
             }
             CommandGroup(after: .appInfo) {
+                Button(L.tr("Check for Updates...", "Проверить обновления...")) {
+                    GitHubUpdater.shared.checkForUpdates(manual: true)
+                }
+
                 Button(L.tr("Main Menu", "Основное меню")) {
                     AppDelegate.shared?.showMainMenu()
                 }
                 .keyboardShortcut("0", modifiers: .command)
+            }
+
+            CommandMenu(L.tr("File", "Файл")) {
+                Button(L.tr("Transcribe File...", "Транскрибировать файл...")) {
+                    AppDelegate.shared?.showFileTranscription()
+                }
+                .keyboardShortcut("o", modifiers: .command)
+
+                Button(L.tr("Import Google Meet Recording...", "Импортировать запись Meet...")) {
+                    AppDelegate.shared?.showFileTranscription()
+                    AppState.shared.requestGoogleMeetImport()
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+            }
+
+            CommandGroup(after: .pasteboard) {
+                Divider()
+                Button(L.tr("Copy Last Transcription", "Скопировать последний результат")) {
+                    AppState.shared.copyLastTranscription()
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+            }
+
+            CommandMenu(L.tr("Transcription", "Диктовка")) {
+                Button(L.tr("Toggle Recording", "Переключить запись")) {
+                    AppState.shared.toggleFromMenuBar()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+
+                Button(L.tr("Toggle Diarization", "Диаризация спикеров")) {
+                    AppState.shared.toggleDiarization()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                if AppState.liveTranslatorFeatureAvailable {
+                    Button(L.tr("Toggle Live Translator", "Live Translator")) {
+                        AppState.shared.toggleLiveTranslator()
+                    }
+                    .keyboardShortcut("t", modifiers: [.command, .option])
+                }
+            }
+
+            CommandGroup(after: .windowList) {
+                Divider()
+                Button(L.tr("History", "История")) {
+                    AppDelegate.shared?.showHistory()
+                }
+                .keyboardShortcut("y", modifiers: .command)
+
+                Button("AI Chat") {
+                    AppDelegate.shared?.showAIChat()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+
+                Button(L.tr("File Transcription", "Транскрипция файлов")) {
+                    AppDelegate.shared?.showFileTranscription()
+                }
+
+                Button(L.tr("Setup Wizard...", "Мастер настройки...")) {
+                    AppDelegate.shared?.showSetupWizard()
+                }
+            }
+
+            CommandGroup(replacing: .help) {
+                Button(L.tr("Check for Updates...", "Проверить обновления...")) {
+                    GitHubUpdater.shared.checkForUpdates(manual: true)
+                }
+
+                Divider()
+
+                Link(L.tr("WhisperKiller on GitHub", "WhisperKiller на GitHub"), destination: URL(string: "https://github.com/iddictive/Whisper-Killer")!)
+                Link(L.tr("Changelog", "История изменений"), destination: URL(string: "https://github.com/iddictive/Whisper-Killer/blob/main/CHANGELOG.md")!)
             }
         }
     }

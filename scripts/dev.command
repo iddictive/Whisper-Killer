@@ -55,6 +55,11 @@ prepare_bundle() {
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.whisperkiller.app.dev" "$bundle_path/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleName WhisperKiller Dev" "$bundle_path/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName WhisperKiller Dev" "$bundle_path/Contents/Info.plist"
+    source "$ROOT_DIR/scripts/version.sh"
+    local dev_version
+    dev_version="$(resolve_whisperkiller_version "$INFO_PLIST")"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $dev_version" "$bundle_path/Contents/Info.plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $dev_version" "$bundle_path/Contents/Info.plist" 2>/dev/null || true
 
     if [ -d "$PROFANITY_DIR" ]; then
         mkdir -p "$bundle_path/Contents/Resources/Resources"
