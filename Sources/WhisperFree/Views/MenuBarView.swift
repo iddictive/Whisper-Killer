@@ -367,14 +367,6 @@ struct MenuBarView: View {
             return mode.localizedDescription
         }
 
-        if appState.isAPIKeyInvalid {
-            return L.tr("OpenAI API key is invalid or expired. Check Settings → Engine & API.", "OpenAI API key недействителен или истёк. Проверьте в Настройки → Движок.")
-        }
-
-        if !appState.settings.hasOpenAIAPIKey {
-            return L.tr("Add an OpenAI API key to unlock AI modes.", "Добавьте OpenAI API key, чтобы открыть AI-режимы.")
-        }
-
         if !appState.settings.enablePostProcessing {
             return L.tr("Enable AI Refinement to unlock this mode.", "Включите AI-обработку, чтобы открыть этот режим.")
         }
@@ -396,7 +388,7 @@ struct MenuBarView: View {
                 )) {
                     Text(type.localizedTitle)
                 }
-                .disabled(type == .parakeet && !ParakeetTranscriber.isAppleSilicon)
+                .disabled(!appState.isTranscriptionEngineSelectableFromMenu(type))
             }
         } label: {
             HStack(spacing: 4) {

@@ -60,17 +60,25 @@ final class AppState: ObservableObject {
     }
 
     func isModeEnabled(_ mode: TranscriptionMode) -> Bool {
-        settings.isModeEnabled(mode, isAPIKeyInvalid: isAPIKeyInvalid)
+        settings.isModeEnabled(mode)
+    }
+
+    func isTranscriptionEngineSelectableFromMenu(_ type: TranscriptionEngineType) -> Bool {
+        switch type {
+        case .cloud:
+            return hasUsableOpenAIAPIKey
+        case .parakeet:
+            return ParakeetTranscriber.isAppleSilicon
+        case .local, .qwenASR:
+            return true
+        }
     }
 
     func markAPIKeyInvalid(reason: String? = nil) {
         guard !isAPIKeyInvalid || apiKeyValidationError != reason else { return }
         isAPIKeyInvalid = true
         apiKeyValidationError = reason ?? L.tr("OpenAI API key is invalid or expired.", "OpenAI API key недействителен или истёк.")
-        if settings.selectedMode.requiresAI {
-            settings.selectedModeName = TranscriptionMode.raw.name
-            saveSettings()
-        }
+        selectReadyLocalTranscriptionFallbackIfNeeded()
     }
 
     func markAPIKeyValid() {
@@ -79,10 +87,48 @@ final class AppState: ObservableObject {
         apiKeyValidationError = nil
     }
 
+    @discardableResult
+    private func selectReadyLocalTranscriptionFallbackIfNeeded() -> Bool {
+        let resolvedEngine = TranscriptionEngineType.resolvedForUse(
+            current: settings.engineType,
+            isOpenAIUsable: hasUsableOpenAIAPIKey
+        ) { type in
+            switch type {
+            case .parakeet:
+                return ParakeetTranscriber.isAppleSilicon
+                    && ParakeetModelManager.shared.isModelInstalled
+            case .qwenASR:
+                return QwenASRTranscriber.isAppleSilicon
+                    && QwenASRTranscriber.isRuntimeInstalled
+                    && modelManager.isQwenModelDownloaded(settings.qwenASRModel)
+            case .local:
+                return modelManager.isModelDownloaded(settings.localModelSize)
+            case .cloud:
+                return false
+            }
+        }
+        guard resolvedEngine != settings.engineType else { return false }
+
+        settings.engineType = resolvedEngine
+        saveSettings()
+        return true
+    }
+
+    func prepareTranscriptionEngineForUse() -> Bool {
+        guard settings.engineType == .cloud, !hasUsableOpenAIAPIKey else { return true }
+        selectReadyLocalTranscriptionFallbackIfNeeded()
+        guard settings.engineType != .cloud else {
+            showError("OpenAI is unavailable and no ready local transcription model was found.")
+            return false
+        }
+        return true
+    }
+
     func validateAPIKeyIfNeeded() {
         guard settings.hasOpenAIAPIKey else {
             isAPIKeyInvalid = false
             apiKeyValidationError = nil
+            selectReadyLocalTranscriptionFallbackIfNeeded()
             return
         }
         let key = settings.normalizedAPIKey
@@ -208,6 +254,7 @@ final class AppState: ObservableObject {
         self.history = Storage.shared.loadHistory()
         self.aiChatConversations = Storage.shared.loadAIChatConversations()
         self.settings.normalizeBeforeSaving()
+        selectReadyLocalTranscriptionFallbackIfNeeded()
         ensureSelectedAIChatConversation()
         sanitizeDisabledFeatureState()
         Storage.shared.saveSettings(self.settings)
@@ -988,18 +1035,10 @@ final class AppState: ObservableObject {
     // MARK: - Recording Actions
 
     private func validateTranscriptionPrerequisites(requiresMicrophone: Bool) -> Bool {
-        if settings.engineType == .cloud && !settings.hasOpenAIAPIKey {
-            showError("No API key configured. Go to Settings → Engine & API to add your OpenAI API key.")
-            return false
-        }
+        guard prepareTranscriptionEngineForUse() else { return false }
 
         if settings.selectedMode.requiresAI && !settings.enablePostProcessing {
             showError("The selected mode requires AI Refinement. Enable it in Settings → Engine & API.")
-            return false
-        }
-
-        if settings.selectedMode.requiresAI && !settings.hasOpenAIAPIKey {
-            showError("The selected mode requires a valid OpenAI API key. Add it in Settings → Engine & API.")
             return false
         }
 
@@ -1316,6 +1355,7 @@ final class AppState: ObservableObject {
             let shouldUseNativeDiarization = settings.usesNativeCloudSpeakerDiarization
             let shouldRunStandardPostProcessing = !shouldUseNativeDiarization
                 && settings.enablePostProcessing
+                && hasUsableOpenAIAPIKey
                 && settings.selectedMode.name != "Raw"
                 && !settings.selectedMode.systemPrompt.isEmpty
 
@@ -1508,6 +1548,7 @@ final class AppState: ObservableObject {
             let shouldUseNativeDiarization = settings.usesNativeCloudSpeakerDiarization
             let shouldRunStandardPostProcessing = !shouldUseNativeDiarization
                 && settings.enablePostProcessing
+                && hasUsableOpenAIAPIKey
                 && settings.selectedMode.name != "Raw"
                 && !settings.selectedMode.systemPrompt.isEmpty
 

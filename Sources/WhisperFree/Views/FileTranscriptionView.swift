@@ -624,6 +624,7 @@ struct FileTranscriptionView: View {
 
     private func startItem(_ item: QueueItem) {
         guard item.status == .queued else { return }
+        guard prepareTranscriptionEngineForUse() else { return }
 
         if appState.settings.engineType == .cloud {
             startCloudItem(item)
@@ -737,6 +738,8 @@ struct FileTranscriptionView: View {
     }
 
     private func startAllQueued() {
+        guard prepareTranscriptionEngineForUse() else { return }
+
         if appState.settings.engineType == .cloud {
             shouldDrainCloudQueue = true
             startCloudJobsUpToLimit()
@@ -745,6 +748,12 @@ struct FileTranscriptionView: View {
 
         guard !isProcessing && !hasRunningItems else { return }
         processNextInQueue()
+    }
+
+    private func prepareTranscriptionEngineForUse() -> Bool {
+        guard appState.prepareTranscriptionEngineForUse() else { return false }
+        updateVisibleCosts()
+        return true
     }
 }
 

@@ -12,6 +12,7 @@ All notable changes to WhisperKiller are documented in this file.
 - **Shared engine picker**: Settings and Setup Wizard now render their engine choices from one SwiftUI component with surface-specific presentations.
 - **Updater feedback**: Manual update checks now always report their result, while update dialogs show up to three concise changelog highlights for the relevant version.
 - **Unified warning center**: Accessibility and API-key warnings now share one compact notification area in the main menu.
+- **Local transcription fallback**: Missing or invalid OpenAI credentials no longer block mode selection; Cloud stays unavailable while recordings and imported files fall back to the first ready local engine and skip unavailable AI refinement.
 
 ---
 

@@ -437,6 +437,21 @@ enum TranscriptionEngineType: String, Codable, CaseIterable {
         case .local, .qwenASR, .parakeet: return "desktopcomputer"
         }
     }
+
+    static func preferredLocalFallback(
+        where isReady: (TranscriptionEngineType) -> Bool
+    ) -> TranscriptionEngineType? {
+        [.parakeet, .qwenASR, .local].first(where: isReady)
+    }
+
+    static func resolvedForUse(
+        current: TranscriptionEngineType,
+        isOpenAIUsable: Bool,
+        isLocalReady: (TranscriptionEngineType) -> Bool
+    ) -> TranscriptionEngineType {
+        guard current == .cloud, !isOpenAIUsable else { return current }
+        return preferredLocalFallback(where: isLocalReady) ?? current
+    }
 }
 
 struct CloudTranscriptionModel: RawRepresentable, Codable, Hashable {
@@ -895,15 +910,13 @@ struct AppSettings: Codable {
         return cloudTranscriptionModel
     }
 
-    func isModeEnabled(_ mode: TranscriptionMode, isAPIKeyInvalid: Bool = false) -> Bool {
+    func isModeEnabled(_ mode: TranscriptionMode) -> Bool {
         // Raw is always available (it's the only non-AI mode).
         if mode.name == TranscriptionMode.raw.name { return true }
 
-        // All other modes (Dictation, Email, etc.) require global AI enablement AND valid keys
-        guard enablePostProcessing else { return false }
-        guard hasOpenAIAPIKey, !isAPIKeyInvalid else { return false }
-
-        return true
+        // Keep mode selection independent from the active transcription provider.
+        // If OpenAI refinement is unavailable, the transcription pipeline falls back to raw text.
+        return enablePostProcessing
     }
 
     func validatedModeName(currentName: String) -> String {

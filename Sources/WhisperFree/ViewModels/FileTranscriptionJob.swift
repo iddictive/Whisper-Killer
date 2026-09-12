@@ -224,6 +224,7 @@ final class QueueItem: ObservableObject, Identifiable {
         guard status == .queued else { return }
 
         let runSettings = settings
+        let canUseOpenAI = appState.hasUsableOpenAIAPIKey
         let provenance = TranscriptionRunProvenance(settings: runSettings)
         status = .extracting
         progress = 0
@@ -273,6 +274,7 @@ final class QueueItem: ObservableObject, Identifiable {
                 let shouldUseNativeDiarization = runSettings.usesNativeCloudSpeakerDiarization
                 let shouldRunStandardPostProcessing = !shouldUseNativeDiarization
                     && runSettings.enablePostProcessing
+                    && canUseOpenAI
                     && runSettings.selectedMode.name != "Raw"
                     && !runSettings.selectedMode.systemPrompt.isEmpty
 
