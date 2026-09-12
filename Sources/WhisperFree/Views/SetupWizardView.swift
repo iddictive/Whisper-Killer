@@ -551,12 +551,11 @@ struct SetupWizardView: View {
     private var engineStep: some View {
         VStack(spacing: 14) {
             // Engine picker
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
                 enginePill(type: .cloud, icon: "cloud.fill", label: "Cloud")
                 enginePill(type: .local, icon: "desktopcomputer", label: "Whisper")
                 enginePill(type: .qwenASR, icon: TranscriptionEngineType.qwenASR.icon, label: "Qwen")
                 enginePill(type: .parakeet, icon: TranscriptionEngineType.parakeet.icon, label: "Parakeet")
-                enginePill(type: .gigaAM, icon: TranscriptionEngineType.gigaAM.icon, label: "GigaAM")
             }
 
             // Engine details
@@ -566,10 +565,8 @@ struct SetupWizardView: View {
                 localEngineCard
             } else if selectedEngine == .qwenASR {
                 qwenEngineCard
-            } else if selectedEngine == .parakeet {
-                parakeetEngineCard
             } else {
-                gigaAMEngineCard
+                parakeetEngineCard
             }
         }
     }
@@ -584,8 +581,6 @@ struct SetupWizardView: View {
             return dependencyInstaller.isQwenASRRuntimeInstalled && modelManager.isQwenModelDownloaded(selectedQwenModel)
         case .parakeet:
             return parakeetModelManager.isModelInstalled
-        case .gigaAM:
-            return dependencyInstaller.isGigaAMEnvironmentInstalled
         }
     }
 
@@ -1044,107 +1039,6 @@ struct SetupWizardView: View {
         .onTapGesture {
             selectedQwenModel = model
         }
-    }
-
-    private var gigaAMEngineCard: some View {
-        let isInstalled = dependencyInstaller.isGigaAMEnvironmentInstalled
-        let hasPython = GigaAMTranscriber.findBasePythonBinary() != nil
-
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: TranscriptionEngineType.gigaAM.icon).foregroundStyle(Color.accentColor).font(.system(size: 11))
-                Text(L.tr("Russian · Local · Experimental", "Русский · Локально · Эксперимент"))
-                    .font(.system(size: 12, weight: .medium)).foregroundStyle(textSecondary)
-            }
-
-            tagRow(items: [
-                ("text.bubble", "GigaAM-v3", Color.accentColor),
-                ("terminal", hasPython ? "Python 3 detected" : "Python 3 needed", hasPython ? Color.accentColor : .orange),
-                ("arrow.down.circle", isInstalled ? "Environment ready" : "Needs setup", isInstalled ? Color.accentColor : .orange),
-            ])
-
-            Divider()
-
-            // Python check row
-            HStack(spacing: 10) {
-                Image(systemName: hasPython ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(hasPython ? Color.accentColor : .orange)
-                Text(hasPython
-                    ? L.tr("Python 3 found", "Python 3 найден")
-                    : L.tr("Python 3.10-3.13 not found", "Python 3.10-3.13 не найден")
-                )
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(hasPython ? Color.accentColor : .orange)
-                Spacer()
-            }
-            .padding(10)
-            .background(hasPython ? Color.accentColor.opacity(0.08) : Color.orange.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-            // Environment row
-            HStack(spacing: 10) {
-                Image(systemName: isInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(isInstalled ? Color.accentColor : .orange)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(isInstalled
-                        ? L.tr("GigaAM runtime installed", "Окружение GigaAM установлено")
-                        : (dependencyInstaller.isInstallingGigaAM ? L.tr("Installing runtime...", "Устанавливаю runtime...") : L.tr("Runtime not installed", "Окружение не установлено"))
-                    )
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(isInstalled ? Color.accentColor : textPrimary)
-
-                    if !dependencyInstaller.gigaAMStatus.isEmpty && !isInstalled {
-                        Text(dependencyInstaller.gigaAMStatus)
-                            .font(.system(size: 10))
-                            .foregroundStyle(textSecondary)
-                    }
-                }
-                Spacer()
-
-                if dependencyInstaller.isInstallingGigaAM {
-                    ProgressView().controlSize(.mini)
-                } else if isInstalled {
-                    Button {
-                        dependencyInstaller.refreshGigaAMStatus()
-                    } label: {
-                        Text(L.tr("Refresh", "Обновить"))
-                            .font(.system(size: 11, weight: .semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Color.primary.opacity(0.08))
-                            .foregroundStyle(textPrimary)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.swPlainInteractive)
-                } else {
-                    Button {
-                        dependencyInstaller.installGigaAMDependencies()
-                    } label: {
-                        Text(L.tr("Install", "Установить"))
-                            .font(.system(size: 11, weight: .semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(accentColor)
-                            .foregroundStyle(.white)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.swPlainInteractive)
-                    .disabled(!hasPython)
-                }
-            }
-            .padding(10)
-            .background(isInstalled ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-            Text(L.tr("Russian-focused recognition for comparison runs.", "Распознавание под русский для сравнительных прогонов."))
-                .font(.system(size: 11))
-                .foregroundStyle(textSecondary)
-        }
-        .padding(16)
-        .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(subtleBorder, lineWidth: 1))
     }
 
     private var localEngineStatusRow: some View {
@@ -1721,4 +1615,3 @@ struct SetupWizardView: View {
         onComplete()
     }
 }
-

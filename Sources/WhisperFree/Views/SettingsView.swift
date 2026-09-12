@@ -31,7 +31,6 @@ struct SettingsView: View {
     @State private var profanityDictionaryMessage: String?
     @State private var showProfanityDictionaries = false
     @State private var showPunctuationCustomization = false
-    @State private var showGigaAMManualCommand = false
     @State private var showRecentActivityDetails = false
     private let sidebarWidth: CGFloat = 250
 
@@ -910,10 +909,6 @@ struct SettingsView: View {
                             .padding(.horizontal)
                     }
 
-                    if appState.settings.engineType == .gigaAM {
-                        gigaAMExperimentCard
-                            .padding(.horizontal)
-                    }
                 }
             }
             .padding(.vertical, 12)
@@ -1245,80 +1240,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 12)
-    }
-
-    private var gigaAMExperimentCard: some View {
-        let isInstalled = dependencyInstaller.isGigaAMEnvironmentInstalled
-        let hasPython = GigaAMTranscriber.findBasePythonBinary() != nil
-
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: isInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(isInstalled ? Color.accentColor : .orange)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L.tr("GigaAM · Russian ASR experiment", "GigaAM · эксперимент для русского ASR"))
-                        .font(.system(size: 13, weight: .semibold))
-
-                    if dependencyInstaller.isInstallingGigaAM {
-                        Text(L.tr("Installing Python runtime and model packages...", "Устанавливаю Python runtime и пакеты модели..."))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    } else if !hasPython {
-                        Text(L.tr("Runtime not found · Python 3.10-3.13 required", "Runtime не найден · нужен Python 3.10-3.13"))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    } else if !dependencyInstaller.gigaAMStatus.isEmpty {
-                        Text(dependencyInstaller.gigaAMStatus)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
-                    } else {
-                        Text(
-                            isInstalled
-                                ? L.tr("Runtime detected · isolated app environment", "Runtime найден · отдельное окружение приложения")
-                                : L.tr("Runtime not found · installs into an isolated app environment", "Runtime не найден · установка в отдельное окружение приложения")
-                        )
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                if dependencyInstaller.isInstallingGigaAM {
-                    ProgressView()
-                        .controlSize(.small)
-                } else if isInstalled {
-                    Button(L.tr("Refresh", "Обновить")) {
-                        dependencyInstaller.refreshGigaAMStatus()
-                    }
-                    .buttonStyle(.bordered)
-                } else {
-                    Button(L.tr("Install", "Установить")) {
-                        dependencyInstaller.installGigaAMDependencies()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!hasPython)
-                }
-            }
-
-            ClickableDisclosure(isExpanded: $showGigaAMManualCommand) {
-                Text(GigaAMTranscriber.setupCommand)
-                    .font(.system(size: 10, design: .monospaced))
-                    .textSelection(.enabled)
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.05))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            } label: {
-                Text(L.tr("Manual command", "Команда вручную"))
-            }
-            .font(.system(size: 11))
-        }
-        .padding(12)
-        .background(Color.primary.opacity(0.035))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var homebrewStatusRow: some View {

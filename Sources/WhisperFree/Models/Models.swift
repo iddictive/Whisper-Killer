@@ -430,12 +430,11 @@ enum TranscriptionEngineType: String, Codable, CaseIterable {
     case local = "Local (whisper.cpp)"
     case qwenASR = "Local (Qwen3-ASR MLX)"
     case parakeet = "Local (Parakeet TDT v3)"
-    case gigaAM = "Experimental GigaAM Russian"
 
     var icon: String {
         switch self {
         case .cloud: return "cloud"
-        case .local, .qwenASR, .parakeet, .gigaAM: return "desktopcomputer"
+        case .local, .qwenASR, .parakeet: return "desktopcomputer"
         }
     }
 }
@@ -820,7 +819,8 @@ struct AppSettings: Codable {
         selectedModeName = try container.decodeIfPresent(String.self, forKey: .selectedModeName) ?? TranscriptionMode.dictation.name
         customModes = try container.decodeIfPresent([TranscriptionMode].self, forKey: .customModes) ?? []
         recordingMode = try container.decodeIfPresent(RecordingMode.self, forKey: .recordingMode) ?? .hold
-        engineType = try container.decodeIfPresent(TranscriptionEngineType.self, forKey: .engineType) ?? .cloud
+        let persistedEngine = try container.decodeIfPresent(String.self, forKey: .engineType)
+        engineType = persistedEngine.flatMap(TranscriptionEngineType.init(rawValue:)) ?? .cloud
         localModelSize = try container.decodeIfPresent(LocalModelSize.self, forKey: .localModelSize) ?? .base
         qwenASRModel = try container.decodeIfPresent(QwenASRModel.self, forKey: .qwenASRModel) ?? .fast
         showOverlay = try container.decodeIfPresent(Bool.self, forKey: .showOverlay) ?? true

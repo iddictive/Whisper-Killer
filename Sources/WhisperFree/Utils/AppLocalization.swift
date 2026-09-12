@@ -157,7 +157,6 @@ extension TranscriptionEngineType {
         case .local: return "whisper.cpp"
         case .qwenASR: return "Qwen3-ASR MLX"
         case .parakeet: return "Parakeet TDT v3"
-        case .gigaAM: return L.tr("GigaAM (Russian)", "GigaAM (русский)")
         }
     }
 
@@ -167,7 +166,6 @@ extension TranscriptionEngineType {
         case .local: return "Whisper"
         case .qwenASR: return "Qwen3-ASR"
         case .parakeet: return "Parakeet"
-        case .gigaAM: return "GigaAM"
         }
     }
 }

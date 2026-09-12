@@ -79,8 +79,6 @@ struct TranscriptionRunProvenance: Equatable {
             return TranscriptionEngineType.qwenASR.localizedShortTitle
         case .parakeet:
             return TranscriptionEngineType.parakeet.localizedShortTitle
-        case .gigaAM:
-            return TranscriptionEngineType.gigaAM.localizedShortTitle
         case .cloud:
             return cloudModel?.localizedTitle ?? TranscriptionEngineType.cloud.localizedShortTitle
         }

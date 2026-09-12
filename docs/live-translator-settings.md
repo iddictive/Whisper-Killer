@@ -7,7 +7,7 @@ As a WhisperKiller user, I want Live Translator to stay out of my recording work
 ## Scope
 
 - In scope: the Live Translator settings pane, its persisted enabled state, its hotkey and runtime lifecycle, and every Live Translator control in the menu-bar popover.
-- Out of scope: translation quality, language/model inventory, subtitle overlay design, and the standalone GigaAM transcription experiment.
+- Out of scope: translation quality, language/model inventory, and subtitle overlay design.
 
 ## Surface contract
 
@@ -51,7 +51,7 @@ Default, hover, focus, and active appearance remain system-owned through SwiftUI
 - The disabled pane shows one clearly labeled enable switch and no start action or configuration fields; no “Experimental” label describes Live Translator.
 - Enabling the switch persists the preference and reveals the start action, configuration sections, menu command, compact menu-bar control, and hotkey.
 - Disabling the switch persists the preference, stops an active translator, unregisters its hotkey, and removes every Live Translator control from the menu-bar popover.
-- Must not rename or remove the separate GigaAM experimental transcription engine or change translation behavior, models, languages, permissions, or overlay content.
+- Must not change translation behavior, models, languages, permissions, or overlay content.
 
 ## References
 

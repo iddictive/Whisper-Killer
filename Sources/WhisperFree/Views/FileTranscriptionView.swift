@@ -293,14 +293,6 @@ struct FileTranscriptionView: View {
             }
             .disabled(!ParakeetTranscriber.isAppleSilicon)
 
-            Button {
-                appState.settings.engineType = .gigaAM
-                appState.settings.language = "ru"
-                appState.saveSettings()
-                updateVisibleCosts()
-            } label: {
-                Label(L.tr("GigaAM Russian", "GigaAM русский"), systemImage: TranscriptionEngineType.gigaAM.icon)
-            }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: appState.settings.engineType.fileTranscriptionIcon)
@@ -1308,7 +1300,6 @@ private extension TranscriptionEngineType {
         case .local: return "cpu"
         case .qwenASR: return icon
         case .parakeet: return icon
-        case .gigaAM: return icon
         }
     }
 }

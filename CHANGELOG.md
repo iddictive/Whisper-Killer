@@ -2,6 +2,16 @@
 
 All notable changes to WhisperKiller are documented in this file.
 
+## [Unreleased]
+
+### Removed
+- **GigaAM transcription engine**: Removed the experimental engine, its Python runtime installer, and all related setup, settings, menu-bar, and file-transcription controls.
+
+### Changed
+- **Retired engine migration**: Existing settings that selected a retired transcription engine now keep all other preferences and fall back to OpenAI.
+
+---
+
 ## [3.51] - 2026-09-10
 
 ### Added

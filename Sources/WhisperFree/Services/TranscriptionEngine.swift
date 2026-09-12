@@ -67,8 +67,6 @@ struct TranscriptionEngineFactory {
             return QwenASRTranscriber(model: settings.qwenASRModel)
         case .parakeet:
             return ParakeetTranscriber()
-        case .gigaAM:
-            return GigaAMTranscriber()
         }
     }
 }

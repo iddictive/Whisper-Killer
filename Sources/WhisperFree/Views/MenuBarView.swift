@@ -385,9 +385,6 @@ struct MenuBarView: View {
                     set: { isSelected in
                         if isSelected {
                             appState.settings.engineType = type
-                            if type == .gigaAM {
-                                appState.settings.language = "ru"
-                            }
                             appState.saveSettings()
                         }
                     }
