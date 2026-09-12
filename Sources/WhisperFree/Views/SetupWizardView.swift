@@ -550,13 +550,11 @@ struct SetupWizardView: View {
 
     private var engineStep: some View {
         VStack(spacing: 14) {
-            // Engine picker
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
-                enginePill(type: .cloud, icon: "cloud.fill", label: "Cloud")
-                enginePill(type: .local, icon: "desktopcomputer", label: "Whisper")
-                enginePill(type: .qwenASR, icon: TranscriptionEngineType.qwenASR.icon, label: "Qwen")
-                enginePill(type: .parakeet, icon: TranscriptionEngineType.parakeet.icon, label: "Parakeet")
-            }
+            TranscriptionEnginePicker(
+                selection: $selectedEngine,
+                presentation: .setupGrid,
+                isReady: isEngineReady
+            )
 
             // Engine details
             if selectedEngine == .cloud {
@@ -582,37 +580,6 @@ struct SetupWizardView: View {
         case .parakeet:
             return parakeetModelManager.isModelInstalled
         }
-    }
-
-    private func enginePill(type: TranscriptionEngineType, icon: String, label: String) -> some View {
-        let selected = type == selectedEngine
-        let ready = isEngineReady(type)
-
-        return Button {
-            withAnimation(.spring(response: 0.3)) { selectedEngine = type }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 13))
-                Text(label).font(.system(size: 12, weight: .semibold))
-                if ready {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(selected ? accentColor : Color.accentColor)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 11)
-            .background(selected ? accentColor.opacity(0.14) : cardBackground)
-            .foregroundStyle(selected ? accentColor : textSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(selected ? accentColor.opacity(0.4) : subtleBorder, lineWidth: 1.5)
-            )
-        }
-        .buttonStyle(.swPlainInteractive)
-        .disabled(type == .parakeet && !ParakeetTranscriber.isAppleSilicon)
     }
 
     private var cloudEngineCard: some View {

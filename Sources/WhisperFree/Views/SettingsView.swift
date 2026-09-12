@@ -780,39 +780,16 @@ struct SettingsView: View {
     }
 
     private var engineSelector: some View {
-        HStack(spacing: 0) {
-            ForEach(TranscriptionEngineType.allCases, id: \.self) { type in
-                Button {
-                    appState.settings.engineType = type
-                    if type == .qwenASR {
-                        appState.settings.qwenASRModel = QwenASRModel.recommended
-                    }
-                    appState.saveSettings()
-                } label: {
-                    Text(type.localizedShortTitle)
-                        .font(.system(size: 12, weight: appState.settings.engineType == type ? .semibold : .regular))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .frame(maxWidth: .infinity, minHeight: 30)
-                        .padding(.horizontal, 6)
-                        .foregroundStyle(appState.settings.engineType == type ? .primary : .secondary)
-                        .background(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(appState.settings.engineType == type ? Color(nsColor: .controlBackgroundColor).opacity(0.92) : Color.clear)
-                        )
+        TranscriptionEnginePicker(
+            selection: $appState.settings.engineType,
+            presentation: .settingsSegmented,
+            onSelection: { type in
+                if type == .qwenASR {
+                    appState.settings.qwenASRModel = QwenASRModel.recommended
                 }
-                .buttonStyle(.swPlainInteractive)
-                .disabled(type == .parakeet && !ParakeetTranscriber.isAppleSilicon)
-
-                if type != TranscriptionEngineType.allCases.last {
-                    Divider()
-                        .frame(height: 18)
-                }
+                appState.saveSettings()
             }
-        }
-        .padding(3)
-        .background(Color.primary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        )
     }
 
     @ViewBuilder
