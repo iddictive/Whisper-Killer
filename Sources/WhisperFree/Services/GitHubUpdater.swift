@@ -229,7 +229,7 @@ class GitHubUpdater: ObservableObject {
                 releaseNotes: releaseNotes
             ),
             primaryButtonTitle: L.tr("OK", "ОК"),
-            minimumContentWidth: releaseNotes.isEmpty ? nil : 520
+            minimumContentWidth: releaseNotes.isEmpty ? nil : 320
         )
     }
 
@@ -245,7 +245,7 @@ class GitHubUpdater: ObservableObject {
             ),
             primaryButtonTitle: L.tr("Download & Install", "Скачать и установить"),
             secondaryButtonTitle: L.tr("Later", "Позже"),
-            minimumContentWidth: releaseNotes.isEmpty ? nil : 520
+            minimumContentWidth: releaseNotes.isEmpty ? nil : 320
         )
 
         if response == .alertFirstButtonReturn {
@@ -303,7 +303,7 @@ class GitHubUpdater: ObservableObject {
                 ),
                 primaryButtonTitle: L.tr("Install & Relaunch", "Установить и перезапустить"),
                 secondaryButtonTitle: L.tr("Later", "Позже"),
-                minimumContentWidth: self.latestReleaseNotes.isEmpty ? nil : 520
+                minimumContentWidth: self.latestReleaseNotes.isEmpty ? nil : 320
             )
 
             if response == .alertFirstButtonReturn {
