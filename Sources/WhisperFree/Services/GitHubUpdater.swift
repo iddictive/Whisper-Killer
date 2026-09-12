@@ -23,6 +23,8 @@ class GitHubUpdater: ObservableObject {
 
     private var downloadTask: URLSessionDownloadTask?
     private var observation: NSKeyValueObservation?
+    private var latestReleaseNotes: [String] = []
+    private var manualFeedbackRequested = false
 
     static func isAvailable(bundleIdentifier: String?, bundleURL: URL) -> Bool {
         guard bundleIdentifier == productionBundleIdentifier else { return false }
@@ -30,7 +32,24 @@ class GitHubUpdater: ObservableObject {
     }
 
     func checkForUpdates(manual: Bool = false) {
-        guard isAvailable else { return }
+        if manual {
+            manualFeedbackRequested = true
+        }
+
+        guard isAvailable else {
+            if manual {
+                manualFeedbackRequested = false
+                _ = runUpdaterAlert(
+                    messageText: L.tr("Updates unavailable", "Проверка недоступна"),
+                    informativeText: L.tr(
+                        "Update checks are available from the installed WhisperKiller app.",
+                        "Проверка обновлений доступна в установленном приложении WhisperKiller."
+                    ),
+                    primaryButtonTitle: L.tr("OK", "ОК")
+                )
+            }
+            return
+        }
         guard !isChecking else { return }
 
         let updateSettings = Storage.shared.loadSettings()
@@ -44,50 +63,35 @@ class GitHubUpdater: ObservableObject {
         let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
         var request = URLRequest(url: url)
         request.setValue("WhisperKillerUpdater", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 15
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
-                self?.isChecking = false
-                guard let data = data, error == nil else {
-                    self?.error = error?.localizedDescription ?? "Network error"
+                guard let self else { return }
+
+                guard let data, error == nil else {
+                    self.finishCheckWithError(
+                        error?.localizedDescription ?? L.tr("Network error", "Ошибка сети")
+                    )
                     return
                 }
 
                 do {
-                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let tagName = json["tag_name"] as? String {
-
-                        let latest = tagName.replacingOccurrences(of: "v", with: "")
-                        self?.latestVersion = latest
-                        self?.updateAvailable = false
-                        self?.downloadUrl = nil
-
-                        let automaticallyDownloadsUpdates = Storage.shared.loadSettings().automaticallyDownloadsUpdates
-
-                        if self?.compareVersions(current: self?.currentVersion ?? "", latest: latest) == true {
-                            self?.updateAvailable = true
-                            let assets = json["assets"] as? [[String: Any]]
-                            let dmgAsset = assets?.first(where: { ($0["name"] as? String)?.hasSuffix(".dmg") == true })
-                            self?.downloadUrl = dmgAsset?["browser_download_url"] as? String
-
-                            if manual {
-                                self?.showUpdateAlert(version: latest, downloadUrl: self?.downloadUrl)
-                            } else if automaticallyDownloadsUpdates {
-                                self?.startDownload()
-                            }
-                        } else if manual {
-                            _ = self?.runUpdaterAlert(
-                                messageText: L.tr("You're up to date!", "Обновлений нет"),
-                                informativeText: L.tr(
-                                    "WhisperKiller \(self?.currentVersion ?? "") is the latest version.",
-                                    "Установлена последняя версия WhisperKiller \(self?.currentVersion ?? "")."
-                                ),
-                                primaryButtonTitle: L.tr("OK", "ОК")
-                            )
-                        }
+                    guard let httpResponse = response as? HTTPURLResponse,
+                          httpResponse.statusCode == 200 else {
+                        let statusCode = (response as? HTTPURLResponse)?.statusCode
+                        throw UpdateCheckError.invalidResponse(statusCode)
                     }
+
+                    guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let tagName = json["tag_name"] as? String,
+                          !tagName.isEmpty else {
+                        throw UpdateCheckError.invalidPayload
+                    }
+
+                    self.handleLatestRelease(json: json, tagName: tagName)
                 } catch {
-                    self?.error = "JSON error"
+                    self.finishCheckWithError(error.localizedDescription)
                 }
             }
         }.resume()
@@ -97,15 +101,151 @@ class GitHubUpdater: ObservableObject {
         return latest.compare(current, options: .numeric) == .orderedDescending
     }
 
-    private func showUpdateAlert(version: String, downloadUrl: String?) {
+    private func handleLatestRelease(json: [String: Any], tagName: String) {
+        let latest = tagName.replacingOccurrences(
+            of: "v",
+            with: "",
+            options: [.anchored, .caseInsensitive]
+        )
+        let hasUpdate = compareVersions(current: currentVersion, latest: latest)
+        let assets = json["assets"] as? [[String: Any]]
+        let dmgAsset = assets?.first(where: { ($0["name"] as? String)?.hasSuffix(".dmg") == true })
+        let dmgURL = dmgAsset?["browser_download_url"] as? String
+        let releaseBody = json["body"] as? String ?? ""
+        let embeddedNotes = ChangelogManager.summaryLines(from: releaseBody)
+
+        latestVersion = latest
+        updateAvailable = hasUpdate
+        downloadUrl = dmgURL
+
+        if hasUpdate && dmgURL == nil {
+            finishCheckWithError(
+                L.tr(
+                    "Version \(latest) does not include a downloadable DMG.",
+                    "В релизе \(latest) нет доступного DMG."
+                )
+            )
+            return
+        }
+
+        guard embeddedNotes.isEmpty else {
+            completeCheck(latest: latest, hasUpdate: hasUpdate, notes: embeddedNotes)
+            return
+        }
+
+        guard manualFeedbackRequested || hasUpdate else {
+            completeCheck(latest: latest, hasUpdate: hasUpdate, notes: [])
+            return
+        }
+
+        fetchChangelogNotes(tagName: tagName, version: latest) { [weak self] notes in
+            self?.completeCheck(latest: latest, hasUpdate: hasUpdate, notes: notes)
+        }
+    }
+
+    private func fetchChangelogNotes(
+        tagName: String,
+        version: String,
+        completion: @escaping ([String]) -> Void
+    ) {
+        let encodedTag = tagName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tagName
+        guard let url = URL(
+            string: "https://raw.githubusercontent.com/\(repo)/\(encodedTag)/CHANGELOG.md"
+        ) else {
+            completion([])
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("WhisperKillerUpdater", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 10
+
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            let markdown: String?
+            if let httpResponse = response as? HTTPURLResponse,
+               httpResponse.statusCode == 200,
+               let data {
+                markdown = String(data: data, encoding: .utf8)
+            } else {
+                markdown = nil
+            }
+
+            let notes = markdown.map {
+                ChangelogManager.releaseNotes(from: $0, version: version)
+            } ?? []
+
+            DispatchQueue.main.async {
+                completion(notes)
+            }
+        }.resume()
+    }
+
+    private func completeCheck(latest: String, hasUpdate: Bool, notes: [String]) {
+        isChecking = false
+        latestReleaseNotes = notes
+
+        let shouldShowManualFeedback = manualFeedbackRequested
+        manualFeedbackRequested = false
+        let automaticallyDownloadsUpdates = Storage.shared.loadSettings().automaticallyDownloadsUpdates
+
+        if hasUpdate {
+            if shouldShowManualFeedback {
+                showUpdateAlert(version: latest, releaseNotes: notes)
+            } else if automaticallyDownloadsUpdates {
+                startDownload()
+            }
+        } else if shouldShowManualFeedback {
+            showUpToDateAlert(releaseNotes: notes)
+        }
+    }
+
+    private func finishCheckWithError(_ message: String) {
+        isChecking = false
+        updateAvailable = false
+        downloadUrl = nil
+        error = message
+
+        let shouldShowManualFeedback = manualFeedbackRequested
+        manualFeedbackRequested = false
+        guard shouldShowManualFeedback else { return }
+
+        _ = runUpdaterAlert(
+            messageText: L.tr("Couldn’t check for updates", "Не удалось проверить обновления"),
+            informativeText: message,
+            primaryButtonTitle: L.tr("OK", "ОК")
+        )
+    }
+
+    private func showUpToDateAlert(releaseNotes: [String]) {
+        _ = runUpdaterAlert(
+            messageText: L.tr("You’re up to date", "Обновлений нет"),
+            informativeText: informativeText(
+                base: L.tr(
+                    "WhisperKiller \(currentVersion) is the latest version.",
+                    "Установлена последняя версия WhisperKiller \(currentVersion)."
+                ),
+                releaseNotes: releaseNotes
+            ),
+            primaryButtonTitle: L.tr("OK", "ОК"),
+            minimumContentWidth: releaseNotes.isEmpty ? nil : 520
+        )
+    }
+
+    private func showUpdateAlert(version: String, releaseNotes: [String]) {
         let response = runUpdaterAlert(
             messageText: L.tr("Update Available", "Доступно обновление"),
-            informativeText: L.tr(
-                "A new version (\(version)) of WhisperKiller is available. Would you like to download and install it now?",
-                "Доступна новая версия WhisperKiller \(version). Скачать и установить сейчас?"
+            informativeText: informativeText(
+                base: L.tr(
+                    "WhisperKiller \(version) is ready to download.",
+                    "WhisperKiller \(version) готов к загрузке."
+                ),
+                releaseNotes: releaseNotes
             ),
             primaryButtonTitle: L.tr("Download & Install", "Скачать и установить"),
-            secondaryButtonTitle: L.tr("Later", "Позже")
+            secondaryButtonTitle: L.tr("Later", "Позже"),
+            minimumContentWidth: releaseNotes.isEmpty ? nil : 520
         )
 
         if response == .alertFirstButtonReturn {
@@ -151,14 +291,19 @@ class GitHubUpdater: ObservableObject {
         guard isAvailable else { return }
         // Show install prompt if it was a background download
         DispatchQueue.main.async {
+            let version = self.latestVersion ?? ""
             let response = self.runUpdaterAlert(
                 messageText: L.tr("Installation Ready", "Готово к установке"),
-                informativeText: L.tr(
-                    "The update has been downloaded. WhisperKiller will close to install the new version.",
-                    "Обновление загружено. WhisperKiller закроется, установит новую версию и запустится снова."
+                informativeText: self.informativeText(
+                    base: L.tr(
+                        "WhisperKiller \(version) has been downloaded. The app will close, install the update, and relaunch.",
+                        "WhisperKiller \(version) загружен. Приложение закроется, установит обновление и запустится снова."
+                    ),
+                    releaseNotes: self.latestReleaseNotes
                 ),
                 primaryButtonTitle: L.tr("Install & Relaunch", "Установить и перезапустить"),
-                secondaryButtonTitle: L.tr("Later", "Позже")
+                secondaryButtonTitle: L.tr("Later", "Позже"),
+                minimumContentWidth: self.latestReleaseNotes.isEmpty ? nil : 520
             )
 
             if response == .alertFirstButtonReturn {
@@ -167,12 +312,21 @@ class GitHubUpdater: ObservableObject {
         }
     }
 
+    private func informativeText(base: String, releaseNotes: [String]) -> String {
+        guard !releaseNotes.isEmpty else { return base }
+
+        let heading = L.tr("What’s new:", "Что нового:")
+        let bullets = releaseNotes.map { "• \($0)" }.joined(separator: "\n")
+        return "\(base)\n\n\(heading)\n\(bullets)"
+    }
+
     @discardableResult
     private func runUpdaterAlert(
         messageText: String,
         informativeText: String,
         primaryButtonTitle: String,
-        secondaryButtonTitle: String? = nil
+        secondaryButtonTitle: String? = nil,
+        minimumContentWidth: CGFloat? = nil
     ) -> NSApplication.ModalResponse {
         let alert = NSAlert()
         alert.alertStyle = .informational
@@ -186,6 +340,13 @@ class GitHubUpdater: ObservableObject {
         if let secondaryButtonTitle {
             let secondaryButton = alert.addButton(withTitle: secondaryButtonTitle)
             secondaryButton.keyEquivalent = "\u{1b}"
+        }
+
+        if let minimumContentWidth {
+            alert.accessoryView = NSView(
+                frame: NSRect(x: 0, y: 0, width: minimumContentWidth, height: 0)
+            )
+            alert.layout()
         }
 
         NSApp.activate(ignoringOtherApps: true)
@@ -354,5 +515,25 @@ class GitHubUpdater: ObservableObject {
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", script]
         try process.run()
+    }
+}
+
+private enum UpdateCheckError: LocalizedError {
+    case invalidResponse(Int?)
+    case invalidPayload
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse(let statusCode):
+            if let statusCode {
+                return L.tr(
+                    "Update check failed (HTTP \(statusCode)).",
+                    "Проверка обновлений завершилась ошибкой (HTTP \(statusCode))."
+                )
+            }
+            return L.tr("Invalid update response.", "Некорректный ответ сервера обновлений.")
+        case .invalidPayload:
+            return L.tr("Invalid update response.", "Некорректный ответ сервера обновлений.")
+        }
     }
 }

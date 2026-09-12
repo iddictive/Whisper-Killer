@@ -91,7 +91,7 @@ final class ChangelogManager: ObservableObject {
         self.entries = Self.parseChangelog(markdown)
     }
 
-    static func parseChangelog(_ markdown: String) -> [ChangelogEntry] {
+    nonisolated static func parseChangelog(_ markdown: String) -> [ChangelogEntry] {
         var results: [ChangelogEntry] = []
         let sections = markdown.components(separatedBy: "\n## ")
 
@@ -131,5 +131,80 @@ final class ChangelogManager: ObservableObject {
         }
 
         return results
+    }
+
+    nonisolated static func releaseNotes(
+        from markdown: String,
+        version: String,
+        limit: Int = 3
+    ) -> [String] {
+        let normalizedVersion = version
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "v", with: "", options: [.anchored, .caseInsensitive])
+
+        let entries = parseChangelog(markdown)
+        let matchingEntry = entries.first {
+            $0.version.compare(normalizedVersion, options: .caseInsensitive) == .orderedSame
+        } ?? entries.first {
+            $0.version.compare("Unreleased", options: .caseInsensitive) == .orderedSame
+        }
+
+        guard let body = matchingEntry?.markdownBody else { return [] }
+        return summaryLines(from: body, limit: limit)
+    }
+
+    nonisolated static func summaryLines(from markdown: String, limit: Int = 3) -> [String] {
+        guard limit > 0 else { return [] }
+
+        var category: String?
+        var summaries: [String] = []
+
+        for line in markdown.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if trimmed.hasPrefix("### ") {
+                category = String(trimmed.dropFirst(4))
+                    .replacingOccurrences(of: "**", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                continue
+            }
+
+            guard trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") else { continue }
+
+            let rawItem = String(trimmed.dropFirst(2))
+            let summary: String
+            if let category, let title = leadingBoldTitle(in: rawItem) {
+                summary = "\(category) — \(title)"
+            } else {
+                summary = rawItem
+                    .replacingOccurrences(of: "**", with: "")
+                    .replacingOccurrences(of: "`", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            guard !summary.isEmpty else { continue }
+            summaries.append(compact(summary))
+            if summaries.count == limit { break }
+        }
+
+        return summaries
+    }
+
+    nonisolated private static func leadingBoldTitle(in text: String) -> String? {
+        guard text.hasPrefix("**"),
+              let end = text.dropFirst(2).range(of: "**")?.lowerBound else { return nil }
+
+        let title = text[text.index(text.startIndex, offsetBy: 2)..<end]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? nil : title
+    }
+
+    nonisolated private static func compact(_ text: String, maximumLength: Int = 110) -> String {
+        guard text.count > maximumLength else { return text }
+
+        let cutoff = text.index(text.startIndex, offsetBy: maximumLength)
+        let prefix = text[..<cutoff]
+        let wordBoundary = prefix.lastIndex(where: { $0.isWhitespace }) ?? prefix.endIndex
+        return String(prefix[..<wordBoundary]).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 }

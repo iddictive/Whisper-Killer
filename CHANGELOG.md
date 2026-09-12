@@ -10,6 +10,8 @@ All notable changes to WhisperKiller are documented in this file.
 ### Changed
 - **Retired engine migration**: Existing settings that selected a retired transcription engine now keep all other preferences and fall back to OpenAI.
 - **Shared engine picker**: Settings and Setup Wizard now render their engine choices from one SwiftUI component with surface-specific presentations.
+- **Updater feedback**: Manual update checks now always report their result, while update dialogs show up to three concise changelog highlights for the relevant version.
+- **Unified warning center**: Accessibility and API-key warnings now share one compact notification area in the main menu.
 
 ---
 

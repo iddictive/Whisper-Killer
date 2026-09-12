@@ -29,51 +29,13 @@ struct MenuBarView: View {
 
     private var mainContent: some View {
         VStack(spacing: 0) {
-            // ─── Accessibility Warning ─────────────
-            if !appState.isHotkeyTrusted {
-                Button {
-                    appState.requestAccessibilityPermission()
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(SW.warning)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(L.tr("Accessibility access needed", "Нужен Accessibility"))
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(SW.primaryText)
-                                .lineLimit(1)
-                            Text(L.tr("Open Settings", "Открыть настройки"))
-                                .font(.system(size: 10))
-                                .foregroundStyle(SW.secondaryText)
-                                .lineLimit(1)
-                        }
-                        .layoutPriority(1)
-                        Spacer()
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(SW.secondaryText)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous).fill(SW.warning.opacity(0.12)))
-                    .overlay(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous).strokeBorder(SW.warning.opacity(0.24), lineWidth: 1))
-                    .padding(.horizontal, 8)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                }
-                .buttonStyle(.swPlainInteractive)
-            }
+            warningCenter
 
             headerControls
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
 
             Divider()
-
-            if appState.isAPIKeyInvalid {
-                apiKeyWarningBanner
-            }
 
             modeToolbar
                 .padding(.horizontal, 16)
@@ -288,28 +250,71 @@ struct MenuBarView: View {
         }
     }
 
-    private var apiKeyWarningBanner: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 10))
-                .foregroundStyle(.orange)
-            Text(L.tr("OpenAI API key is invalid", "OpenAI API key недействителен"))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.orange)
-            Spacer()
-            Button(L.tr("Settings", "Настройки")) {
-                AppDelegate.shared?.showSettings()
+    @ViewBuilder
+    private var warningCenter: some View {
+        if !appState.isHotkeyTrusted || appState.isAPIKeyInvalid {
+            VStack(spacing: 0) {
+                if !appState.isHotkeyTrusted {
+                    warningRow(
+                        title: L.tr("Accessibility access needed", "Нужен Accessibility")
+                    ) {
+                        appState.requestAccessibilityPermission()
+                    }
+                }
+
+                if !appState.isHotkeyTrusted && appState.isAPIKeyInvalid {
+                    Divider()
+                        .padding(.leading, 34)
+                }
+
+                if appState.isAPIKeyInvalid {
+                    warningRow(
+                        title: L.tr("OpenAI API key is invalid", "OpenAI API key недействителен")
+                    ) {
+                        AppDelegate.shared?.showSettings()
+                    }
+                }
             }
-            .font(.system(size: 10, weight: .semibold))
-            .buttonStyle(.plain)
-            .foregroundStyle(SW.accent)
+            .background(
+                RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
+                    .fill(SW.warning.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
+                    .strokeBorder(SW.warning.opacity(0.24), lineWidth: 1)
+            )
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Color.orange.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .padding(.horizontal, 14)
-        .padding(.top, 4)
+    }
+
+    private func warningRow(
+        title: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(SW.warning)
+
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(SW.primaryText)
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(SW.secondaryText)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.swPlainInteractive)
     }
 
     private var modeToolbar: some View {
