@@ -1118,6 +1118,14 @@ final class AppState: ObservableObject {
         return runtimeReady && modelReady ? .transcribing : .preparing
     }
 
+    func toggleRecording() {
+        if state == .recording {
+            stopAndTranscribe()
+        } else if state == .idle {
+            startRecording()
+        }
+    }
+
     func startRecording() {
         guard state == .idle else { return }
         guard validateTranscriptionPrerequisites(requiresMicrophone: true) else {

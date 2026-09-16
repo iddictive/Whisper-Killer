@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreSpotlight
 
 private enum AppWindowGeometry {
     static let standardContentSize = NSSize(width: 800, height: 550)
@@ -291,6 +292,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Obse
         statusBarController = StatusBarController(appState: appState, appDelegate: self)
         applyConfiguredActivationPolicy()
 
+        SpotlightIndexManager.shared.indexItems()
+
         // Bridge AppState.showOverlayWindow → OverlayWindowController
         appState.$showOverlayWindow
             .sink { [weak self] show in
@@ -550,6 +553,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Obse
     func hideAccessibilityDragHelper() {
         accessibilityDragHelperController?.close()
         accessibilityDragHelperController = nil
+    }
+
+    func application(_ application: NSApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
+        if SpotlightIndexManager.shared.handleActivity(userActivity, appDelegate: self) {
+            return true
+        }
+        return false
     }
 }
 

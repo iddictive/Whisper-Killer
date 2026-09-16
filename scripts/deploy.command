@@ -81,6 +81,9 @@ if [ $? -eq 0 ]; then
     cp "$ACTUAL_BINARY" "$BUNDLE_NAME/Contents/MacOS/$APP_NAME"
     chmod +x "$BUNDLE_NAME/Contents/MacOS/$APP_NAME"
     cp "$INFO_PLIST" "$BUNDLE_NAME/Contents/Info.plist"
+        if [ -d "Sources/WhisperFree/Resources/ru.lproj" ]; then
+        cp -R Sources/WhisperFree/Resources/*.lproj "$BUNDLE_NAME/Contents/Resources/"
+    fi
     if [ -d "$PROFANITY_RESOURCE_DIR" ]; then
         mkdir -p "$BUNDLE_NAME/Contents/Resources/Resources"
         ditto --norsrc --noextattr "$PROFANITY_RESOURCE_DIR" "$BUNDLE_NAME/Contents/Resources/Resources/Profanity"

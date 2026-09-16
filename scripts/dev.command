@@ -61,6 +61,9 @@ prepare_bundle() {
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $dev_version" "$bundle_path/Contents/Info.plist" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $dev_version" "$bundle_path/Contents/Info.plist" 2>/dev/null || true
 
+        if [ -d "Sources/WhisperFree/Resources/ru.lproj" ]; then
+        cp -R Sources/WhisperFree/Resources/*.lproj "$bundle_path/Contents/Resources/"
+    fi
     if [ -d "$PROFANITY_DIR" ]; then
         mkdir -p "$bundle_path/Contents/Resources/Resources"
         ditto --norsrc --noextattr "$PROFANITY_DIR" "$bundle_path/Contents/Resources/Resources/Profanity"
