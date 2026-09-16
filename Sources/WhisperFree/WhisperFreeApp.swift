@@ -704,7 +704,7 @@ final class HistoryWindowController: NSObject {
         )
         window.center()
         window.contentView = hostingView
-        window.title = L.tr("Transcription History", "История транскрибации")
+        window.title = ""
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true

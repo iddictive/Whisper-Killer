@@ -26,56 +26,77 @@ struct HistoryView: View {
         }
     }
 
-    var body: some View {
-        ZStack {
-            VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                .ignoresSafeArea()
-            
-            VStack(spacing: 0) {
-                mainContent
+   var body: some View {
+       ZStack {
+           VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+               .ignoresSafeArea()
+           
+           VStack(spacing: 0) {
+                windowHeader
+                statsHeader
+                searchBar
+                content
             }
+            .ignoresSafeArea(.container, edges: .top)
         }
-        .frame(minWidth: 420, minHeight: 480)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            WindowHeaderUnderlay()
-        }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(L.tr("Transcription History", "История транскрибации"))
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 8) {
-                    let total = appState.activeHistoryCount
-                    let files = appState.fileImportCount
-                    
-                    Text(L.historyCount(entries: total, files: files))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    
-                    if !appState.history.isEmpty {
-                        Button(role: .destructive) {
-                            appState.clearHistory()
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.system(size: 11))
-                        }
-                        .foregroundStyle(.red.opacity(0.8))
-                        .help(L.tr("Clear All History", "Очистить всю историю"))
-                    }
+        .frame(minWidth: 460, minHeight: 480)
+        .alert(
+            L.tr("Rename Transcription", "Переименовать транскрипцию"),
+            isPresented: .init(get: { renamingEntry != nil }, set: { if !$0 { renamingEntry = nil } })
+        ) {
+            TextField(L.tr("Transcription text", "Текст транскрипции"), text: $newTranscriptionText)
+            Button(L.tr("Cancel", "Отмена"), role: .cancel) { renamingEntry = nil }
+            Button(L.tr("Save", "Сохранить")) {
+                if let entry = renamingEntry {
+                    appState.updateTranscriptionText(entry: entry, newText: newTranscriptionText)
                 }
+                renamingEntry = nil
             }
+        } message: {
+            Text(L.tr("Edit the transcription text for this entry.", "Измените текст транскрипции для этой записи."))
         }
     }
 
-    private var mainContent: some View {
-        VStack(spacing: 0) {
-            statsHeader
-            searchBar
-            content
+    private var windowHeader: some View {
+        HStack(spacing: 0) {
+            // Space reserved for traffic lights on the left
+            Spacer().frame(width: 76)
+
+            Spacer()
+
+            Text(L.tr("Transcription History", "История транскрибации"))
+                .font(.system(size: 13, weight: .semibold))
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                let total = appState.activeHistoryCount
+                let files = appState.fileImportCount
+
+                Text(L.historyCount(entries: total, files: files))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if !appState.history.isEmpty {
+                    Button(role: .destructive) {
+                        appState.clearHistory()
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.red.opacity(0.85))
+                            .frame(width: 22, height: 22)
+                            .background(Color.red.opacity(0.10))
+                            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                    }
+                    .buttonStyle(.swPlainInteractive)
+                    .help(L.tr("Clear All History", "Очистить всю историю"))
+                }
+            }
+            .frame(width: 180, alignment: .trailing)
         }
-        .padding(.top, 16) // Padding since header is removed
+        .padding(.horizontal, 14)
+        .frame(height: 36)
     }
 
 
@@ -86,7 +107,8 @@ struct HistoryView: View {
             statItem(title: L.tr("Saved", "Сэкономлено"), value: formatSavedTime(appState.estimatedTimeSaved), icon: "hourglass", color: SW.warning)
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
     }
 
     private func statItem(title: String, value: String, icon: String, color: Color) -> some View {
@@ -133,7 +155,7 @@ struct HistoryView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .background(SW.rowBackground)
         .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous).strokeBorder(SW.border, lineWidth: 1))
@@ -142,21 +164,20 @@ struct HistoryView: View {
     }
 
     private var content: some View {
-        VStack(spacing: 0) {
+        Group {
             if filteredHistory.isEmpty {
                 emptyView
             } else {
-                List {
-                    ForEach(filteredHistory.indices, id: \.self) { index in
-                        historyRow(filteredHistory[index])
-                            .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(filteredHistory, id: \.entryId) { entry in
+                            historyRow(entry)
+                        }
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 2)
+                    .padding(.bottom, 20)
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
             }
         }
     }
@@ -179,7 +200,7 @@ struct HistoryView: View {
 
     @ViewBuilder
     private func historyRow(_ entry: TranscriptionHistoryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             rowHeader(entry)
             rowContent(entry)
             rowActions(entry)
@@ -191,18 +212,6 @@ struct HistoryView: View {
             RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
                 .strokeBorder(SW.border, lineWidth: 1)
         )
-        .alert(L.tr("Rename Transcription", "Переименовать транскрипцию"), isPresented: .init(get: { renamingEntry?.entryId == entry.entryId }, set: { if !$0 { renamingEntry = nil } })) {
-            TextField(L.tr("Transcription text", "Текст транскрипции"), text: $newTranscriptionText)
-            Button(L.tr("Cancel", "Отмена"), role: .cancel) { renamingEntry = nil }
-            Button(L.tr("Save", "Сохранить")) {
-                if let entry = renamingEntry {
-                    appState.updateTranscriptionText(entry: entry, newText: newTranscriptionText)
-                }
-                renamingEntry = nil
-            }
-        } message: {
-            Text(L.tr("Edit the transcription text for this entry.", "Измените текст транскрипции для этой записи."))
-        }
     }
 
     private func rowHeader(_ entry: TranscriptionHistoryEntry) -> some View {
@@ -288,7 +297,9 @@ struct HistoryView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(preferredDisplayText(for: entry))
                 .font(.system(size: 13, weight: .medium))
+                .lineSpacing(3)
                 .lineLimit(expandedEntryId == entry.entryId ? nil : 3)
+                .contentShape(Rectangle())
                 .onTapGesture {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                         expandedEntryId = expandedEntryId == entry.entryId ? nil : entry.entryId
@@ -346,113 +357,143 @@ struct HistoryView: View {
     }
 
     private func rowActions(_ entry: TranscriptionHistoryEntry) -> some View {
-        HStack(spacing: 12) {
-            Button {
+        HStack(spacing: 6) {
+            pillActionButton(
+                title: L.tr("Copy", "Копировать"),
+                icon: "doc.on.doc.fill",
+                color: SW.accent,
+                bg: SW.accent.opacity(0.12)
+            ) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(preferredDisplayText(for: entry), forType: .string)
-            } label: {
-                Label(L.tr("Copy", "Копировать"), systemImage: "doc.on.doc.fill")
-                    .font(.system(size: 11, weight: .bold))
             }
-            .buttonStyle(.swPlainInteractive)
-            .foregroundStyle(SW.accent)
-            
-            Button {
+
+            pillActionButton(
+                title: L.tr("Rename", "Переименовать"),
+                icon: "pencil",
+                color: SW.secondaryText,
+                bg: SW.rowBackground
+            ) {
                 newTranscriptionText = entry.summaryText ?? entry.processedText
                 renamingEntry = entry
-            } label: {
-                Label(L.tr("Rename", "Переименовать"), systemImage: "pencil")
-                    .font(.system(size: 11, weight: .bold))
             }
-            .buttonStyle(.swPlainInteractive)
-            .foregroundStyle(SW.secondaryText)
 
             if entry.summaryText?.isEmpty == false {
-                Button {
+                pillActionButton(
+                    title: L.tr("Transcript", "Транскрипт"),
+                    icon: "text.alignleft",
+                    color: SW.secondaryText,
+                    bg: SW.rowBackground
+                ) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(entry.processedText, forType: .string)
-                } label: {
-                    Label(L.tr("Transcript", "Транскрипт"), systemImage: "text.alignleft")
-                        .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.swPlainInteractive)
-                .foregroundStyle(.secondary)
             }
 
             if canSaveMarkdown(for: entry) {
-                Button {
+                pillActionButton(
+                    title: L.tr("Save as MD", "Save as MD"),
+                    icon: "square.and.arrow.down",
+                    color: Color.accentColor,
+                    bg: SW.accent.opacity(0.12)
+                ) {
                     saveMarkdown(for: entry)
-                } label: {
-                    Label(L.tr("Save as MD", "Save as MD"), systemImage: "square.and.arrow.down")
-                        .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.swPlainInteractive)
-                .foregroundStyle(Color.accentColor)
 
                 markdownSaveStatus(entry)
             }
 
             if let path = entry.audioFilePath, FileManager.default.fileExists(atPath: path) {
-                Button {
+                let isRetranscribing = retranscribingEntryIds.contains(entry.entryId)
+                pillActionButton(
+                    title: isRetranscribing ? L.tr("Retranscribing...", "Ретранскрипт...") : L.tr("Retranscribe", "Ретранскрипт"),
+                    icon: isRetranscribing ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.clockwise",
+                    color: Color.accentColor,
+                    bg: SW.accent.opacity(0.12),
+                    disabled: isRetranscribing || appState.state != .idle || appState.isProcessingActive
+                ) {
                     let entryId = entry.entryId
                     retranscribingEntryIds.insert(entryId)
                     Task { @MainActor in
                         await appState.retranscribeHistoryEntry(entry)
                         retranscribingEntryIds.remove(entryId)
                     }
-                } label: {
-                    Label(retranscribingEntryIds.contains(entry.entryId) ? L.tr("Retranscribing...", "Ретранскрипт...") : L.tr("Retranscribe", "Ретранскрипт"),
-                          systemImage: retranscribingEntryIds.contains(entry.entryId) ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.clockwise")
-                        .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.swPlainInteractive)
-                .foregroundStyle(Color.accentColor)
-                .disabled(retranscribingEntryIds.contains(entry.entryId) || appState.state != .idle || appState.isProcessingActive)
 
-                Button {
+                pillActionButton(
+                    title: playingEntryId == entry.entryId ? L.tr("Pause", "Пауза") : L.tr("Play", "Воспроизвести"),
+                    icon: playingEntryId == entry.entryId ? "pause.fill" : "play.fill",
+                    color: SW.warning,
+                    bg: SW.warning.opacity(0.12)
+                ) {
                     togglePlay(entry: entry)
-                } label: {
-                    Label(playingEntryId == entry.entryId ? L.tr("Pause", "Пауза") : L.tr("Play", "Воспроизвести"), 
-                          systemImage: playingEntryId == entry.entryId ? "pause.fill" : "play.fill")
-                        .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.swPlainInteractive)
-                .foregroundStyle(SW.warning)
 
-                Button {
+                pillActionButton(
+                    title: "Finder",
+                    icon: "folder.fill",
+                    color: SW.secondaryText,
+                    bg: SW.rowBackground
+                ) {
                     let url = URL(fileURLWithPath: path)
                     NSWorkspace.shared.activateFileViewerSelecting([url])
-                } label: {
-                    Label("Finder", systemImage: "folder.fill")
-                        .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.swPlainInteractive)
-                .foregroundStyle(.secondary)
             }
 
             if entry.rawText != entry.processedText {
-                Button {
+                pillActionButton(
+                    title: L.tr("Raw", "Сырой"),
+                    icon: "doc.on.clipboard",
+                    color: SW.secondaryText,
+                    bg: SW.rowBackground
+                ) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(entry.rawText, forType: .string)
-                } label: {
-                    Label(L.tr("Raw", "Сырой"), systemImage: "doc.on.clipboard")
-                        .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.swPlainInteractive)
-                .foregroundStyle(.secondary)
             }
 
-            Spacer()
+            Spacer(minLength: 4)
 
             Button(role: .destructive) {
                 withAnimation { appState.deleteTranscriptionHistoryEntry(entry) }
             } label: {
                 Image(systemName: "trash.fill")
-                    .font(.system(size: 11))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.red.opacity(0.85))
+                    .frame(width: 24, height: 22)
+                    .background(Color.red.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
             .buttonStyle(.swPlainInteractive)
-            .foregroundStyle(.red.opacity(0.8))
+            .help(L.tr("Delete Entry", "Удалить запись"))
         }
+    }
+
+    private func pillActionButton(
+        title: String,
+        icon: String,
+        color: Color,
+        bg: Color = SW.rowBackground,
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(bg)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+            .opacity(disabled ? 0.45 : 1.0)
+        }
+        .buttonStyle(.swPlainInteractive)
+        .disabled(disabled)
     }
 
     @ViewBuilder
