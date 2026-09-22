@@ -57,7 +57,8 @@ prepare_bundle() {
     /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName WhisperKiller Dev" "$bundle_path/Contents/Info.plist"
     source "$ROOT_DIR/scripts/version.sh"
     local dev_version
-    dev_version="$(resolve_whisperkiller_version "$INFO_PLIST")"
+    # Resolve overrides on the copied bundle; writing watched source metadata causes a rebuild loop.
+    dev_version="$(resolve_whisperkiller_version "$bundle_path/Contents/Info.plist")"
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $dev_version" "$bundle_path/Contents/Info.plist" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $dev_version" "$bundle_path/Contents/Info.plist" 2>/dev/null || true
 
