@@ -25,7 +25,7 @@ enum AIChatService {
         request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let apiMessages = messages.suffix(24).map { message -> [String: Any] in
+        let apiMessages = requestMessages(from: messages).map { message -> [String: Any] in
             [
                 "role": message.role == .assistant ? "assistant" : "user",
                 "content": message.content
@@ -67,6 +67,11 @@ enum AIChatService {
             promptTokens: promptTokens,
             completionTokens: completionTokens
         )
+    }
+
+    // Sources remain available throughout the conversation, independently of the turn window.
+    static func requestMessages(from messages: [AIChatMessage]) -> [AIChatMessage] {
+        messages.filter(\.isAttachment) + messages.filter { !$0.isAttachment }.suffix(24)
     }
 
     static func relevantOpenAIChatModels(from ids: [String]) -> [String] {

@@ -539,11 +539,7 @@ final class AppState: ObservableObject {
 
     func attachLatestTranscriptionToAIChat() {
         if let last = history.first {
-            attachToAIChat(
-                title: L.tr("Latest transcript", "Последняя транскрипция"),
-                content: preferredAIChatText(for: last),
-                sourceID: "history:\(last.entryId.uuidString)"
-            )
+            attachHistoryEntryToAIChat(last)
             return
         }
 
@@ -581,10 +577,10 @@ final class AppState: ObservableObject {
     }
 
     func attachHistoryEntryToAIChat(_ entry: TranscriptionHistoryEntry) {
-        let title = "\(entry.modeName) · \(entry.date.formatted(date: .omitted, time: .shortened))"
+        let title = "\(AIChatSources.title(for: entry)) · \(entry.date.formatted(date: .abbreviated, time: .shortened))"
         attachToAIChat(
             title: title,
-            content: preferredAIChatText(for: entry),
+            content: AIChatSources.text(for: entry),
             sourceID: "history:\(entry.entryId.uuidString)"
         )
     }
@@ -778,15 +774,6 @@ final class AppState: ObservableObject {
                 }
             }
         }
-    }
-
-    private func preferredAIChatText(for entry: TranscriptionHistoryEntry) -> String {
-        if let summary = entry.summaryText?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
-            return summary
-        }
-        let processed = entry.processedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !processed.isEmpty { return processed }
-        return entry.rawText
     }
 
     func requestFileTranscription(urls: [URL]) -> Bool {

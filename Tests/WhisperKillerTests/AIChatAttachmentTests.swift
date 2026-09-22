@@ -2,6 +2,29 @@ import XCTest
 @testable import WhisperKiller
 
 final class AIChatAttachmentTests: XCTestCase {
+    func testLongConversationKeepsSourcesButLimitsOrdinaryTurns() {
+        let source = AIChatMessage(role: .user, content: "Full transcript", attachmentTitle: "Meeting")
+        let turns = (0..<30).map { AIChatMessage(role: .user, content: "Question \($0)") }
+        let request = AIChatService.requestMessages(from: [source] + turns)
+        XCTAssertEqual(request.first, source)
+        XCTAssertEqual(Array(request.dropFirst()), Array(turns.suffix(24)))
+        XCTAssertEqual(AIChatService.requestMessages(from: turns), Array(turns.suffix(24)))
+    }
+
+    func testSourceUsesFullTranscriptAndSearchIncludesOlderImportedContent() {
+        let entry = TranscriptionHistoryEntry(
+            rawText: "Original detail", processedText: "Full transcript with deadline Friday",
+            summaryText: "Short summary", modeName: "Meeting", duration: 60,
+            engineUsed: "local", isFromFileImport: true, audioFilePath: "/tmp/planning.m4a"
+        )
+        XCTAssertEqual(AIChatSources.text(for: entry), "Full transcript with deadline Friday")
+        XCTAssertEqual(AIChatSources.title(for: entry), "planning.m4a")
+        XCTAssertTrue(AIChatSources.matches(entry, query: "FRIDAY", filter: .imports))
+        XCTAssertTrue(AIChatSources.matches(entry, query: "planning", filter: .all))
+        XCTAssertFalse(AIChatSources.matches(entry, query: "Friday", filter: .voice))
+        XCTAssertFalse(AIChatSources.matches(entry, query: "absent", filter: .all))
+    }
+
     func testUpsertReplacesAttachmentFromSameSourceAndPreservesIdentity() {
         let original = AIChatMessage(
             role: .user,

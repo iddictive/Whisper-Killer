@@ -2,11 +2,18 @@ import SwiftUI
 
 struct AIChatWindowView: View {
     @EnvironmentObject var appState: AppState
-    @State private var draft = ""
+    @State private var drafts: [UUID: String] = [:]
+    @State private var isShowingSources = false
     @FocusState private var isInputFocused: Bool
 
     private var selectedConversation: AIChatConversation? {
         appState.selectedAIChatConversation
+    }
+
+    private var draft: Binding<String> {
+        Binding(get: { selectedConversation.flatMap { drafts[$0.id] } ?? "" }, set: { value in
+            if let id = selectedConversation?.id { drafts[id] = value }
+        })
     }
 
     var body: some View {
@@ -21,15 +28,20 @@ struct AIChatWindowView: View {
                 Divider()
 
                 VStack(spacing: 0) {
-                    AIChatHeader(conversation: selectedConversation)
-                    Divider()
                     AIChatMessageList(
                         messages: selectedConversation?.chatMessages ?? [],
-                        hasAttachedContext: !(selectedConversation?.attachments.isEmpty ?? true)
+                        hasAttachedContext: !(selectedConversation?.attachments.isEmpty ?? true),
+                        onChooseSources: { isShowingSources = true },
+                        onPrompt: { prompt in
+                            if draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                draft.wrappedValue = prompt
+                            } else {
+                                draft.wrappedValue += "\n\n" + prompt
+                            }
+                            isInputFocused = true
+                        }
                     )
-                    AIChatAttachmentShelf(attachments: selectedConversation?.attachments ?? [])
-                    Divider()
-                    AIChatComposer(draft: $draft, isInputFocused: $isInputFocused)
+                    AIChatComposer(draft: draft, onChooseSources: { isShowingSources = true }, isInputFocused: $isInputFocused)
                 }
             }
         }
@@ -39,6 +51,12 @@ struct AIChatWindowView: View {
                 Text("AI Chat")
                     .font(SW.titleFont)
             }
+            ToolbarItem(placement: .primaryAction) {
+                AIChatModelMenu()
+            }
+        }
+        .sheet(isPresented: $isShowingSources, onDismiss: { isInputFocused = true }) {
+            AIChatSourcePicker()
         }
         .onAppear {
             appState.ensureSelectedAIChatConversation()
@@ -49,7 +67,6 @@ struct AIChatWindowView: View {
 
 private struct AIChatSidebar: View {
     @EnvironmentObject var appState: AppState
-    @State private var isShowingRecentItems = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -80,84 +97,9 @@ private struct AIChatSidebar: View {
                 }
             }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(L.tr("ATTACH", "ПРИКРЕПИТЬ"))
-                    .font(SW.labelFont)
-                    .foregroundStyle(SW.secondaryText)
-
-                AIChatAttachButton(
-                    title: L.tr("Latest transcript", "Последняя транскрипция"),
-                    icon: "text.quote",
-                    action: appState.attachLatestTranscriptionToAIChat
-                )
-                AIChatAttachButton(
-                    title: L.tr("Live translation", "Live-перевод"),
-                    icon: "captions.bubble",
-                    action: appState.attachLiveTranslationToAIChat
-                )
-
-                if !appState.history.isEmpty {
-                    Button {
-                        isShowingRecentItems.toggle()
-                    } label: {
-                        AIChatSidebarActionLabel(
-                            title: L.tr("Recent items", "Недавние"),
-                            icon: "clock",
-                            trailingIcon: "chevron.down"
-                        )
-                    }
-                    .buttonStyle(.swPlainInteractive)
-                    .popover(isPresented: $isShowingRecentItems, arrowEdge: .trailing) {
-                        AIChatRecentItemsPopover(isPresented: $isShowingRecentItems)
-                    }
-                }
-
-                if let error = appState.aiChatAttachmentError, !error.isEmpty {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 9))
-                        .foregroundStyle(SW.warning)
-                        .lineLimit(2)
-                        .padding(.top, 2)
-                }
-            }
-
             Spacer(minLength: 0)
         }
         .padding(12)
-    }
-}
-
-private struct AIChatRecentItemsPopover: View {
-    @EnvironmentObject var appState: AppState
-    @Binding var isPresented: Bool
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(spacing: SW.spacingXS) {
-                ForEach(appState.history.prefix(8), id: \.entryId) { entry in
-                    Button {
-                        appState.attachHistoryEntryToAIChat(entry)
-                        isPresented = false
-                    } label: {
-                        Text(AIChatRecentItemLabel.text(for: entry))
-                            .font(SW.compactFont)
-                            .foregroundStyle(SW.primaryText)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.swPlainInteractive)
-                }
-            }
-            .padding(SW.spacingS)
-        }
-        .frame(width: 320)
-        .frame(maxHeight: 280)
-        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -217,83 +159,6 @@ private struct AIChatConversationRow: View {
     }
 }
 
-private struct AIChatAttachButton: View {
-    let title: String
-    let icon: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            AIChatSidebarActionLabel(title: title, icon: icon)
-        }
-        .buttonStyle(.swPlainInteractive)
-    }
-}
-
-private struct AIChatSidebarActionLabel: View {
-    let title: String
-    let icon: String
-    var trailingIcon: String? = nil
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 14, height: 14)
-                .frame(width: 16, height: 20, alignment: .center)
-
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
-
-            Spacer(minLength: 4)
-
-            if let trailingIcon {
-                Image(systemName: trailingIcon)
-                    .font(.system(size: 7, weight: .semibold))
-                    .frame(width: 10, height: 16, alignment: .center)
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
-        .contentShape(Rectangle())
-    }
-}
-
-private struct AIChatHeader: View {
-    @EnvironmentObject var appState: AppState
-    let conversation: AIChatConversation?
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Text(conversation?.displayTitle ?? "AI Chat")
-                .font(.system(size: 14, weight: .semibold))
-                .lineLimit(1)
-                .layoutPriority(1)
-
-            Spacer(minLength: 0)
-
-            AIChatModelMenu()
-
-            Button {
-                appState.refreshAIChatModelsIfNeeded(force: true)
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 26, height: 26)
-                    .background(SW.rowBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-            }
-            .buttonStyle(.swPlainInteractive)
-            .disabled(appState.isLoadingAIChatModels || !appState.settings.hasOpenAIAPIKey)
-            .accessibilityLabel(L.tr("Refresh OpenAI models", "Обновить модели OpenAI"))
-            .help(L.tr("Refresh OpenAI models", "Обновить модели OpenAI"))
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-    }
-}
-
 private struct AIChatModelMenu: View {
     @EnvironmentObject var appState: AppState
 
@@ -319,25 +184,19 @@ private struct AIChatModelMenu: View {
                     }
                 }
             }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: appState.isLoadingAIChatModels ? "arrow.triangle.2.circlepath" : "cpu")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(appState.settings.selectedAIChatModel)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 7, weight: .semibold))
+            Divider()
+            Button(L.tr("Refresh models", "Обновить модели")) {
+                appState.refreshAIChatModelsIfNeeded(force: true)
             }
-            .frame(maxWidth: 190)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(SW.rowBackground)
-            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-            .swInteractiveHover()
+            .disabled(appState.isLoadingAIChatModels || !appState.settings.hasOpenAIAPIKey)
+        } label: {
+            Text(appState.settings.selectedAIChatModel)
+                .font(SW.compactFont)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 
     private var modelList: [String] {
@@ -352,13 +211,15 @@ private struct AIChatModelMenu: View {
 private struct AIChatMessageList: View {
     let messages: [AIChatMessage]
     let hasAttachedContext: Bool
+    let onChooseSources: () -> Void
+    let onPrompt: (String) -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if messages.isEmpty {
-                        AIChatEmptyState(hasAttachedContext: hasAttachedContext)
+                        AIChatEmptyState(hasAttachedContext: hasAttachedContext, onChooseSources: onChooseSources, onPrompt: onPrompt)
                     } else {
                         ForEach(messages) { message in
                             AIChatMessageRow(message: message)
@@ -383,229 +244,206 @@ private struct AIChatMessageList: View {
 
 private struct AIChatEmptyState: View {
     let hasAttachedContext: Bool
+    let onChooseSources: () -> Void
+    let onPrompt: (String) -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 30, weight: .regular))
-                .foregroundStyle(SW.tertiaryText)
-            Text(
-                hasAttachedContext
-                    ? L.tr(
-                        "Context is attached. Ask a question about it.",
-                        "Контекст прикреплён. Задайте вопрос по нему."
-                    )
-                    : L.tr(
-                        "Ask, summarize, translate, or attach recent transcript context.",
-                        "Спросите, суммаризируйте, переведите или прикрепите недавнюю транскрипцию."
-                    )
-            )
-                .font(SW.compactFont)
-                .foregroundStyle(SW.secondaryText)
+        VStack(spacing: SW.spacingL) {
+            Text(hasAttachedContext
+                 ? L.tr("What would you like to find out?", "Что хотите узнать?")
+                 : L.tr("Work with your transcripts", "Поработаем с расшифровками"))
+                .font(.system(size: 18, weight: .semibold))
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 280)
+            if hasAttachedContext {
+                ViewThatFits(in: .horizontal) {
+                    HStack { suggestions }
+                    VStack { suggestions }
+                }
+            } else {
+                Button(action: onChooseSources) {
+                    Label(L.tr("Choose transcripts", "Выбрать расшифровки"), systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 280)
+        .frame(maxWidth: .infinity, minHeight: 240)
+    }
+
+    private var suggestions: some View {
+        Group {
+            Button(L.tr("Summarize", "Кратко")) {
+                onPrompt(L.tr("Summarize the attached transcripts, highlighting the key points.",
+                              "Кратко изложи главное из прикреплённых расшифровок."))
+            }
+            Button(L.tr("Action items", "Задачи")) {
+                onPrompt(L.tr("Extract action items, owners and deadlines from the attached transcripts. Flag anything not specified.",
+                              "Выдели задачи, ответственных и сроки из расшифровок. Отметь, где данных не хватает."))
+            }
+            Button(L.tr("Key takeaways", "Выводы")) {
+                onPrompt(L.tr("What are the key decisions and open questions in the attached transcripts?",
+                              "Какие решения приняты и какие вопросы остались открытыми в расшифровках?"))
+            }
+        }
+        .buttonStyle(.bordered)
     }
 }
 
 private struct AIChatAttachmentShelf: View {
-    @EnvironmentObject var appState: AppState
     let attachments: [AIChatMessage]
-    @State private var expandedAttachmentID: UUID?
 
     var body: some View {
         if !attachments.isEmpty {
-            VStack(alignment: .leading, spacing: SW.spacingS) {
-                HStack(spacing: SW.spacingXS) {
-                    Text(L.tr("CONTEXT", "КОНТЕКСТ"))
-                        .font(SW.labelFont)
-                        .foregroundStyle(SW.secondaryText)
-
-                    Text("\(attachments.count)")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(SW.secondaryText)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(SW.rowBackground)
-                        .clipShape(Capsule())
-                }
-
-                ScrollView {
-                    LazyVStack(spacing: SW.spacingXS) {
-                        ForEach(attachments) { attachment in
-                            AIChatAttachmentRow(
-                                attachment: attachment,
-                                isExpanded: expandedAttachmentID == attachment.id,
-                                onToggle: {
-                                    withAnimation(.easeInOut(duration: 0.16)) {
-                                        expandedAttachmentID = expandedAttachmentID == attachment.id
-                                            ? nil
-                                            : attachment.id
-                                    }
-                                },
-                                onRemove: {
-                                    appState.removeAIChatAttachment(attachment.id)
-                                }
-                            )
-                        }
+            ScrollView(.horizontal) {
+                HStack(spacing: SW.spacingS) {
+                    ForEach(attachments) { attachment in
+                        AIChatAttachmentChip(attachment: attachment)
                     }
                 }
-                .frame(maxHeight: 220)
-                .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: SW.readableContentMaxWidth)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, SW.spacingXL)
-            .padding(.top, SW.spacingS)
-            .padding(.bottom, SW.spacingM)
-            .background(Color.primary.opacity(0.018))
-            .overlay(alignment: .top) {
-                Divider()
-            }
-            .onChange(of: attachments.map(\.id)) { _, ids in
-                if let expandedAttachmentID, !ids.contains(expandedAttachmentID) {
-                    self.expandedAttachmentID = nil
-                }
-            }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
 
-private struct AIChatAttachmentRow: View {
+private struct AIChatAttachmentChip: View {
+    @EnvironmentObject var appState: AppState
     let attachment: AIChatMessage
-    let isExpanded: Bool
-    let onToggle: () -> Void
-    let onRemove: () -> Void
+    @State private var isShowingPreview = false
+
+    private var source: TranscriptionHistoryEntry? {
+        appState.history.first { attachment.attachmentSourceID == "history:\($0.entryId.uuidString)" }
+    }
+
+    private var title: String {
+        source.map { AIChatSources.title(for: $0) }
+            ?? attachment.attachmentTitle
+            ?? L.tr("Transcript", "Расшифровка")
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: SW.spacingS) {
-                Button(action: onToggle) {
-                    HStack(spacing: SW.spacingS) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(SW.secondaryText)
-                            .frame(width: 10, height: 18)
-
-                        Image(systemName: "paperclip")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(SW.secondaryText)
-                            .frame(width: 14, height: 18)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(attachment.attachmentTitle ?? L.tr("Attached context", "Прикреплённый контекст"))
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(SW.primaryText)
-                                .lineLimit(1)
-
-                            if !isExpanded {
-                                Text(attachment.attachmentText)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(SW.secondaryText)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
+        HStack(spacing: SW.spacingXS) {
+            Button {
+                isShowingPreview.toggle()
+            } label: {
+                Label(title, systemImage: source?.isFromFileImport == true ? "doc.text" : "text.quote")
+                    .font(SW.compactFont)
+                    .lineLimit(1)
+                    .frame(maxWidth: 220, alignment: .leading)
+                    .padding(.vertical, SW.spacingS)
+            }
+            .buttonStyle(.swPlainInteractive)
+            .help(L.tr("Preview source", "Просмотреть источник"))
+            .popover(isPresented: $isShowingPreview) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: SW.spacingM) {
+                        if let source {
+                            HStack {
+                                if source.isFromFileImport && source.audioFilePath != nil {
+                                    Text(AIChatSources.title(for: source)).lineLimit(1)
+                                }
+                                Spacer()
+                                Text(source.date.formatted(date: .abbreviated, time: .shortened))
                             }
+                            .font(SW.compactFont)
+                            .foregroundStyle(SW.secondaryText)
                         }
-
-                        Spacer(minLength: SW.spacingS)
-
-                        Text(attachment.date.formatted(date: .omitted, time: .shortened))
-                            .font(.system(size: 9))
-                            .foregroundStyle(SW.tertiaryText)
+                        Text(attachment.attachmentText)
+                            .font(.system(size: 13))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .contentShape(Rectangle())
+                    .padding(SW.spacingL)
                 }
-                .buttonStyle(.swPlainInteractive)
-
-                Button(action: onRemove) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(SW.secondaryText)
-                        .frame(width: 22, height: 22)
-                        .background(SW.rowBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                }
-                .buttonStyle(.swPlainInteractive)
-                .accessibilityLabel(L.tr("Remove attached context", "Удалить прикреплённый контекст"))
-                .help(L.tr("Remove attached context", "Удалить прикреплённый контекст"))
+                .frame(width: 420)
+                .frame(maxHeight: 320)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-
-            if isExpanded {
-                Divider()
-                    .padding(.horizontal, 10)
-
-                Text(attachment.attachmentText)
-                    .font(.system(size: 11))
-                    .foregroundStyle(SW.primaryText)
-                    .textSelection(.enabled)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                appState.removeAIChatAttachment(attachment.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .medium))
+                    .frame(width: 24, height: 28)
             }
+            .buttonStyle(.swPlainInteractive)
+            .accessibilityLabel(L.tr("Remove source", "Убрать источник"))
+            .help(L.tr("Remove source", "Убрать источник"))
         }
+        .padding(.leading, SW.spacingS)
         .background(SW.rowBackground)
-        .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
-                .strokeBorder(isExpanded ? SW.accent.opacity(0.28) : SW.border, lineWidth: 1)
-        }
-        .accessibilityElement(children: .contain)
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium))
     }
 }
 
 private struct AIChatComposer: View {
     @EnvironmentObject var appState: AppState
     @Binding var draft: String
+    let onChooseSources: () -> Void
     @FocusState.Binding var isInputFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: SW.spacingS) {
             composerStatus
-
-            HStack(alignment: .bottom, spacing: 8) {
-                Button {
-                    appState.toggleAIChatVoiceMessage()
-                } label: {
-                    Image(systemName: appState.isAIChatVoiceRecording ? "stop.fill" : "mic.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 30, height: 30)
-                        .foregroundStyle(appState.isAIChatVoiceRecording ? Color.white : SW.primaryText)
-                        .background(appState.isAIChatVoiceRecording ? SW.danger : SW.rowBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                }
-                .buttonStyle(.swPlainInteractive)
-                .disabled(!canToggleVoice)
-                .accessibilityLabel(voiceActionLabel)
-                .help(voiceActionLabel)
-
-                TextField(L.tr("Ask about transcripts...", "Спросить по транскрипциям..."), text: $draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-                    .focused($isInputFocused)
-                    .lineLimit(1...4)
-                    .onSubmit(sendDraft)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(SW.rowBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-
-                Button(action: sendDraft) {
-                    Image(systemName: appState.isAIChatSending ? "hourglass" : "paperplane.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 30, height: 30)
-                        .foregroundStyle(canSend ? SW.accent : SW.secondaryText)
-                        .background(SW.rowBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                }
-                .buttonStyle(.swPlainInteractive)
-                .disabled(!canSend)
-                .accessibilityLabel(sendActionLabel)
-                .help(sendActionLabel)
+            if let error = appState.aiChatAttachmentError {
+                Text(error).font(SW.compactFont).foregroundStyle(SW.warning)
             }
+            VStack(alignment: .leading, spacing: SW.spacingM) {
+                AIChatAttachmentShelf(attachments: appState.selectedAIChatConversation?.attachments ?? [])
+                TextField(L.tr("Ask about transcripts…", "Спросить по расшифровкам…"), text: $draft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .focused($isInputFocused)
+                    .lineLimit(2...7)
+                    .onSubmit(sendDraft)
+                    .accessibilityLabel(L.tr("Message", "Сообщение"))
+                HStack(spacing: SW.spacingS) {
+                    Button(action: onChooseSources) {
+                        Label(L.tr("Transcripts", "Расшифровки"), systemImage: "plus")
+                    }
+                    .buttonStyle(.bordered)
+                    Menu {
+                        Button(L.tr("Latest transcript", "Последняя расшифровка"), action: appState.attachLatestTranscriptionToAIChat)
+                        Button(L.tr("Live translation", "Live-перевод"), action: appState.attachLiveTranslationToAIChat)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .accessibilityLabel(L.tr("Other sources", "Другие источники"))
+                    Spacer(minLength: SW.spacingS)
+                    voiceButton
+                    Button(action: sendDraft) {
+                        Image(systemName: appState.isAIChatSending ? "hourglass" : "arrow.up")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 24, height: 26)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canSend)
+                    .accessibilityLabel(sendActionLabel)
+                    .help(sendActionLabel)
+                }
+            }
+            .padding(SW.spacingM)
+            .background(SW.rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusLarge))
         }
-        .padding(14)
+        .frame(maxWidth: SW.readableContentMaxWidth)
+        .frame(maxWidth: .infinity)
+        .padding(SW.spacingL)
+    }
+
+    private var voiceButton: some View {
+        Button {
+            appState.toggleAIChatVoiceMessage()
+        } label: {
+            Image(systemName: appState.isAIChatVoiceRecording ? "stop.fill" : "mic")
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 30, height: 30)
+                .foregroundStyle(appState.isAIChatVoiceRecording ? SW.danger : SW.primaryText)
+        }
+        .buttonStyle(.swPlainInteractive)
+        .disabled(!canToggleVoice)
+        .accessibilityLabel(voiceActionLabel)
+        .help(voiceActionLabel)
     }
 
     @ViewBuilder
@@ -660,7 +498,7 @@ private struct AIChatComposer: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend, !text.isEmpty else { return }
         draft = ""
-        isInputFocused = false
+        isInputFocused = true
         appState.sendAIChatMessage(text)
     }
 }
@@ -678,15 +516,21 @@ private struct AIChatMessageRow: View {
                 Spacer(minLength: 64)
             }
 
-            Text(message.content)
-                .font(.system(size: 12))
+            Text(message.role == .assistant ? (try? AttributedString(markdown: message.content, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(message.content) : AttributedString(message.content))
+                .font(.system(size: 13))
                 .foregroundStyle(SW.primaryText)
                 .textSelection(.enabled)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 9)
                 .background(isUser ? SW.accent.opacity(0.13) : Color.primary.opacity(0.055))
                 .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
-                .frame(maxWidth: 430, alignment: isUser ? .trailing : .leading)
+                .frame(maxWidth: isUser ? 480 : .infinity, alignment: isUser ? .trailing : .leading)
+                .contextMenu {
+                    Button(L.tr("Copy", "Скопировать")) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(message.content, forType: .string)
+                    }
+                }
 
             if !isUser {
                 Spacer(minLength: 64)
