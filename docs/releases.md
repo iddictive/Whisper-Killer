@@ -41,6 +41,14 @@ selected GitHub release body, with an exact-version tagged changelog fallback.
   CI runs it after checkout with full tags and again before publication.
 - `python3 scripts/release.py verify-bundle --bundle PATH` compares packaged
   version fields and changelog with the prepared source before signing.
+- After publication, resolve the remote tag to the tested commit, compare the
+  GitHub release body with the section extracted by `scripts/release.py`, and
+  download the named DMG. Compare its SHA-256 with the published asset digest;
+  mount it read-only, verify its signature, and run `verify-bundle` against the
+  mounted app. A green workflow alone does not establish artifact agreement.
+- Rerun `plan --remote origin` after publication: the same version must report
+  no publication. Report the installed application's version separately;
+  publishing a release does not establish that a local installation updated.
 - A failed build before publication may be retried from the same commit.
 - If a tag already exists but its release upload is incomplete, stop and inspect
   that exact release; repair it deliberately instead of silently overwriting an
