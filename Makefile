@@ -1,4 +1,4 @@
-.PHONY: all help dev test build verify install clean clean-legacy uninstall
+.PHONY: all help dev test build verify install release-prepare clean clean-legacy uninstall
 
 # Default target: release verification
 all: verify
@@ -9,6 +9,7 @@ help:
 	@echo "  make test         - Run test suite"
 	@echo "  make verify       - Run test suite and verify production release build"
 	@echo "  make install      - Verify, package, sign, install to /Applications, and launch"
+	@echo "  make release-prepare - Finalize Unreleased and synchronize the next version (no publish)"
 	@echo "  make clean        - Clean local build artifacts (.build, dist, staging)"
 	@echo "  make clean-legacy - Safely remove empty obsolete Application Support folders (WhisperFlow, WhisperFree)"
 	@echo "  make uninstall    - Full cleanup of app and local settings via scripts/uninstall.sh"
@@ -20,7 +21,13 @@ dev:
 # Run test suite
 test:
 	@echo "🧪 Running tests..."
+	@python3 scripts/release.py check
+	@python3 -m unittest discover -s scripts/tests -p 'test_release.py'
 	@swift test --disable-keychain --disable-netrc
+
+# Maintainer preparation only; commit/review and publication remain separate actions.
+release-prepare:
+	@python3 scripts/release.py prepare --remote origin
 
 # Reinstall app locally (verify + build + sign + move to /Applications + launch)
 install: verify

@@ -12,13 +12,10 @@ struct ChangelogEntry: Identifiable, Hashable {
 final class ChangelogManager: ObservableObject {
     static let shared = ChangelogManager()
 
-    private let remoteURL = URL(string: "https://raw.githubusercontent.com/iddictive/Whisper-Killer/main/CHANGELOG.md")!
-    private let cacheURL: URL = {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        let dir = caches.appendingPathComponent("WhisperKiller", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("CHANGELOG.md")
-    }()
+    private let installedVersion: String
+    private let isDevelopmentBuild: Bool
+    private let remoteURL: URL?
+    private let cacheURL: URL?
 
     @Published var entries: [ChangelogEntry] = []
     @Published var rawMarkdown: String = ""
@@ -26,26 +23,53 @@ final class ChangelogManager: ObservableObject {
     @Published var errorMessage: String?
     @Published var lastFetchedDate: Date?
 
-    init() {
+    init(
+        installedVersion: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
+        isDevelopmentBuild: Bool = Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
+    ) {
+        self.installedVersion = installedVersion
+        self.isDevelopmentBuild = isDevelopmentBuild
+
+        let releaseVersion = Self.normalizedReleaseVersion(installedVersion)
+        self.remoteURL = releaseVersion.flatMap { Self.releaseChangelogURL(version: $0) }
+        self.cacheURL = releaseVersion.map { Self.cacheURL(for: $0) }
+
         loadInitialContent()
     }
 
+    private static func cacheURL(for version: String) -> URL {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let dir = caches.appendingPathComponent("WhisperKiller", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("CHANGELOG-\(version).md")
+    }
+
     func loadInitialContent() {
-        let bundledURL = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md") ?? localRepoChangelogURL()
+        let bundledURL = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md")
+            ?? (isDevelopmentBuild ? localRepoChangelogURL() : nil)
         let bundledString = bundledURL.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
-        let cachedString = (try? Data(contentsOf: cacheURL)).flatMap { String(data: $0, encoding: .utf8) }
+
+        if isDevelopmentBuild, let bundledString, !bundledString.isEmpty {
+            applyContent(bundledString)
+            return
+        }
 
         if let bundledString, !bundledString.isEmpty {
-            applyContent(bundledString)
-        } else if let cachedString, !cachedString.isEmpty {
-            applyContent(cachedString)
+            applyReleaseContent(bundledString)
+        }
+
+        if entries.isEmpty,
+           let cacheURL,
+           let cachedData = try? Data(contentsOf: cacheURL),
+           let cachedString = String(data: cachedData, encoding: .utf8) {
+            applyReleaseContent(cachedString)
         }
 
         fetchRemoteContent()
     }
 
     func refresh() {
-        fetchRemoteContent(force: true)
+        fetchRemoteContent()
     }
 
     private func localRepoChangelogURL() -> URL? {
@@ -53,8 +77,8 @@ final class ChangelogManager: ObservableObject {
         return FileManager.default.fileExists(atPath: candidate.path) ? candidate : nil
     }
 
-    private func fetchRemoteContent(force: Bool = false) {
-        guard !isLoading else { return }
+    private func fetchRemoteContent() {
+        guard !isDevelopmentBuild, let remoteURL, !isLoading else { return }
         isLoading = true
         errorMessage = nil
 
@@ -69,9 +93,14 @@ final class ChangelogManager: ObservableObject {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
                    let markdown = String(data: data, encoding: .utf8), !markdown.isEmpty {
-                    try? data.write(to: self.cacheURL, options: .atomic)
-                    self.applyContent(markdown)
-                    self.lastFetchedDate = Date()
+                    if self.applyReleaseContent(markdown) {
+                        if let cacheURL = self.cacheURL {
+                            try? data.write(to: cacheURL, options: .atomic)
+                        }
+                        self.lastFetchedDate = Date()
+                    } else if self.entries.isEmpty {
+                        self.errorMessage = L.tr("Could not load this version's changelog.", "Не удалось загрузить историю этой версии.")
+                    }
                 } else {
                     if self.entries.isEmpty {
                         self.errorMessage = L.tr("Could not load latest changelog.", "Не удалось загрузить историю версий.")
@@ -89,6 +118,73 @@ final class ChangelogManager: ObservableObject {
     private func applyContent(_ markdown: String) {
         self.rawMarkdown = markdown
         self.entries = Self.parseChangelog(markdown)
+    }
+
+    @discardableResult
+    private func applyReleaseContent(_ markdown: String) -> Bool {
+        guard Self.isReleaseChangelog(markdown, for: installedVersion) else { return false }
+
+        self.rawMarkdown = markdown
+        self.entries = Self.releaseEntries(from: markdown, through: installedVersion)
+        return true
+    }
+
+    nonisolated static func releaseChangelogURL(version: String) -> URL? {
+        guard let normalizedVersion = normalizedReleaseVersion(version) else { return nil }
+        let tag = "v\(normalizedVersion)"
+        guard let encodedTag = tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return nil
+        }
+        return URL(string: "https://raw.githubusercontent.com/iddictive/Whisper-Killer/\(encodedTag)/CHANGELOG.md")
+    }
+
+    nonisolated static func isReleaseChangelog(_ markdown: String, for installedVersion: String) -> Bool {
+        guard let normalizedVersion = normalizedReleaseVersion(installedVersion) else { return false }
+        return parseChangelog(markdown).contains { entry in
+            normalizedReleaseVersion(entry.version) == normalizedVersion
+        }
+    }
+
+    nonisolated static func releaseEntries(
+        from markdown: String,
+        through installedVersion: String
+    ) -> [ChangelogEntry] {
+        guard let installedComponents = versionComponents(installedVersion) else { return [] }
+
+        return parseChangelog(markdown).filter { entry in
+            guard let entryComponents = versionComponents(entry.version) else { return false }
+            return compareVersionComponents(entryComponents, installedComponents) != .orderedDescending
+        }
+    }
+
+    nonisolated private static func normalizedReleaseVersion(_ version: String) -> String? {
+        let normalized = version
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "v", with: "", options: [.anchored, .caseInsensitive])
+
+        guard let components = versionComponents(normalized) else { return nil }
+        return components.map(String.init).joined(separator: ".")
+    }
+
+    nonisolated private static func versionComponents(_ version: String) -> [Int]? {
+        guard version.range(of: #"^[0-9]+\.[0-9]+(?:\.[0-9]+)?$"#, options: .regularExpression) != nil else { return nil }
+        let components = version.split(separator: ".", omittingEmptySubsequences: false)
+        guard !components.isEmpty else { return nil }
+
+        let numbers = components.compactMap { Int($0) }
+        guard numbers.count == components.count else { return nil }
+        return numbers
+    }
+
+    nonisolated private static func compareVersionComponents(_ lhs: [Int], _ rhs: [Int]) -> ComparisonResult {
+        let count = max(lhs.count, rhs.count)
+        for index in 0..<count {
+            let left = index < lhs.count ? lhs[index] : 0
+            let right = index < rhs.count ? rhs[index] : 0
+            if left < right { return .orderedAscending }
+            if left > right { return .orderedDescending }
+        }
+        return .orderedSame
     }
 
     nonisolated static func parseChangelog(_ markdown: String) -> [ChangelogEntry] {
@@ -138,15 +234,10 @@ final class ChangelogManager: ObservableObject {
         version: String,
         limit: Int = 3
     ) -> [String] {
-        let normalizedVersion = version
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "v", with: "", options: [.anchored, .caseInsensitive])
-
         let entries = parseChangelog(markdown)
+        guard let normalizedVersion = normalizedReleaseVersion(version) else { return [] }
         let matchingEntry = entries.first {
-            $0.version.compare(normalizedVersion, options: .caseInsensitive) == .orderedSame
-        } ?? entries.first {
-            $0.version.compare("Unreleased", options: .caseInsensitive) == .orderedSame
+            normalizedReleaseVersion($0.version) == normalizedVersion
         }
 
         guard let body = matchingEntry?.markdownBody else { return [] }

@@ -67,7 +67,7 @@ enum ChangelogCategory {
 
 struct ChangelogView: View {
     @ObservedObject private var manager = ChangelogManager.shared
-    private let installedVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.51"
+    private let installedVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -111,9 +111,9 @@ struct ChangelogView: View {
                     .font(.system(size: 11, weight: .medium))
             }
             .buttonStyle(.plain)
-            .help(L.tr("Check for latest notes", "Обновить список изменений"))
+            .help(L.tr("Refresh this version's notes", "Обновить историю этой версии"))
 
-            Link(destination: URL(string: "https://github.com/iddictive/Whisper-Killer/blob/main/CHANGELOG.md")!) {
+            Link(destination: URL(string: "https://github.com/iddictive/Whisper-Killer/releases" + (installedVersion.isEmpty ? "" : "/tag/v\(installedVersion)"))!) {
                 HStack(spacing: 4) {
                     Text("GitHub")
                         .font(.caption)
@@ -177,13 +177,13 @@ struct ChangelogView: View {
     }
 
     private func releaseCard(for entry: ChangelogEntry) -> some View {
-        let isInstalled = entry.version == installedVersion || entry.version.hasPrefix(installedVersion)
+        let isInstalled = entry.version == installedVersion
         let sections = parseSections(entry.markdownBody)
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center) {
                 HStack(spacing: 8) {
-                    Text("v" + entry.version)
+                    Text(entry.version == "Unreleased" ? L.tr("Unreleased", "Не выпущено") : "v" + entry.version)
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(isInstalled ? Color.white : .primary)
                         .padding(.horizontal, 10)

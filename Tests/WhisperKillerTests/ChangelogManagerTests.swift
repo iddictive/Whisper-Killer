@@ -63,7 +63,7 @@ final class ChangelogManagerTests: XCTestCase {
         XCTAssertFalse(notes.joined().contains("Fourth item"))
     }
 
-    func testReleaseNotesFallBackToUnreleasedSectionForTaggedSnapshot() {
+    func testReleaseNotesRejectMissingExactVersion() {
         let sampleMarkdown = """
         # Changelog
 
@@ -77,7 +77,32 @@ final class ChangelogManagerTests: XCTestCase {
 
         XCTAssertEqual(
             ChangelogManager.releaseNotes(from: sampleMarkdown, version: "3.52"),
-            ["Manual update checks show a final status."]
+            []
+        )
+    }
+
+    func testReleaseContentMatrix() {
+        let sampleMarkdown = """
+        # Changelog
+
+        ## [Unreleased]
+        - Future item
+
+        ## [3.53] - 2026-09-15
+        - Future numbered item
+
+        ## [3.52] - 2026-09-12
+        - Current item
+
+        ## [3.51] - 2026-09-10
+        - Earlier item
+        """
+
+        XCTAssertTrue(ChangelogManager.isReleaseChangelog(sampleMarkdown, for: "v3.52"))
+        XCTAssertFalse(ChangelogManager.isReleaseChangelog(sampleMarkdown, for: "3.50"))
+        XCTAssertEqual(
+            ChangelogManager.releaseEntries(from: sampleMarkdown, through: "3.52").map(\.version),
+            ["3.52", "3.51"]
         )
     }
 }

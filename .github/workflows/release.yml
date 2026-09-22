@@ -5,6 +5,11 @@ on:
     branches:
       - main
 
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+  queue: max
+
 jobs:
   build:
     name: Build and Release
@@ -16,6 +21,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Validate release contract
+        id: release
+        run: |
+          python3 -m unittest discover -s scripts/tests -p 'test_release.py'
+          python3 scripts/release.py plan --notes "$RUNNER_TEMP/release-notes.md" --github-output "$GITHUB_OUTPUT"
 
       - name: Show Xcode Version
         run: xcodebuild -version
@@ -34,18 +45,11 @@ jobs:
         run: swift test --disable-keychain --disable-netrc
 
       - name: Clean DerivedData
+        if: steps.release.outputs.publish == 'true'
         run: rm -rf ~/Library/Developer/Xcode/DerivedData
 
-      - name: Calculate Version
-        id: versioning
-        run: |
-          source scripts/version.sh
-          APP_VERSION="$(next_release_version Sources/WhisperFree/Resources/Info.plist)"
-          echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
-          echo "VERSION=$APP_VERSION" >> $GITHUB_OUTPUT
-          WHISPERKILLER_VERSION="$APP_VERSION" resolve_whisperkiller_version Sources/WhisperFree/Resources/Info.plist
-
       - name: Build App
+        if: steps.release.outputs.publish == 'true'
         run: |
           swift build -c release --disable-keychain --disable-netrc
           mkdir -p WhisperKiller.app/Contents/MacOS
@@ -77,6 +81,9 @@ jobs:
             cp Sources/WhisperFree/Resources/AppIcon.icns WhisperKiller.app/Contents/Resources/
           fi
 
+          cp CHANGELOG.md WhisperKiller.app/Contents/Resources/CHANGELOG.md
+          python3 scripts/release.py verify-bundle --bundle WhisperKiller.app
+
           # Ad-hoc sign after all files are in place.
           rm -rf WhisperKiller.app/Contents/_CodeSignature
           dot_clean -m WhisperKiller.app 2>/dev/null || true
@@ -96,16 +103,17 @@ jobs:
           codesign --verify --deep --strict WhisperKiller.app
 
       - name: Create DMG
-        run: bash scripts/create_dmg.sh "WhisperKiller.app" "WhisperKiller-${{ env.APP_VERSION }}.dmg" "WhisperKiller"
+        if: steps.release.outputs.publish == 'true'
+        run: bash scripts/create_dmg.sh "WhisperKiller.app" "WhisperKiller-${{ steps.release.outputs.version }}.dmg" "WhisperKiller"
+
+      - name: Recheck release version
+        if: steps.release.outputs.publish == 'true'
+        run: |
+          python3 scripts/release.py plan --require-new --remote origin
 
       - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ env.APP_VERSION }}
-          name: WhisperKiller v${{ env.APP_VERSION }}
-          files: |
-            WhisperKiller-${{ env.APP_VERSION }}.dmg
-          draft: false
-          prerelease: false
+        if: steps.release.outputs.publish == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: bash scripts/publish_release.sh

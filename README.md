@@ -26,7 +26,7 @@
 
 WhisperKiller turns a global shortcut into speech-to-text for daily writing and audio files. It can run locally through `whisper.cpp`, Qwen3-ASR, or Parakeet TDT v3, or use current OpenAI transcription models in the cloud. Cloud features use your own OpenAI API key.
 
-Current release: **3.43**
+Current release: [GitHub Releases](https://github.com/iddictive/Whisper-Killer/releases/latest)
 
 ## What It Handles
 
@@ -94,6 +94,20 @@ Swift and resource changes trigger an incremental debug build and relaunch only
 after the new bundle passes code-signing verification. It does not create a DMG,
 replace `/Applications/WhisperKiller.app`, or reset macOS permissions.
 
+### Preparing a release
+
+Write user-facing changes under `Unreleased` in `CHANGELOG.md`. When the batch is
+ready, run `make release-prepare`: it reads remote release tags, moves those notes to
+the next version with a UTC date, and updates both bundle version fields.
+Review and commit the changelog and `Info.plist` together, then push to `main`
+when publication is intended. Preparation itself does not commit or publish.
+
+CI validates that the version and notes agree, runs tests, and publishes only a
+new prepared version. The tag points to that exact commit; the DMG, bundled
+changelog, and GitHub release notes use the same version and content. Ordinary
+pushes with an already released version run tests without creating another
+release. See [the release contract](docs/releases.md) for validation and retries.
+
 ## Requirements
 
 - macOS 14 or newer
@@ -112,7 +126,7 @@ replace `/Applications/WhisperKiller.app`, or reset macOS permissions.
 
 WhisperKiller превращает глобальную горячую клавишу в speech-to-text для повседневного письма и аудиофайлов. Приложение может работать локально через `whisper.cpp`, Qwen3-ASR или Parakeet TDT v3 либо использовать актуальные модели транскрибации OpenAI в облаке. Облачные функции работают через ваш OpenAI API key.
 
-Текущий релиз: **3.43**
+Текущий релиз: [GitHub Releases](https://github.com/iddictive/Whisper-Killer/releases/latest)
 
 ## Что умеет приложение
 

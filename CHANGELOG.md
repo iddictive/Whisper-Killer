@@ -4,19 +4,61 @@ All notable changes to WhisperKiller are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Release synchronization**: Prepare the version and changelog together, publish the same notes on GitHub, and include them in the application. Installed apps show notes for their own version instead of unreleased changes.
+
+---
+
+## [3.57] - 2026-09-22
+
+### Changed
+- **AI Chat controls**: Harmonize transcript, picker, and suggestion buttons, use matching circular voice/send controls with quieter disabled states, and show model selection only when an API key is configured. Expanding a voice transcript keeps its text before its date without repeating the preview.
+
+---
+
+## [3.56] - 2026-09-22
+
+### Changed
+- **AI Chat transcript workspace**: Search the full history, filter voice recordings and imports, preview and attach multiple transcripts from the composer, and start editable summary, action-item, or takeaway prompts. Compact source chips and transcript previews avoid repeated headings and text. Drafts stay with their chat; responses support inline formatting and copying.
+- **AI Chat source context**: Attach full transcripts instead of summaries and retain attached sources throughout longer conversations.
+- **Dev runtime stability**: Resolve bundle versions without rewriting watched source metadata, preventing repeated rebuilds when nothing changed.
+
+---
+
+## [3.55] - 2026-09-16
+
+### Added
+- **System search**: Find transcripts through Spotlight and access bilingual semantic discovery through App Intents.
+
+### Fixed
+- **History controls**: Integrate titlebar controls and correct action-button behavior.
+
+---
+
+## [3.54] - 2026-09-12
+
+### Fixed
+- **Update dialogs**: Keep release highlights readable in compact update alerts.
+
+---
+
+## [3.53] - 2026-09-12
+
+### Changed
+- **Updater feedback**: Manual update checks now always report their result, while compact update dialogs show up to three concise changelog highlights for the relevant version.
+- **Unified warning center**: Accessibility and API-key warnings now share one compact notification area in the main menu.
+- **Local transcription fallback**: Missing or invalid OpenAI credentials no longer block mode selection; Cloud stays unavailable while recordings and imported files fall back to the first ready local engine and skip unavailable AI refinement.
+
+---
+
+## [3.52] - 2026-09-12
+
 ### Removed
 - **GigaAM transcription engine**: Removed the experimental engine, its Python runtime installer, and all related setup, settings, menu-bar, and file-transcription controls.
 
 ### Changed
-- **AI Chat controls**: Harmonize transcript, picker, and suggestion buttons, use matching circular voice/send controls with quieter disabled states, and show model selection only when an API key is configured. Expanding a voice transcript keeps its text before its date without repeating the preview.
-- **AI Chat transcript workspace**: Search the full history, filter voice recordings and imports, preview and attach multiple transcripts from the composer, and start editable summary, action-item, or takeaway prompts. Compact source chips and transcript previews avoid repeated headings and text. Drafts stay with their chat; responses support inline formatting and copying.
-- **AI Chat source context**: Attach full transcripts instead of summaries and retain attached sources throughout longer conversations.
-- **Dev runtime stability**: Resolve bundle versions without rewriting watched source metadata, preventing repeated rebuilds when nothing changed.
 - **Retired engine migration**: Existing settings that selected a retired transcription engine now keep all other preferences and fall back to OpenAI.
 - **Shared engine picker**: Settings and Setup Wizard now render their engine choices from one SwiftUI component with surface-specific presentations.
-- **Updater feedback**: Manual update checks now always report their result, while compact update dialogs show up to three concise changelog highlights for the relevant version.
-- **Unified warning center**: Accessibility and API-key warnings now share one compact notification area in the main menu.
-- **Local transcription fallback**: Missing or invalid OpenAI credentials no longer block mode selection; Cloud stays unavailable while recordings and imported files fall back to the first ready local engine and skip unavailable AI refinement.
 
 ---
 
