@@ -8,9 +8,10 @@ As a user, I want transcript context to remain visibly separate from chat messag
 
 In scope:
 
-- latest transcript, live translation, and recent-history attachment sources;
+- latest transcript, live translation, and full searchable history sources;
 - attachment persistence inside the selected conversation;
-- context shelf, collapsed and expanded rows, removal, duplicate replacement, and attach-local errors;
+- composer attachment chips, source-picker previews, removal, duplicate replacement, and attach-local errors;
+- source-picker and composer control hierarchy for transcript selection, suggestions, voice capture, and sending;
 - chat title and message-count behavior when context is attached.
 
 Out of scope:
@@ -21,49 +22,68 @@ Out of scope:
 
 ## Surface Contract
 
-The primary object is attached context. The first visible evidence is a compact context row above the composer. Its stable slots are disclosure indicator, source icon, title, one-line preview, timestamp, and remove action. Full text appears only in the expanded state.
+The primary object is attached context. Its first visible evidence is a compact,
+single-line chip inside the composer. A chip shows its source icon, title, and
+remove action; opening it shows a popover with the timestamp and full selectable
+text. Attached context never appears as a chat turn.
 
 ```text
 message history
 ────────────────────────────────────────
-Attached context · 2
-▸ 📎 Latest transcript   preview…   11:35  ×
-▾ 📎 Raw                 preview…   11:29  ×
-    full selectable transcript text…
-────────────────────────────────────────
-microphone  message input             send
+[ 📎 Latest transcript × ] [ 📎 Meeting import × ]
+message input
+Transcripts   ⋯   microphone   send
 ```
+
+The source picker opens from the composer and empty state. It searches the full
+history, filters voice recordings and imports, and lets the user attach several
+sources. A voice row keeps text before its timestamp in both preview states;
+expansion reveals more text without repeating a prefix or moving the timestamp
+ahead of it. An imported file may keep a filename-and-timestamp header followed
+by its distinct transcript body when expanded.
+
+Secondary actions in the picker, empty state, and suggestions share the muted
+AI Chat treatment. Composer voice and send actions have matching circular
+affordances, and disabled actions remain visually quieter than active actions.
 
 ## State And Ownership
 
 | State | Visible result | Owner |
 |---|---|---|
-| Empty | Context shelf is omitted | Conversation model |
-| Attached | Compact row appears outside the message feed | Context shelf |
-| Collapsed | One-line preview; full text hidden | Attachment row |
-| Expanded | One row expanded at a time; shared perimeter remains intact | Context shelf |
+| Empty | No attachment chips; the empty state can open the source picker | Message list |
+| Attached | Compact chip appears inside the composer, outside the message feed | Composer |
+| Chip preview | Popover shows source timestamp and full selectable text | Attachment chip |
+| Picker collapsed | Voice text uses at most two lines and its timestamp follows it | Source picker |
+| Picker expanded | One source preview is expanded at a time; voice text remains before its timestamp | Source picker |
 | Duplicate source | Existing attachment is replaced in place | Conversation model |
-| Attach error | Error appears inside the Attach section | Sidebar attach state |
+| Attach error | A separate line appears above the composer card | Composer attachment state |
 | Removed | Attachment is removed from persistence and later requests | Conversation model |
 | Sent | Attachments remain available until explicitly removed | Conversation model |
 
 ## Implementation Decision
 
-Attachments remain encoded as `AIChatMessage` values for request and storage compatibility, but `attachmentTitle != nil` classifies them as context rather than visible chat turns. A new optional `attachmentSourceID` provides stable upsert identity while decoding older stored conversations as `nil`. The context shelf owns the only attachment scroll region; expanded rows do not create nested scrollers.
+Attachments remain encoded as `AIChatMessage` values for request and storage compatibility, but `attachmentTitle != nil` classifies them as context rather than visible chat turns. `attachmentSourceID` provides stable upsert identity while decoding older stored conversations as `nil`. `AIChatWindowView` owns the composer chips and their popovers; `AIChatSourcePicker` owns full-history search, filtering, and one-at-a-time preview expansion; `AIChatSources` owns source titles, transcript text, and matching.
 
 ## Acceptance Criteria
 
 - Attaching context must not create a visible user-message bubble or increment the chat message count.
 - Reattaching the same source replaces its existing attachment instead of adding a duplicate.
-- Collapsed rows show no more than one preview line; expanding one row collapses the previously expanded row.
-- Attach-source errors render in the Attach section and must not occupy the composer status slot.
+- Attachment chips remain in the composer and their popovers show the source timestamp and full selectable text.
+- The source picker searches the full history, filters voice recordings and imports, and allows more than one source to be attached.
+- Expanding one source-picker row collapses the previously expanded row.
+- A voice source keeps its text before its timestamp in both picker states; expansion reveals the full text without repeating a preview or title.
+- Imported-file rows may retain a filename-and-timestamp header and reveal a distinct transcript body on expansion.
+- Picker, empty-state, and suggestion actions use the shared muted secondary treatment; composer voice and send actions remain matched circles, including their disabled appearance.
+- Attach-source errors render on their own line above the composer card and must not replace chips, input, or controls.
 - Removing an attachment removes it from the stored conversation and subsequent requests.
 - Must not change ordinary user/assistant bubble anatomy or the OpenAI message transport.
 
-Reject the result when attachment context returns to the message feed, more than one row is expanded, attach errors resize the composer, or repeated selection creates another row for the same source.
+Reject the result when attachment context returns to the message feed, a chip loses its popover text or timestamp, more than one picker row is expanded, a voice-source timestamp moves ahead of its text or its preview repeats on expansion, an AI Chat secondary action falls back to opaque native bordered chrome, disabled composer actions outweigh active controls, attach errors replace composer controls, or repeated selection creates another attachment for the same source.
 
 ## Verification
 
 - Unit-test attachment upsert, replacement, removal, legacy decoding, and visible message count.
-- Render the installed macOS window with zero, multiple collapsed, one expanded, removed, duplicate, and attach-error states.
+- Render the `make dev` window with zero, multiple chips, chip preview, removed, duplicate, and attach-error states.
+- Capture the native source picker with the same voice source collapsed and expanded, then capture the composer with muted secondary actions and disabled voice/send controls.
 - Confirm the composer remains visible and the message feed contains only real user/assistant turns.
+- For a paint-only edit, replay the affected native state and its nearest state change; replay storage, attachment, and error states only when that owner changes.
