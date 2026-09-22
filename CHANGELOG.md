@@ -4,6 +4,8 @@ All notable changes to WhisperKiller are documented in this file.
 
 ## [Unreleased]
 
+## [3.58] - 2026-09-22
+
 ### Fixed
 - **Release synchronization**: Prepare the version and changelog together, publish the same notes on GitHub, and include them in the application. Installed apps show notes for their own version instead of unreleased changes.
 
