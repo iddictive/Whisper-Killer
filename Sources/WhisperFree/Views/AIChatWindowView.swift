@@ -52,7 +52,9 @@ struct AIChatWindowView: View {
                     .font(SW.titleFont)
             }
             ToolbarItem(placement: .primaryAction) {
-                AIChatModelMenu()
+                if appState.settings.hasOpenAIAPIKey {
+                    AIChatModelMenu()
+                }
             }
         }
         .sheet(isPresented: $isShowingSources, onDismiss: { isInputFocused = true }) {
@@ -263,7 +265,7 @@ private struct AIChatEmptyState: View {
                 Button(action: onChooseSources) {
                     Label(L.tr("Choose transcripts", "Выбрать расшифровки"), systemImage: "plus")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(AIChatSecondaryButtonStyle())
             }
         }
         .frame(maxWidth: .infinity, minHeight: 240)
@@ -284,7 +286,20 @@ private struct AIChatEmptyState: View {
                               "Какие решения приняты и какие вопросы остались открытыми в расшифровках?"))
             }
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(AIChatSecondaryButtonStyle())
+    }
+}
+
+struct AIChatSecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(SW.primaryText)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(configuration.isPressed ? SW.rowHover : SW.rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium))
+            .contentShape(RoundedRectangle(cornerRadius: SW.radiusMedium))
     }
 }
 
@@ -399,14 +414,17 @@ private struct AIChatComposer: View {
                     Button(action: onChooseSources) {
                         Label(L.tr("Transcripts", "Расшифровки"), systemImage: "plus")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(AIChatSecondaryButtonStyle())
                     Menu {
                         Button(L.tr("Latest transcript", "Последняя расшифровка"), action: appState.attachLatestTranscriptionToAIChat)
                         Button(L.tr("Live translation", "Live-перевод"), action: appState.attachLiveTranslationToAIChat)
                     } label: {
                         Image(systemName: "ellipsis")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 30, height: 30)
                     }
                     .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                     .fixedSize()
                     .accessibilityLabel(L.tr("Other sources", "Другие источники"))
                     Spacer(minLength: SW.spacingS)
@@ -414,9 +432,12 @@ private struct AIChatComposer: View {
                     Button(action: sendDraft) {
                         Image(systemName: appState.isAIChatSending ? "hourglass" : "arrow.up")
                             .font(.system(size: 12, weight: .semibold))
-                            .frame(width: 24, height: 26)
+                            .foregroundStyle(canSend ? SW.windowBackground : SW.secondaryText.opacity(0.45))
+                            .frame(width: 30, height: 30)
+                            .background(canSend ? SW.primaryText : SW.rowBackground)
+                            .clipShape(Circle())
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.swPlainInteractive)
                     .disabled(!canSend)
                     .accessibilityLabel(sendActionLabel)
                     .help(sendActionLabel)
@@ -438,7 +459,9 @@ private struct AIChatComposer: View {
             Image(systemName: appState.isAIChatVoiceRecording ? "stop.fill" : "mic")
                 .font(.system(size: 13, weight: .medium))
                 .frame(width: 30, height: 30)
-                .foregroundStyle(appState.isAIChatVoiceRecording ? SW.danger : SW.primaryText)
+                .foregroundStyle(appState.isAIChatVoiceRecording ? SW.danger : (canToggleVoice ? SW.primaryText : SW.secondaryText.opacity(0.45)))
+                .background(SW.rowBackground)
+                .clipShape(Circle())
         }
         .buttonStyle(.swPlainInteractive)
         .disabled(!canToggleVoice)

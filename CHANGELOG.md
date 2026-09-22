@@ -8,6 +8,7 @@ All notable changes to WhisperKiller are documented in this file.
 - **GigaAM transcription engine**: Removed the experimental engine, its Python runtime installer, and all related setup, settings, menu-bar, and file-transcription controls.
 
 ### Changed
+- **AI Chat controls**: Harmonize transcript, picker, and suggestion buttons, use matching circular voice/send controls with quieter disabled states, and show model selection only when an API key is configured. Expanding a voice transcript keeps its text before its date without repeating the preview.
 - **AI Chat transcript workspace**: Search the full history, filter voice recordings and imports, preview and attach multiple transcripts from the composer, and start editable summary, action-item, or takeaway prompts. Compact source chips and transcript previews avoid repeated headings and text. Drafts stay with their chat; responses support inline formatting and copying.
 - **AI Chat source context**: Attach full transcripts instead of summaries and retain attached sources throughout longer conversations.
 - **Dev runtime stability**: Resolve bundle versions without rewriting watched source metadata, preventing repeated rebuilds when nothing changed.

@@ -78,6 +78,7 @@ struct AIChatSourcePicker: View {
             .padding(SW.spacingL)
         }
         .frame(width: 600, height: 430)
+        .buttonStyle(AIChatSecondaryButtonStyle())
     }
 }
 
@@ -91,6 +92,10 @@ private struct AIChatSourceRow: View {
         appState.selectedAIChatConversation?.attachments.first {
             $0.attachmentSourceID == "history:\(entry.entryId.uuidString)"
         }
+    }
+
+    private var hasFileTitle: Bool {
+        entry.isFromFileImport && entry.audioFilePath != nil
     }
 
     var body: some View {
@@ -107,13 +112,12 @@ private struct AIChatSourceRow: View {
                 .disabled(AIChatSources.text(for: entry).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Button(action: onPreview) {
                     VStack(alignment: .leading, spacing: SW.spacingXS) {
-                        if !isExpanded || (entry.isFromFileImport && entry.audioFilePath != nil) {
-                            Text(AIChatSources.title(for: entry))
-                                .font(SW.bodyFont)
-                                .foregroundStyle(SW.primaryText)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                        }
+                        Text(hasFileTitle ? AIChatSources.title(for: entry) : AIChatSources.text(for: entry))
+                            .font(SW.bodyFont)
+                            .foregroundStyle(SW.primaryText)
+                            .lineLimit(isExpanded && !hasFileTitle ? nil : 2)
+                            .multilineTextAlignment(.leading)
+                            .textSelection(.enabled)
                         HStack(spacing: 5) {
                             Image(systemName: entry.isFromFileImport ? "doc" : "waveform")
                             Text(entry.date.formatted(date: .abbreviated, time: .shortened))
@@ -129,7 +133,7 @@ private struct AIChatSourceRow: View {
                 .buttonStyle(.swPlainInteractive)
                 .help(L.tr("Preview transcript", "Просмотреть расшифровку"))
             }
-            if isExpanded {
+            if isExpanded && hasFileTitle {
                 Text(AIChatSources.text(for: entry))
                     .font(SW.bodyFont)
                     .textSelection(.enabled)
