@@ -7,6 +7,7 @@ All notable changes to WhisperKiller are documented in this file.
 ## [4.0.2] - 2026-10-05
 
 ### Fixed
+- **Global hotkeys**: Remove interception when accessibility access is revoked, replace old registrations on restart, discard queued callbacks after stopping, and leave input unfiltered when macOS disables a stalled tap.
 - **Recording errors**: Keep full transcription diagnostics in History, show a short recovery message in the capsule, and constrain error text to one line so a long engine log cannot expand the overlay across the screen.
 - **Whisper model access**: Copy legacy models into the current application-support cache during local installation, preserve existing models, stop immediately when a model is unreadable, and identify model-open failures without displaying the CLI initialization log.
 

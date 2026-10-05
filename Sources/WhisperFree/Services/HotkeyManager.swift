@@ -4,9 +4,11 @@ import Carbon
 final class HotkeyManager {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var runLoop: CFRunLoop?
     private var onKeyDown: (() -> Void)?
     private var onKeyUp: (() -> Void)?
     private var isKeyDown = false
+    private var generation: UInt = 0
 
     /// Current hotkey config — can be updated at runtime
     var config = HotkeyConfig()
@@ -27,6 +29,7 @@ final class HotkeyManager {
     }
 
     func start(promptUser: Bool = false, onKeyDown: @escaping () -> Void, onKeyUp: @escaping () -> Void) {
+        stop()
         self.onKeyDown = onKeyDown
         self.onKeyUp = onKeyUp
 
@@ -60,28 +63,41 @@ final class HotkeyManager {
 
         eventTap = tap
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+        runLoop = CFRunLoopGetCurrent()
+        CFRunLoopAddSource(runLoop, runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
     func stop() {
+        generation &+= 1
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
         }
         if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
+            CFRunLoopRemoveSource(runLoop, source, .commonModes)
+            CFRunLoopSourceInvalidate(source)
         }
         eventTap = nil
         runLoopSource = nil
+        runLoop = nil
+        onKeyDown = nil
+        onKeyUp = nil
         isKeyDown = false // Reset state on stop
     }
 
+    private func notify(_ action: @escaping (HotkeyManager) -> Void) {
+        let generation = self.generation
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.generation == generation else { return }
+            action(self)
+        }
+    }
+
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        // Re-enable tap if system disabled it
+        // Fail open when macOS disables interception; restart only through setup.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let tap = eventTap {
-                CGEvent.tapEnable(tap: tap, enable: true)
-            }
+            stop()
             return Unmanaged.passUnretained(event)
         }
 
@@ -97,7 +113,7 @@ final class HotkeyManager {
 
             // Consume the configured hotkey so held keys like Space do not auto-repeat into the foreground app.
             isKeyDown = true
-            DispatchQueue.main.async { [weak self] in self?.onKeyDown?() }
+            notify { $0.onKeyDown?() }
             return consume
         }
 
@@ -112,7 +128,7 @@ final class HotkeyManager {
             if hotkeyModifiersStillHeld(event.flags) { return pass }
             // Our modifier was released
             isKeyDown = false
-            DispatchQueue.main.async { [weak self] in self?.onKeyUp?() }
+            notify { $0.onKeyUp?() }
             return pass
         }
 
@@ -120,7 +136,7 @@ final class HotkeyManager {
             let kc = Int(event.getIntegerValueField(.keyboardEventKeycode))
             if kc == config.keyCode {
                 isKeyDown = false
-                DispatchQueue.main.async { [weak self] in self?.onKeyUp?() }
+                notify { $0.onKeyUp?() }
                 return consume
             }
             return pass

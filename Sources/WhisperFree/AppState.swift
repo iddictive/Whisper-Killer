@@ -229,6 +229,7 @@ final class AppState: ObservableObject {
         didSet {
             if isRecordingHotkey {
                 hotkeyManager.stop()
+                liveTranslatorHotkeyManager.stop()
             } else {
                 setupHotkey()
             }
@@ -842,6 +843,7 @@ final class AppState: ObservableObject {
     }
 
     private func setupHotkey() {
+        guard !isRecordingHotkey else { return }
         // Main Dictation Hotkey
         hotkeyManager.config = settings.hotkeyConfig
         hotkeyManager.start(
@@ -926,6 +928,9 @@ final class AppState: ObservableObject {
                         // Automatically start manager if it was blocked before
                         AppDelegate.shared?.hideAccessibilityDragHelper()
                         self.reloadHotkeyManager()
+                    } else {
+                        self.hotkeyManager.stop()
+                        self.liveTranslatorHotkeyManager.stop()
                     }
                 }
                 
