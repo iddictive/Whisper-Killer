@@ -4,6 +4,8 @@ All notable changes to WhisperKiller are documented in this file.
 
 ## [Unreleased]
 
+## [4.0] - 2026-10-05
+
 ### Added
 - **Cloud providers and model selection**: Keep OpenAI as the default, allow an OpenAI-compatible API endpoint with its own key, and combine dynamic model menus with manual IDs for transcription, refinement and AI Chat.
 - **Parakeet Ultra**: Add a separate Core ML model option while preserving saved TDT v3 choices and caches.
@@ -17,6 +19,8 @@ All notable changes to WhisperKiller are documented in this file.
 
 ### Fixed
 - **Storage cleanup during imports**: Wait for active Meet and Drive downloads before allowing cleanup, and prevent imports from starting while cleanup runs, so downloaded files reach the transcription queue.
+
+---
 
 ## [3.58] - 2026-09-22
 

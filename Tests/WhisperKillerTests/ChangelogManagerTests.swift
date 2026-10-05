@@ -36,7 +36,7 @@ final class ChangelogManagerTests: XCTestCase {
         let content = try? String(contentsOf: fileURL, encoding: .utf8)
         XCTAssertNotNil(content)
         XCTAssertTrue(content?.contains("## [3.50]") == true)
-        XCTAssertTrue(content?.contains("## [3.0.0]") == true)
+        XCTAssertTrue(content?.contains("## [3.0]") == true)
     }
 
     func testReleaseNotesPreferMatchingVersionAndStayCompact() {

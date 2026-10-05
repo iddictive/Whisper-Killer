@@ -9,7 +9,7 @@ help:
 	@echo "  make test         - Run test suite"
 	@echo "  make verify       - Run test suite and verify production release build"
 	@echo "  make install      - Verify, package, sign, install to /Applications, and launch"
-	@echo "  make release-prepare - Finalize Unreleased and synchronize the next version (no publish)"
+	@echo "  make release-prepare [VERSION=4.0] - Finalize Unreleased and synchronize the next version (no publish)"
 	@echo "  make clean        - Clean local build artifacts (.build, dist, staging)"
 	@echo "  make clean-legacy - Safely remove empty obsolete Application Support folders (WhisperFlow, WhisperFree)"
 	@echo "  make uninstall    - Full cleanup of app and local settings via scripts/uninstall.sh"
@@ -27,7 +27,7 @@ test:
 
 # Maintainer preparation only; commit/review and publication remain separate actions.
 release-prepare:
-	@python3 scripts/release.py prepare --remote origin
+	@python3 scripts/release.py prepare --remote origin $(if $(VERSION),--version "$(VERSION)")
 
 # Reinstall app locally (verify + build + sign + move to /Applications + launch)
 install: verify

@@ -19,11 +19,14 @@ def version_key(value):
     return tuple(map(int, value.split(".")))
 
 
-def successor(version):
+def successor(version, requested=None):
     if not re.fullmatch(r"\d+\.\d+", version):
         raise ValueError("Automatic preparation requires the current major.minor version line")
     major, minor = version.split(".")
-    return f"{major}.{int(minor) + 1}"
+    next_minor, next_major = f"{major}.{int(minor) + 1}", f"{int(major) + 1}.0"
+    if requested is not None and requested not in (next_minor, next_major):
+        raise ValueError(f"Next version must be {next_minor} or {next_major}")
+    return requested if requested is not None else next_minor
 
 
 def sections(markdown):
@@ -79,15 +82,17 @@ def plan(root, remote=None):
     if version_key(version) < version_key(latest):
         raise ValueError("Checkout version is behind the latest tag")
     publish = version != latest
-    if publish and version != successor(latest):
-        raise ValueError(f"Prepared version must be the next version: {successor(latest)}")
+    if publish:
+        successor(latest, version)
+        if len(rows) < 3 or rows[2][0] != latest:
+            raise ValueError("Prepared release must follow the latest tagged changelog version")
     if publish and has_notes(rows[0][2]):
         raise ValueError("Unreleased still contains changes; prepare the release before publishing")
     return {"version": version, "tag": f"v{version}", "publish": publish,
             "notes": notes, "reason": "prepared release" if publish else "version already tagged; no publication"}
 
 
-def prepare(root, date, remote=None):
+def prepare(root, date, remote=None, version=None):
     markdown, rows, current, _ = contract(root)
     known = tags(root, remote)
     latest = max(known, key=version_key) if known else None
@@ -98,7 +103,7 @@ def prepare(root, date, remote=None):
     body = rows[0][2]
     if not has_notes(body):
         raise ValueError("Unreleased is empty; refusing to create an empty release")
-    version = successor(current)
+    version = successor(current, version)
     datetime.date.fromisoformat(date)
     start, end = rows[0][3:]
     updated = markdown[:start] + f"## [Unreleased]\n\n## [{version}] - {date}\n\n{body}\n\n---\n\n" + markdown[end:]
@@ -134,10 +139,11 @@ def main():
     parser.add_argument("--require-new", action="store_true")
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--remote", help="Read authoritative tags from this remote without changing local refs")
+    parser.add_argument("--version", help="Prepare the explicit next minor or next major.0 version")
     args = parser.parse_args()
     try:
         if args.command == "prepare":
-            print(f"Prepared {prepare(args.root, args.date, args.remote)}. Review and commit CHANGELOG.md and Info.plist together.")
+            print(f"Prepared {prepare(args.root, args.date, args.remote, args.version)}. Review and commit CHANGELOG.md and Info.plist together.")
         elif args.command == "check":
             print(f"Release metadata is consistent: {contract(args.root)[2]}")
         elif args.command == "verify-bundle":

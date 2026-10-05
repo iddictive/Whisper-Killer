@@ -3,6 +3,7 @@ import importlib.util
 import os
 import plistlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,34 +29,54 @@ class ReleaseContractTests(unittest.TestCase):
     def git(self, *args):
         return subprocess.check_output(["git", *args], cwd=self.root, text=True, stderr=subprocess.STDOUT)
 
-    def write_fixture(self, pending="- Future change", version="3.56"):
-        (self.root / "CHANGELOG.md").write_text(
+    def write_fixture(self, pending="- Future change", version="3.56", previous=None):
+        markdown = (
             f"# Changelog\n\n## [Unreleased]\n\n### Fixed\n{pending}\n\n---\n\n"
             f"## [{version}] - 2026-09-22\n\n### Added\n- Previous change\n"
         )
+        if previous:
+            markdown += f"\n## [{previous}] - 2026-09-21\n\n### Fixed\n- Baseline change\n"
+        (self.root / "CHANGELOG.md").write_text(markdown)
         path = self.root / release.PLIST
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(plistlib.dumps({"CFBundleShortVersionString": version, "CFBundleVersion": version}))
 
     def test_prepare_plan_and_repeat_preserve_one_release_identity(self):
-        self.assertFalse(release.plan(self.root)["publish"])
-        self.assertEqual(release.prepare(self.root, "2026-09-23"), "3.57")
-        plan = release.plan(self.root)
-        self.assertTrue(plan["publish"])
-        self.assertEqual(plan["tag"], "v3.57")
-        self.assertEqual(plan["notes"], "### Fixed\n- Future change")
-        self.assertNotIn("Previous change", plan["notes"])
-        snapshot = (self.root / "CHANGELOG.md").read_bytes()
-        with self.assertRaisesRegex(ValueError, "not tagged"):
-            release.prepare(self.root, "2026-09-24")
-        self.assertEqual(snapshot, (self.root / "CHANGELOG.md").read_bytes())
-        self.git("add", ".")
-        self.git("commit", "-qm", "prepared")
-        self.git("tag", "v3.57")
-        self.assertFalse(release.plan(self.root)["publish"])
+        for requested, version in ((None, "3.57"), ("3.57", "3.57"), ("4.0", "4.0")):
+            with self.subTest(requested=requested):
+                self.write_fixture()
+                self.assertFalse(release.plan(self.root)["publish"])
+                if requested is None:
+                    self.assertEqual(release.prepare(self.root, "2026-09-23"), version)
+                else:
+                    subprocess.check_call([sys.executable, release.__file__, "prepare", "--root", str(self.root),
+                                           "--date", "2026-09-23", "--version", requested],
+                                          stdout=subprocess.DEVNULL)
+                plan = release.plan(self.root)
+                self.assertTrue(plan["publish"])
+                self.assertEqual(plan["tag"], f"v{version}")
+                self.assertEqual(plan["notes"], "### Fixed\n- Future change")
+                self.assertNotIn("Previous change", plan["notes"])
+                snapshot = (self.root / "CHANGELOG.md").read_bytes()
+                with self.assertRaisesRegex(ValueError, "not tagged"):
+                    release.prepare(self.root, "2026-09-24")
+                self.assertEqual(snapshot, (self.root / "CHANGELOG.md").read_bytes())
+                self.git("add", ".")
+                self.git("commit", "-qm", "prepared", "--allow-empty")
+                self.git("tag", f"v{version}")
+                self.assertFalse(release.plan(self.root)["publish"])
+                self.git("tag", "-d", f"v{version}")
 
     def test_inconsistent_and_unprepared_inputs_fail_closed(self):
-        for case in ("empty", "mismatch", "unfinished", "duplicate", "skipped", "major", "stale"):
+        for version in ("3.55", "3.56", "3.58", "4.1", "5.0", "4.0.0", "invalid"):
+            with self.subTest(requested=version):
+                snapshot = [(self.root / path).read_bytes() for path in ("CHANGELOG.md", release.PLIST)]
+                with self.assertRaisesRegex(ValueError, "Next version"):
+                    release.prepare(self.root, "2026-09-23", version=version)
+                self.assertEqual(snapshot, [(self.root / path).read_bytes()
+                                            for path in ("CHANGELOG.md", release.PLIST)])
+        for case in ("empty", "mismatch", "unfinished", "duplicate", "skipped", "major",
+                     "untagged", "untagged-baseline", "stale"):
             with self.subTest(case=case):
                 self.write_fixture()
                 if case == "empty":
@@ -68,14 +89,21 @@ class ReleaseContractTests(unittest.TestCase):
                     path.write_bytes(plistlib.dumps(info))
                     operation = lambda: release.contract(self.root)
                 elif case == "unfinished":
-                    self.write_fixture(version="3.57")
+                    self.write_fixture(version="3.57", previous="3.56")
                     operation = lambda: release.plan(self.root)
                 elif case == "duplicate":
                     path = self.root / "CHANGELOG.md"
                     path.write_text(path.read_text() + "\n## [3.56] - 2026-09-22\n- Duplicate\n")
                     operation = lambda: release.contract(self.root)
                 elif case in ("skipped", "major"):
-                    self.write_fixture(pending="", version="3.58" if case == "skipped" else "4.0")
+                    self.write_fixture(pending="", version="3.58" if case == "skipped" else "5.0",
+                                       previous="3.56")
+                    operation = lambda: release.plan(self.root)
+                elif case == "untagged":
+                    self.write_fixture(version="3.57", previous="3.56")
+                    operation = lambda: release.prepare(self.root, "2026-09-23", version="4.0")
+                elif case == "untagged-baseline":
+                    self.write_fixture(pending="", version="4.0", previous="3.57")
                     operation = lambda: release.plan(self.root)
                 else:
                     self.git("tag", "v3.58")
