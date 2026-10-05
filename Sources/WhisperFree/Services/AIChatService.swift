@@ -10,16 +10,17 @@ enum AIChatService {
     static func send(
         messages: [AIChatMessage],
         model: String,
-        apiKey: String
+        apiKey: String,
+        configuration: CloudAPIConfiguration = .init()
     ) async throws -> AIChatResponse {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else { throw TranscriptionError.noAPIKey }
         guard !trimmedModel.isEmpty else {
-            throw TranscriptionError.networkError("Select an OpenAI chat model first.")
+            throw TranscriptionError.networkError("Select a chat model first.")
         }
 
-        let url = URL(string: "https://api.openai.com/v1/responses")!
+        let url = try configuration.apiURL(path: configuration.isOpenAI ? "responses" : "chat/completions")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
@@ -32,11 +33,17 @@ enum AIChatService {
             ]
         }
 
-        let payload: [String: Any] = [
-            "model": trimmedModel,
-            "instructions": "You are a concise assistant for transcript analysis, summaries, translations, and follow-up questions. Use only attached context when the user asks about attached material.",
-            "input": apiMessages
-        ]
+        let instructions = "You are a concise assistant for transcript analysis, summaries, translations, and follow-up questions. Use only attached context when the user asks about attached material."
+        var payload: [String: Any] = ["model": trimmedModel]
+        if configuration.isOpenAI {
+            payload["instructions"] = instructions
+            payload["input"] = apiMessages
+            if trimmedModel == OpenAIModelCatalog.defaultTextModel {
+                payload["reasoning"] = ["effort": "none"]
+            }
+        } else {
+            payload["messages"] = [["role": "system", "content": instructions]] + apiMessages
+        }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
@@ -44,9 +51,9 @@ enum AIChatService {
 
         if httpResponse.statusCode == 401 {
             await MainActor.run {
-                AppState.shared.markAPIKeyInvalid()
+                AppState.shared.markAPIKeyInvalid(apiKey: trimmedKey, configuration: configuration)
             }
-            throw TranscriptionError.networkError("Invalid OpenAI API key.")
+            throw TranscriptionError.networkError("Invalid API key.")
         }
 
         guard httpResponse.statusCode == 200 else {
@@ -55,7 +62,7 @@ enum AIChatService {
         }
 
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let content = responseText(from: json) else {
+              let content = configuration.isOpenAI ? responseText(from: json) : chatCompletionText(from: json) else {
             throw TranscriptionError.invalidResponse
         }
 
@@ -152,6 +159,16 @@ enum AIChatService {
         if value == base { return 0 }
         if value == "\(base)-pro" { return 1 }
         return 2
+    }
+
+    private static func chatCompletionText(from json: [String: Any]) -> String? {
+        guard let choices = json["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any] else { return nil }
+        if let text = message["content"] as? String { return text }
+        if let parts = message["content"] as? [[String: Any]] {
+            return parts.compactMap { $0["text"] as? String }.joined()
+        }
+        return nil
     }
 
     private static func responseText(from json: [String: Any]) -> String? {

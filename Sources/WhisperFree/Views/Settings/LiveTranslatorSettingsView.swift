@@ -498,7 +498,7 @@ private struct OllamaModelSelector: View {
     }
 
     private var modelTextField: some View {
-        TextField("Model name, e.g. qwen2.5:3b", text: $selectedModel)
+        TextField("Model name, e.g. \(LocalTranslationEngine.defaultModel)", text: $selectedModel)
             .textFieldStyle(.roundedBorder)
             .disabled(isOllamaRunning != true || isPulling)
     }

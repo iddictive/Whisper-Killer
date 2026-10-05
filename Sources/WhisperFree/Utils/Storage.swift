@@ -187,7 +187,11 @@ final class Storage {
     }
 
     static var parakeetModelDirectory: URL {
-        parakeetDirectory.appendingPathComponent("parakeet-tdt-0.6b-v3", isDirectory: true)
+        parakeetModelDirectory(for: .v3)
+    }
+
+    static func parakeetModelDirectory(for model: ParakeetModel) -> URL {
+        parakeetDirectory.appendingPathComponent(model.directoryName, isDirectory: true)
     }
 
     static var recordingsDirectory: URL {

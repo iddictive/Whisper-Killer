@@ -2,6 +2,8 @@ import Foundation
 
 struct OpenAIModelCatalog {
     let modelIDs: [String]
+    var configuration: CloudAPIConfiguration = .init()
+    static let defaultTextModel = "gpt-6-luna"
 
     static let bootstrapTranscriptionModels: [CloudTranscriptionModel] = [
         .gptTranscribe,
@@ -10,11 +12,11 @@ struct OpenAIModelCatalog {
         .gpt4oTranscribe
     ]
 
-    static func fetch(apiKey: String) async throws -> OpenAIModelCatalog {
+    static func fetch(apiKey: String, configuration: CloudAPIConfiguration = .init()) async throws -> OpenAIModelCatalog {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else { throw TranscriptionError.noAPIKey }
 
-        let url = URL(string: "https://api.openai.com/v1/models")!
+        let url = try configuration.apiURL(path: "models")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 20
@@ -25,11 +27,14 @@ struct OpenAIModelCatalog {
             throw TranscriptionError.invalidResponse
         }
         if httpResponse.statusCode == 401 {
-            throw TranscriptionError.networkError("Invalid OpenAI API key.")
+            await MainActor.run {
+                AppState.shared.markAPIKeyInvalid(apiKey: trimmedKey, configuration: configuration)
+            }
+            throw TranscriptionError.networkError("Invalid API key (401).")
         }
         guard httpResponse.statusCode == 200 else {
             let errorText = errorMessage(from: data) ?? "HTTP \(httpResponse.statusCode)"
-            throw TranscriptionError.networkError("OpenAI model list failed: \(errorText)")
+            throw TranscriptionError.networkError("Provider model list failed: \(errorText)")
         }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let dataArray = json["data"] as? [[String: Any]]
@@ -38,20 +43,29 @@ struct OpenAIModelCatalog {
         }
 
         return OpenAIModelCatalog(
-            modelIDs: dataArray.compactMap { $0["id"] as? String }
+            modelIDs: dataArray.compactMap { $0["id"] as? String },
+            configuration: configuration
         )
     }
 
     var transcriptionModels: [CloudTranscriptionModel] {
-        Self.relevantTranscriptionModels(from: modelIDs)
+        configuration.isOpenAI
+            ? Self.relevantTranscriptionModels(from: modelIDs)
+            : Array(Set(modelIDs)).sorted().map { CloudTranscriptionModel(rawValue: $0) }
     }
 
     var baseTranscriptionModels: [CloudTranscriptionModel] {
-        transcriptionModels.filter { !$0.usesNativeDiarization }
+        configuration.isOpenAI ? transcriptionModels.filter { !$0.usesNativeDiarization } : transcriptionModels
     }
 
     var diarizationModels: [CloudTranscriptionModel] {
-        transcriptionModels.filter(\.usesNativeDiarization)
+        configuration.isOpenAI ? transcriptionModels.filter(\.usesNativeDiarization) : []
+    }
+
+    var chatModels: [String] {
+        configuration.isOpenAI
+            ? AIChatService.relevantOpenAIChatModels(from: modelIDs)
+            : Array(Set(modelIDs)).sorted()
     }
 
     static func relevantTranscriptionModels(from ids: [String]) -> [CloudTranscriptionModel] {

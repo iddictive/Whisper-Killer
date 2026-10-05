@@ -77,8 +77,14 @@ final class AppState: ObservableObject {
     func markAPIKeyInvalid(reason: String? = nil) {
         guard !isAPIKeyInvalid || apiKeyValidationError != reason else { return }
         isAPIKeyInvalid = true
-        apiKeyValidationError = reason ?? L.tr("OpenAI API key is invalid or expired.", "OpenAI API key недействителен или истёк.")
+        apiKeyValidationError = reason ?? L.tr("API key is invalid or expired.", "API key недействителен или истёк.")
         selectReadyLocalTranscriptionFallbackIfNeeded()
+    }
+
+    func markAPIKeyInvalid(apiKey: String, configuration: CloudAPIConfiguration, reason: String? = nil) {
+        guard settings.normalizedAPIKey == apiKey,
+              settings.cloudAPIConfiguration == configuration else { return }
+        markAPIKeyInvalid(reason: reason)
     }
 
     func markAPIKeyValid() {
@@ -118,7 +124,7 @@ final class AppState: ObservableObject {
         guard settings.engineType == .cloud, !hasUsableOpenAIAPIKey else { return true }
         selectReadyLocalTranscriptionFallbackIfNeeded()
         guard settings.engineType != .cloud else {
-            showError("OpenAI is unavailable and no ready local transcription model was found.")
+            showError("Cloud transcription is unavailable and no ready local model was found.")
             return false
         }
         return true
@@ -132,19 +138,19 @@ final class AppState: ObservableObject {
             return
         }
         let key = settings.normalizedAPIKey
+        let configuration = settings.cloudAPIConfiguration
         Task {
-            let state = await OpenAIAPIKeyValidator.validate(key)
+            let state = await OpenAIAPIKeyValidator.validate(key, configuration: configuration)
             await MainActor.run {
-                guard self.settings.normalizedAPIKey == key else { return }
+                guard self.settings.normalizedAPIKey == key,
+                      self.settings.cloudAPIConfiguration == configuration else { return }
                 switch state {
                 case .valid:
                     self.markAPIKeyValid()
                 case .invalid:
-                    self.markAPIKeyInvalid(reason: L.tr("OpenAI API key is invalid or expired.", "OpenAI API key недействителен или истёк."))
+                    self.markAPIKeyInvalid(reason: L.tr("API key is invalid or expired.", "API key недействителен или истёк."))
                 case .failed(let code) where code == 401:
-                    self.markAPIKeyInvalid(reason: L.tr("OpenAI API key rejected (401).", "OpenAI API key отклонён (401)."))
-                case .failed(let code) where code == 429:
-                    self.markAPIKeyInvalid(reason: L.tr("OpenAI quota exceeded. Check billing.", "Превышена квота OpenAI. Проверьте баланс."))
+                    self.markAPIKeyInvalid(reason: L.tr("API key rejected (401).", "API key отклонён (401)."))
                 default:
                     break
                 }
@@ -161,6 +167,7 @@ final class AppState: ObservableObject {
     @Published var copiedFeedback = false
     @Published var availableInputDevices: [AVCaptureDevice] = []
     private var loadedOpenAIModelCatalogAPIKey = ""
+    private var loadedCloudAPIConfiguration: CloudAPIConfiguration?
     private var openAIModelCatalogRequestID: UUID?
 
     // Statistics calculated directly from history for accuracy/self-healing
@@ -254,6 +261,7 @@ final class AppState: ObservableObject {
         self.history = Storage.shared.loadHistory()
         self.aiChatConversations = Storage.shared.loadAIChatConversations()
         self.settings.normalizeBeforeSaving()
+        ParakeetModelManager.shared.selectModel(settings.parakeetModel)
         selectReadyLocalTranscriptionFallbackIfNeeded()
         ensureSelectedAIChatConversation()
         sanitizeDisabledFeatureState()
@@ -387,6 +395,7 @@ final class AppState: ObservableObject {
 
     func saveSettings() {
         settings.normalizeBeforeSaving()
+        ParakeetModelManager.shared.selectModel(settings.parakeetModel)
         Storage.shared.saveSettings(settings)
         hotkeyManager.config = settings.hotkeyConfig
     }
@@ -444,7 +453,7 @@ final class AppState: ObservableObject {
         if hasLoadedOpenAIModelCatalog {
             return availableCloudTranscriptionModels
         }
-        if !settings.hasOpenAIAPIKey {
+        if !settings.hasOpenAIAPIKey, settings.cloudProvider == .openAI {
             return OpenAIModelCatalog.bootstrapTranscriptionModels
         }
         return [settings.cloudTranscriptionModel]
@@ -453,6 +462,7 @@ final class AppState: ObservableObject {
     func invalidateOpenAIModelCatalog() {
         openAIModelCatalogRequestID = nil
         loadedOpenAIModelCatalogAPIKey = ""
+        loadedCloudAPIConfiguration = nil
         hasLoadedOpenAIModelCatalog = false
         availableAIChatModels = []
         availableCloudTranscriptionModels = []
@@ -466,7 +476,9 @@ final class AppState: ObservableObject {
             return
         }
         let apiKey = settings.normalizedAPIKey
-        if !force, hasLoadedOpenAIModelCatalog, loadedOpenAIModelCatalogAPIKey == apiKey { return }
+        let configuration = settings.cloudAPIConfiguration
+        if !force, hasLoadedOpenAIModelCatalog, loadedOpenAIModelCatalogAPIKey == apiKey,
+           loadedCloudAPIConfiguration == configuration { return }
         guard !isLoadingAIChatModels else { return }
 
         let requestID = UUID()
@@ -477,37 +489,30 @@ final class AppState: ObservableObject {
 
         Task {
             do {
-                let catalog = try await OpenAIModelCatalog.fetch(apiKey: apiKey)
-                let chatModels = AIChatService.relevantOpenAIChatModels(from: catalog.modelIDs)
+                let catalog = try await OpenAIModelCatalog.fetch(apiKey: apiKey, configuration: configuration)
+                let chatModels = catalog.chatModels
                 let transcriptionModels = catalog.baseTranscriptionModels
                 let diarizationModels = catalog.diarizationModels
                 await MainActor.run {
                     guard self.openAIModelCatalogRequestID == requestID,
-                          self.settings.normalizedAPIKey == apiKey
+                          self.settings.normalizedAPIKey == apiKey,
+                          self.settings.cloudAPIConfiguration == configuration
                     else { return }
 
                     self.availableAIChatModels = chatModels
                     self.availableCloudTranscriptionModels = transcriptionModels
                     self.loadedOpenAIModelCatalogAPIKey = apiKey
+                    self.loadedCloudAPIConfiguration = configuration
                     self.hasLoadedOpenAIModelCatalog = true
                     self.openAIModelCatalogRequestID = nil
 
                     var settingsChanged = false
-                    if !chatModels.isEmpty, !chatModels.contains(self.settings.selectedAIChatModel) {
-                        self.settings.selectedAIChatModel = chatModels[0]
-                        settingsChanged = true
-                    }
-                    if !transcriptionModels.isEmpty,
-                       !transcriptionModels.contains(self.settings.cloudTranscriptionModel) {
-                        self.settings.cloudTranscriptionModel = transcriptionModels[0]
-                        settingsChanged = true
-                    }
                     let diarizationModel = diarizationModels.first
-                    if diarizationModel != self.settings.cloudDiarizationModel {
+                    if configuration.isOpenAI, diarizationModel != self.settings.cloudDiarizationModel {
                         self.settings.cloudDiarizationModel = diarizationModel
                         settingsChanged = true
                     }
-                    if diarizationModel == nil, self.settings.enableSpeakerDiarization {
+                    if configuration.isOpenAI, diarizationModel == nil, self.settings.enableSpeakerDiarization {
                         self.settings.enableSpeakerDiarization = false
                         settingsChanged = true
                     }
@@ -518,14 +523,16 @@ final class AppState: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
-                    guard self.openAIModelCatalogRequestID == requestID else { return }
+                    guard self.openAIModelCatalogRequestID == requestID,
+                          self.settings.normalizedAPIKey == apiKey,
+                          self.settings.cloudAPIConfiguration == configuration else { return }
                     self.aiChatError = error.localizedDescription
                     self.openAIModelCatalogError = error.localizedDescription
                     self.hasLoadedOpenAIModelCatalog = false
                     self.openAIModelCatalogRequestID = nil
                     self.isLoadingAIChatModels = false
-                    if error.localizedDescription.contains("401") || error.localizedDescription.contains("Invalid") {
-                        self.markAPIKeyInvalid(reason: L.tr("OpenAI API key is invalid or expired.", "OpenAI API key недействителен или истёк."))
+                    if error.localizedDescription.contains("401") {
+                        self.markAPIKeyInvalid(reason: L.tr("API key is invalid or expired.", "API key недействителен или истёк."))
                     }
                 }
             }
@@ -599,7 +606,7 @@ final class AppState: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         guard settings.hasOpenAIAPIKey else {
-            aiChatError = L.tr("Add an OpenAI API key in Settings first.", "Сначала добавьте OpenAI API key в настройках.")
+            aiChatError = L.tr("Add a Cloud API key in Settings first.", "Сначала добавьте Cloud API key в настройках.")
             return
         }
 
@@ -668,13 +675,15 @@ final class AppState: ObservableObject {
         guard let conversation = aiChatConversations.first(where: { $0.id == conversationID }) else { return }
         isAIChatSending = true
         aiChatError = nil
+        let requestSettings = settings
 
         Task {
             do {
                 let result = try await AIChatService.send(
                     messages: conversation.messages,
-                    model: self.settings.selectedAIChatModel,
-                    apiKey: self.settings.normalizedAPIKey
+                    model: requestSettings.selectedAIChatModel,
+                    apiKey: requestSettings.normalizedAPIKey,
+                    configuration: requestSettings.cloudAPIConfiguration
                 )
                 await MainActor.run {
                     self.appendAIChatMessage(
@@ -684,11 +693,13 @@ final class AppState: ObservableObject {
                     let usage = UsageLog(
                         date: Date(),
                         modeName: "AI Chat",
-                        engine: "openai",
+                        engine: requestSettings.cloudProvider.rawValue,
                         promptTokens: result.promptTokens,
                         completionTokens: result.completionTokens,
                         totalTokens: result.promptTokens + result.completionTokens,
-                        estimatedCost: UsageLog.estimateCost(prompt: result.promptTokens, completion: result.completionTokens, engine: .openai)
+                        estimatedCost: UsageLog.estimateCost(prompt: result.promptTokens, completion: result.completionTokens,
+                                                            engine: .openai, model: requestSettings.selectedAIChatModel,
+                                                            configuration: requestSettings.cloudAPIConfiguration)
                     )
                     self.settings.usageLogs.append(usage)
                     self.saveSettings()
@@ -1360,14 +1371,15 @@ final class AppState: ObservableObject {
                 processingStage = .postProcessing
                 processingProgress = max(processingProgress, 0.86)
                 do {
-                    let processor = PostProcessor(settings: settings)
+                    let processingSettings = settings
+                    let processor = PostProcessor(settings: processingSettings)
                     let result = try await processor.process(text: rawText, mode: settings.selectedMode)
                     processedText = result.text
                     processingProgress = max(processingProgress, 0.96)
 
                     let totalTokens = result.promptTokens + result.completionTokens
                     if totalTokens > 0 {
-                        let engine = settings.postProcessingEngine
+                        let engine = result.engine
                         usage = UsageLog(
                             date: Date(),
                             modeName: settings.selectedMode.name,
@@ -1375,7 +1387,9 @@ final class AppState: ObservableObject {
                             promptTokens: result.promptTokens,
                             completionTokens: result.completionTokens,
                             totalTokens: totalTokens,
-                            estimatedCost: UsageLog.estimateCost(prompt: result.promptTokens, completion: result.completionTokens, engine: engine)
+                            estimatedCost: UsageLog.estimateCost(prompt: result.promptTokens, completion: result.completionTokens,
+                                                                engine: engine, model: processingSettings.postProcessingModel,
+                                                                configuration: processingSettings.cloudAPIConfiguration)
                         )
                     }
                 } catch {
@@ -1552,7 +1566,8 @@ final class AppState: ObservableObject {
             } else if shouldRunStandardPostProcessing {
                 updateActiveProcessingText(for: jobID, rawText: nil, processedText: nil, stage: .postProcessing, progress: 0.86)
                 do {
-                    let processor = PostProcessor(settings: settings)
+                    let processingSettings = settings
+                    let processor = PostProcessor(settings: processingSettings)
                     let result = try await processor.process(text: rawText, mode: settings.selectedMode)
                     try Task.checkCancellation()
                     processedText = result.text
@@ -1560,7 +1575,7 @@ final class AppState: ObservableObject {
 
                     let totalTokens = result.promptTokens + result.completionTokens
                     if totalTokens > 0 {
-                        let engine = settings.postProcessingEngine
+                        let engine = result.engine
                         usage = UsageLog(
                             date: Date(),
                             modeName: settings.selectedMode.name,
@@ -1568,7 +1583,9 @@ final class AppState: ObservableObject {
                             promptTokens: result.promptTokens,
                             completionTokens: result.completionTokens,
                             totalTokens: totalTokens,
-                            estimatedCost: UsageLog.estimateCost(prompt: result.promptTokens, completion: result.completionTokens, engine: engine)
+                            estimatedCost: UsageLog.estimateCost(prompt: result.promptTokens, completion: result.completionTokens,
+                                                                engine: engine, model: processingSettings.postProcessingModel,
+                                                                configuration: processingSettings.cloudAPIConfiguration)
                         )
                     }
                 } catch {
@@ -1956,7 +1973,7 @@ final class AppState: ObservableObject {
                     promptTokens: existingUsage.promptTokens + usage.promptTokens,
                     completionTokens: existingUsage.completionTokens + usage.completionTokens,
                     totalTokens: existingUsage.totalTokens + usage.totalTokens,
-                    estimatedCost: existingUsage.estimatedCost + usage.estimatedCost,
+                    estimatedCost: existingUsage.estimatedCost.flatMap { previous in usage.estimatedCost.map { previous + $0 } },
                     audioDurationSeconds: existingUsage.audioDurationSeconds ?? usage.audioDurationSeconds
                 )
             } else {

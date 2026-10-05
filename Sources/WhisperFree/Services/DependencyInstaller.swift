@@ -100,7 +100,7 @@ final class DependencyInstaller: ObservableObject {
         }
 
         isInstallingWhisperCpp = true
-        whisperCppStatus = "Installing whisper-cpp..."
+        whisperCppStatus = "Installing whisper.cpp..."
 
         Task(priority: .userInitiated) {
             let result = await Task.detached(priority: .userInitiated) {
@@ -111,7 +111,7 @@ final class DependencyInstaller: ObservableObject {
 
             switch result {
             case .success:
-                self.whisperCppStatus = "whisper-cpp installed."
+                self.whisperCppStatus = "whisper.cpp installed."
             case .failure(let error):
                 self.whisperCppStatus = error.localizedDescription
             }
@@ -218,7 +218,7 @@ final class DependencyInstaller: ObservableObject {
                     installFailureMessage(
                         from: failure.output,
                         status: failure.status,
-                        commandDescription: "brew install whisper-cpp",
+                        commandDescription: "brew install whisper.cpp",
                         detectHomebrewPermissionFailure: true,
                         brewPath: brewPath
                     )
@@ -236,7 +236,7 @@ final class DependencyInstaller: ObservableObject {
                         installFailureMessage(
                             from: retryFailure.output,
                             status: retryFailure.status,
-                            commandDescription: "brew install whisper-cpp after Homebrew permission repair",
+                            commandDescription: "brew install whisper.cpp after Homebrew permission repair",
                             detectHomebrewPermissionFailure: true,
                             brewPath: brewPath
                         )
@@ -255,7 +255,7 @@ final class DependencyInstaller: ObservableObject {
         process.arguments = [
             "-lc",
             """
-            "\(brewPath ?? "brew")" install whisper-cpp
+            "\(brewPath ?? "brew")" install whisper.cpp
             """
         ]
 

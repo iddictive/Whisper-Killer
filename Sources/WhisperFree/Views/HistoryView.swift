@@ -255,8 +255,8 @@ struct HistoryView: View {
             }
 
             // Usage info
-            if let usage = entry.usage {
-                Text("$\(String(format: "%.4f", usage.estimatedCost))")
+            if let cost = entry.usage?.estimatedCost {
+                Text("$\(String(format: "%.4f", cost))")
                     .font(.system(size: 9, weight: .bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)

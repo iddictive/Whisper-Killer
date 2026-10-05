@@ -3,7 +3,7 @@ import AVFoundation
 import CoreMedia
 
 /// Local transcription using whisper.cpp CLI binary.
-/// Install via: `brew install whisper-cpp`
+/// Install via: `brew install whisper.cpp`
 /// Models are downloaded automatically by ModelManager to ~/Library/Application Support/WhisperFree/Models/
 final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
     private let modelSize: LocalModelSize
@@ -77,7 +77,7 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
 
         let whisperBinary = Self.findWhisperBinary()
         guard let binary = whisperBinary else {
-            throw TranscriptionError.transcriptionFailed("whisper-cpp not found. Install it with brew install whisper-cpp.")
+            throw TranscriptionError.transcriptionFailed("whisper.cpp not found. Install it with brew install whisper.cpp.")
         }
 
         return try await withCheckedThrowingContinuation { continuation in

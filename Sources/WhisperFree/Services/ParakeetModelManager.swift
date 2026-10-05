@@ -85,6 +85,7 @@ actor ParakeetFluidAudioOperations {
 
     func download(
         to directory: URL,
+        model: ParakeetModel = .v3,
         force: Bool,
         progressHandler: ProgressHandler?
     ) async throws -> URL {
@@ -98,7 +99,7 @@ actor ParakeetFluidAudioOperations {
         return try await AsrModels.download(
             to: directory,
             force: force,
-            version: .v3,
+            version: model.fluidAudioVersion,
             encoderPrecision: .int8,
             progressHandler: progressHandler
         )
@@ -106,6 +107,7 @@ actor ParakeetFluidAudioOperations {
 
     func load(
         from directory: URL,
+        model: ParakeetModel = .v3,
         progressHandler: ProgressHandler? = nil
     ) async throws -> AsrModels {
         await acquire()
@@ -117,7 +119,7 @@ actor ParakeetFluidAudioOperations {
         defer { ModelHub.offlineMode = previousOfflineMode }
         return try await AsrModels.load(
             from: directory,
-            version: .v3,
+            version: model.fluidAudioVersion,
             encoderPrecision: .int8,
             progressHandler: progressHandler
         )
@@ -125,6 +127,7 @@ actor ParakeetFluidAudioOperations {
 
     func withLoadedModels<Result: Sendable>(
         from directory: URL,
+        model: ParakeetModel = .v3,
         progressHandler: ProgressHandler? = nil,
         operation: @Sendable (AsrModels) async throws -> Result
     ) async throws -> Result {
@@ -140,7 +143,7 @@ actor ParakeetFluidAudioOperations {
         do {
             models = try await AsrModels.load(
                 from: directory,
-                version: .v3,
+                version: model.fluidAudioVersion,
                 encoderPrecision: .int8,
                 progressHandler: progressHandler
             )
@@ -182,6 +185,15 @@ actor ParakeetFluidAudioOperations {
     }
 }
 
+private extension ParakeetModel {
+    var fluidAudioVersion: AsrModelVersion {
+        switch self {
+        case .ultra: return .ultra
+        case .v3: return .v3
+        }
+    }
+}
+
 enum ParakeetFluidAudioError: LocalizedError {
     case modelLoadFailed(String)
 
@@ -196,41 +208,53 @@ enum ParakeetFluidAudioError: LocalizedError {
 final class ParakeetModelManager: ObservableObject {
     static let shared = ParakeetModelManager()
 
+    @Published private(set) var selectedModel: ParakeetModel
     @Published private(set) var state: ParakeetModelState = .notInstalled
+    @Published private var activeOperationID: UUID?
     private var downloadTask: Task<Void, Never>?
-    private var activeOperationID: UUID?
+
+    var isBusy: Bool { activeOperationID != nil }
 
     var isModelInstalled: Bool {
-        ParakeetModelStore.inspect(at: Storage.parakeetModelDirectory) == .candidate
+        ParakeetModelStore.inspect(at: Storage.parakeetModelDirectory(for: selectedModel)) == .candidate
     }
 
     private init() {
+        selectedModel = Storage.shared.loadSettings().parakeetModel
         ModelHub.offlineMode = true
         refresh()
     }
 
-    func refresh() {
-        guard activeOperationID == nil else { return }
+    func selectModel(_ model: ParakeetModel) {
+        guard selectedModel != model else { return }
+        selectedModel = model
         state = stateForCurrentFiles()
     }
 
-    func markReady() {
-        guard activeOperationID == nil else { return }
+    func refresh() {
+        guard !isBusy else { return }
+        state = stateForCurrentFiles()
+    }
+
+    func markReady(for model: ParakeetModel) {
+        guard !isBusy, selectedModel == model else { return }
         state = isModelInstalled ? .ready : stateForCurrentFiles()
     }
 
-    func markModelLoadFailed(_ message: String) {
-        guard activeOperationID == nil else { return }
+    func markModelLoadFailed(_ message: String, for model: ParakeetModel) {
+        guard !isBusy, selectedModel == model else { return }
         state = .failed(message)
     }
 
     func download(force: Bool = false) {
-        guard downloadTask == nil else { return }
+        guard !isBusy else { return }
         guard ParakeetTranscriber.isAppleSilicon else {
-            state = .failed("Parakeet TDT v3 requires Apple Silicon.")
+            state = .failed("Parakeet requires Apple Silicon.")
             return
         }
 
+        let model = selectedModel
+        let directory = Storage.parakeetModelDirectory(for: model)
         let operationID = UUID()
         activeOperationID = operationID
         state = .downloading(progress: 0, stage: .listing)
@@ -239,81 +263,64 @@ final class ParakeetModelManager: ObservableObject {
             guard let self else { return }
             do {
                 _ = try await ParakeetFluidAudioOperations.shared.download(
-                    to: Storage.parakeetModelDirectory,
+                    to: directory,
+                    model: model,
                     force: force
                 ) { [weak self] progress in
                     Task { @MainActor in
-                        guard self?.activeOperationID == operationID else { return }
+                        guard self?.activeOperationID == operationID, self?.selectedModel == model else { return }
                         let stage: ParakeetDownloadStage
                         switch progress.phase {
-                        case .listing:
-                            stage = .listing
-                        case .downloading:
-                            stage = .downloading
-                        case .compiling:
-                            stage = .compiling
+                        case .listing: stage = .listing
+                        case .downloading: stage = .downloading
+                        case .compiling: stage = .compiling
                         }
-                        self?.state = .downloading(
-                            progress: progress.fractionCompleted,
-                            stage: stage
-                        )
+                        self?.state = .downloading(progress: progress.fractionCompleted, stage: stage)
                     }
                 }
                 try Task.checkCancellation()
-                guard self.activeOperationID == operationID else { return }
-                await self.validate(operationID: operationID)
-                guard self.activeOperationID == operationID else { return }
-                self.activeOperationID = nil
-                self.downloadTask = nil
+                let result = await self.validate(model: model, at: directory, operationID: operationID)
+                self.finish(operationID: operationID, model: model, state: result)
             } catch is CancellationError {
-                guard self.activeOperationID == operationID else { return }
-                self.downloadTask = nil
-                self.activeOperationID = nil
-                self.state = self.stateForCurrentFiles()
+                self.finish(operationID: operationID, model: model, state: self.stateForFiles(at: directory))
             } catch {
-                guard self.activeOperationID == operationID else { return }
-                self.downloadTask = nil
-                self.activeOperationID = nil
-                if Task.isCancelled {
-                    self.state = self.stateForCurrentFiles()
-                } else if ParakeetModelStore.inspect(at: Storage.parakeetModelDirectory) == .partial {
-                    self.state = .partial
+                let result: ParakeetModelState
+                if Task.isCancelled || ParakeetModelStore.inspect(at: directory) == .partial {
+                    result = self.stateForFiles(at: directory)
                 } else {
-                    self.state = .failed(error.localizedDescription)
+                    result = .failed(error.localizedDescription)
                 }
+                self.finish(operationID: operationID, model: model, state: result)
             }
         }
     }
 
     func validate() async {
-        guard activeOperationID == nil else { return }
+        guard !isBusy else { return }
+        let model = selectedModel
+        let directory = Storage.parakeetModelDirectory(for: model)
         let operationID = UUID()
         activeOperationID = operationID
-        await validate(operationID: operationID)
-        if activeOperationID == operationID {
-            activeOperationID = nil
-        }
+        let result = await validate(model: model, at: directory, operationID: operationID)
+        finish(operationID: operationID, model: model, state: result)
     }
 
-    private func validate(operationID: UUID) async {
-        guard ParakeetModelStore.inspect(at: Storage.parakeetModelDirectory) == .candidate else {
-            guard activeOperationID == operationID else { return }
-            state = stateForCurrentFiles()
-            return
+    private func validate(model: ParakeetModel, at directory: URL, operationID: UUID) async -> ParakeetModelState {
+        guard ParakeetModelStore.inspect(at: directory) == .candidate else {
+            return stateForFiles(at: directory)
         }
 
-        state = .validating
+        if activeOperationID == operationID, selectedModel == model {
+            state = .validating
+        }
         do {
-            _ = try await ParakeetFluidAudioOperations.shared.load(from: Storage.parakeetModelDirectory)
+            _ = try await ParakeetFluidAudioOperations.shared.load(from: directory, model: model)
             try Task.checkCancellation()
-            guard activeOperationID == operationID else { return }
-            state = .ready
+            return .ready
         } catch is CancellationError {
-            guard activeOperationID == operationID else { return }
-            state = stateForCurrentFiles()
+            return stateForFiles(at: directory)
         } catch {
-            guard activeOperationID == operationID else { return }
-            state = .failed(error.localizedDescription)
+            return .failed(error.localizedDescription)
         }
     }
 
@@ -322,37 +329,40 @@ final class ParakeetModelManager: ObservableObject {
     }
 
     func deleteModel() {
-        let cancelledTask = downloadTask
+        guard !isBusy else { return }
+        let model = selectedModel
+        let directory = Storage.parakeetModelDirectory(for: model)
         let operationID = UUID()
         activeOperationID = operationID
-        cancelledTask?.cancel()
-        downloadTask = nil
         state = .deleting
 
         Task { [weak self] in
-            _ = await cancelledTask?.result
-            guard let self, self.activeOperationID == operationID else { return }
-
+            guard let self else { return }
             do {
-                let modelDirectory = Storage.parakeetModelDirectory
-                try await ParakeetFluidAudioOperations.shared.deleteModel(at: modelDirectory)
-                self.activeOperationID = nil
-                self.state = .notInstalled
+                try await ParakeetFluidAudioOperations.shared.deleteModel(at: directory)
+                self.finish(operationID: operationID, model: model, state: .notInstalled)
             } catch {
-                self.activeOperationID = nil
-                self.state = .failed(error.localizedDescription)
+                self.finish(operationID: operationID, model: model, state: .failed(error.localizedDescription))
             }
         }
     }
 
+    private func finish(operationID: UUID, model: ParakeetModel, state result: ParakeetModelState) {
+        guard activeOperationID == operationID else { return }
+        activeOperationID = nil
+        downloadTask = nil
+        state = selectedModel == model ? result : stateForCurrentFiles()
+    }
+
     private func stateForCurrentFiles() -> ParakeetModelState {
-        switch ParakeetModelStore.inspect(at: Storage.parakeetModelDirectory) {
-        case .notInstalled:
-            return .notInstalled
-        case .partial:
-            return .partial
-        case .candidate:
-            return .ready
+        stateForFiles(at: Storage.parakeetModelDirectory(for: selectedModel))
+    }
+
+    private func stateForFiles(at directory: URL) -> ParakeetModelState {
+        switch ParakeetModelStore.inspect(at: directory) {
+        case .notInstalled: return .notInstalled
+        case .partial: return .partial
+        case .candidate: return .ready
         }
     }
 }

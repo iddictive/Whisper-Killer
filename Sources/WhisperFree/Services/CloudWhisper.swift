@@ -7,15 +7,17 @@ import FoundationNetworking
 final class CloudWhisper: TranscriptionEngine {
     private let apiKey: String
     private let model: CloudTranscriptionModel
+    private let configuration: CloudAPIConfiguration
     private static let maxUploadBytes = 25_000_000 // OpenAI 25 MB limit
     private static let targetUploadBytes = 24_500_000
     private static let speechSampleRate = 24_000
     private static let speechBitRates = [64_000, 56_000, 48_000, 40_000, 32_000]
     private static let containerOverheadFactor = 1.02
 
-    init(apiKey: String, model: CloudTranscriptionModel) {
-        self.apiKey = apiKey
+    init(apiKey: String, model: CloudTranscriptionModel, configuration: CloudAPIConfiguration = .init()) {
+        self.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         self.model = model
+        self.configuration = configuration
     }
 
     // MARK: - Public API
@@ -111,7 +113,7 @@ final class CloudWhisper: TranscriptionEngine {
 
     /// Uploads a single audio file to OpenAI Whisper API and returns the text.
     private func uploadAndTranscribe(fileURL: URL, language: String?, onProgress: ((Float, TimeInterval?) -> Void)?, progressRange: (Float, Float)) async throws -> String {
-        let url = URL(string: "https://api.openai.com/v1/audio/transcriptions")!
+        let url = try configuration.apiURL(path: "audio/transcriptions")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -124,16 +126,19 @@ final class CloudWhisper: TranscriptionEngine {
         body.appendMultipart(boundary: boundary, name: "model", value: model.apiName)
         
         if let lang = language, lang != "auto" {
-            body.appendMultipart(boundary: boundary, name: "language", value: lang)
+            let field = configuration.isOpenAI && model == .gptTranscribe ? "languages[]" : "language"
+            body.appendMultipart(boundary: boundary, name: field, value: lang)
         }
-        if model.usesNativeDiarization {
+        if configuration.isOpenAI && model.usesNativeDiarization {
             body.appendMultipart(boundary: boundary, name: "response_format", value: "diarized_json")
             body.appendMultipart(boundary: boundary, name: "chunking_strategy", value: "auto")
-        } else if model == .whisper1 {
+        } else if configuration.isOpenAI && model == .whisper1 {
             body.appendMultipart(boundary: boundary, name: "response_format", value: "text")
         } else {
             body.appendMultipart(boundary: boundary, name: "response_format", value: "json")
-            body.appendMultipart(boundary: boundary, name: "chunking_strategy", value: "auto")
+            if configuration.isOpenAI {
+                body.appendMultipart(boundary: boundary, name: "chunking_strategy", value: "auto")
+            }
         }
 
         let audioData = try Data(contentsOf: fileURL)
@@ -144,22 +149,22 @@ final class CloudWhisper: TranscriptionEngine {
 
         request.httpBody = body
 
-        print("whisper_debug: ☁️ Uploading \(audioData.count) bytes (\(ext)) to OpenAI Whisper API...")
+        print("whisper_debug: ☁️ Uploading \(audioData.count) bytes (\(ext)) to cloud transcription API...")
         onProgress?(progressRange.0 + (progressRange.1 - progressRange.0) * 0.3, nil)
 
-        let (data, httpResponse) = try await TransientHTTPRetry.data(for: request, label: "OpenAI transcription")
+        let (data, httpResponse) = try await TransientHTTPRetry.data(for: request, label: "Cloud transcription")
 
         onProgress?(progressRange.1, nil)
 
         if httpResponse.statusCode == 401 {
             await MainActor.run {
-                AppState.shared.markAPIKeyInvalid()
+                AppState.shared.markAPIKeyInvalid(apiKey: apiKey, configuration: configuration)
             }
-            throw TranscriptionError.networkError("Invalid API key. Please check your OpenAI API key in Settings → Engine & API.")
+            throw TranscriptionError.networkError("Invalid API key. Please check the active provider key in Settings → Engine & API.")
         }
 
         if httpResponse.statusCode == 429 {
-            let errorText = openAIErrorMessage(from: data) ?? "OpenAI quota exceeded. Check billing and project limits."
+            let errorText = openAIErrorMessage(from: data) ?? "Provider quota exceeded. Check billing and project limits."
             throw TranscriptionError.networkError("HTTP 429: \(errorText)")
         }
 
@@ -168,7 +173,7 @@ final class CloudWhisper: TranscriptionEngine {
             throw TranscriptionError.networkError("HTTP \(httpResponse.statusCode): \(errorText)")
         }
 
-        if model == .whisper1 {
+        if configuration.isOpenAI && model == .whisper1 {
             guard let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
                 throw TranscriptionError.invalidResponse
             }
@@ -179,7 +184,7 @@ final class CloudWhisper: TranscriptionEngine {
             throw TranscriptionError.invalidResponse
         }
 
-        if model.usesNativeDiarization {
+        if configuration.isOpenAI && model.usesNativeDiarization {
             let diarizedText = Self.diarizedText(from: json)
             if !diarizedText.isEmpty {
                 return diarizedText

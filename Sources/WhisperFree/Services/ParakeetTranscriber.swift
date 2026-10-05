@@ -4,11 +4,16 @@ import FluidAudio
 import Foundation
 import os
 
-/// Native on-device Parakeet TDT v3 inference through FluidAudio and Core ML.
+/// Native on-device Parakeet inference through FluidAudio and Core ML.
 final class ParakeetTranscriber: TranscriptionEngine, @unchecked Sendable {
     static var isAppleSilicon: Bool { SystemInfo.isAppleSilicon }
 
     private let currentTask = OSAllocatedUnfairLock<Task<String, Error>?>(initialState: nil)
+    private let model: ParakeetModel
+
+    init(model: ParakeetModel = .v3) {
+        self.model = model
+    }
 
     func cancel() {
         currentTask.withLock { $0 }?.cancel()
@@ -21,9 +26,11 @@ final class ParakeetTranscriber: TranscriptionEngine, @unchecked Sendable {
         onProgress: ((Float, TimeInterval?) -> Void)?
     ) async throws -> String {
         guard Self.isAppleSilicon else {
-            throw TranscriptionError.transcriptionFailed("Parakeet TDT v3 requires Apple Silicon.")
+            throw TranscriptionError.transcriptionFailed("Parakeet requires Apple Silicon.")
         }
-        guard ParakeetModelStore.inspect(at: Storage.parakeetModelDirectory) == .candidate else {
+        let model = self.model
+        let directory = Storage.parakeetModelDirectory(for: model)
+        guard ParakeetModelStore.inspect(at: directory) == .candidate else {
             throw TranscriptionError.modelNotDownloaded
         }
 
@@ -43,6 +50,8 @@ final class ParakeetTranscriber: TranscriptionEngine, @unchecked Sendable {
                 }
                 return try await Self.runInference(
                     audioURL: preparedURL,
+                    model: model,
+                    directory: directory,
                     language: language,
                     progressSink: progressSink
                 )
@@ -67,6 +76,8 @@ final class ParakeetTranscriber: TranscriptionEngine, @unchecked Sendable {
 
     private static func runInference(
         audioURL: URL,
+        model: ParakeetModel,
+        directory: URL,
         language: String?,
         progressSink: ParakeetProgressSink
     ) async throws -> String {
@@ -74,7 +85,8 @@ final class ParakeetTranscriber: TranscriptionEngine, @unchecked Sendable {
         progressSink.report(0.08)
         do {
             return try await ParakeetFluidAudioOperations.shared.withLoadedModels(
-                from: Storage.parakeetModelDirectory,
+                from: directory,
+                model: model,
                 progressHandler: { progress in
                     progressSink.report(0.08 + Float(progress.fractionCompleted) * 0.14)
                 }
@@ -105,7 +117,7 @@ final class ParakeetTranscriber: TranscriptionEngine, @unchecked Sendable {
                     await manager.cleanup()
                     progressSink.report(1)
                     await MainActor.run {
-                        ParakeetModelManager.shared.markReady()
+                        ParakeetModelManager.shared.markReady(for: model)
                     }
                     return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 } catch {
@@ -117,7 +129,7 @@ final class ParakeetTranscriber: TranscriptionEngine, @unchecked Sendable {
             }
         } catch let error as ParakeetFluidAudioError {
             await MainActor.run {
-                ParakeetModelManager.shared.markModelLoadFailed(error.localizedDescription)
+                ParakeetModelManager.shared.markModelLoadFailed(error.localizedDescription, for: model)
             }
             throw error
         }
@@ -127,7 +139,7 @@ final class ParakeetTranscriber: TranscriptionEngine, @unchecked Sendable {
         guard let code, code != "auto" else { return nil }
         guard let language = Language(rawValue: code) else {
             throw TranscriptionError.transcriptionFailed(
-                "Parakeet TDT v3 does not support the selected language. Use Auto-detect or choose a supported European language."
+                "Parakeet does not support the selected language. Use Auto-detect or choose a supported European language."
             )
         }
         return language

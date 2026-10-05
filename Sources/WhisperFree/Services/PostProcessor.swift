@@ -248,8 +248,12 @@ final class PostProcessor {
     private func openAIChat(systemPrompt: String, userText: String, temperature: Double, maxTokens: Int?) async throws -> ProcessedResult {
         let engine = PostProcessingEngine.openai
         let apiKey = settings.normalizedAPIKey
-        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
-        let model = "gpt-4o-mini"
+        let configuration = settings.cloudAPIConfiguration
+        let url = try configuration.apiURL(path: "chat/completions")
+        let model = settings.postProcessingModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else {
+            throw TranscriptionError.networkError("Select a post-processing model first.")
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -261,48 +265,53 @@ final class PostProcessor {
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 ["role": "user", "content": userText]
-            ],
-            "temperature": temperature
+            ]
         ]
+        if configuration.isOpenAI && model == OpenAIModelCatalog.defaultTextModel {
+            payload["reasoning_effort"] = "none"
+            payload["temperature"] = temperature
+        } else if !configuration.isOpenAI || !(model.hasPrefix("gpt-5") || model.hasPrefix("gpt-6") || model.hasPrefix("o1") || model.hasPrefix("o3") || model.hasPrefix("o4")) {
+            payload["temperature"] = temperature
+        }
         if let maxTokens {
-            payload["max_tokens"] = maxTokens
+            payload[configuration.isOpenAI ? "max_completion_tokens" : "max_tokens"] = maxTokens
         }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
-        let (data, httpResponse) = try await TransientHTTPRetry.data(for: request, label: "OpenAI chat")
+        let (data, httpResponse) = try await TransientHTTPRetry.data(for: request, label: "Cloud post-processing")
 
         if httpResponse.statusCode == 401 {
             await MainActor.run {
-                AppState.shared.markAPIKeyInvalid()
+                AppState.shared.markAPIKeyInvalid(apiKey: apiKey, configuration: configuration)
             }
-            throw TranscriptionError.networkError("Invalid API Key for \(engine.rawValue).")
+            throw TranscriptionError.networkError("Invalid API key for the active cloud provider.")
         }
 
         if httpResponse.statusCode == 429 {
-            let errorText = openAIErrorMessage(from: data) ?? "OpenAI quota exceeded. Check billing and project limits."
+            let errorText = openAIErrorMessage(from: data) ?? "Provider quota exceeded. Check billing and project limits."
             throw TranscriptionError.networkError("HTTP 429: \(errorText)")
         }
 
         guard httpResponse.statusCode == 200 else {
             let errorText = openAIErrorMessage(from: data) ?? String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw TranscriptionError.networkError("\(engine.rawValue) post-processing failed: \(errorText)")
+            throw TranscriptionError.networkError("Cloud post-processing failed: \(errorText)")
         }
 
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
               let firstChoice = choices.first,
               let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String,
-              let usage = json["usage"] as? [String: Any]
+              let content = message["content"] as? String
         else {
             throw TranscriptionError.invalidResponse
         }
 
+        let usage = json["usage"] as? [String: Any]
         return ProcessedResult(
             text: content.trimmingCharacters(in: .whitespacesAndNewlines),
-            promptTokens: usage["prompt_tokens"] as? Int ?? 0,
-            completionTokens: usage["completion_tokens"] as? Int ?? 0,
+            promptTokens: usage?["prompt_tokens"] as? Int ?? 0,
+            completionTokens: usage?["completion_tokens"] as? Int ?? 0,
             engine: engine
         )
     }
@@ -338,7 +347,7 @@ final class PostProcessor {
         }
 
         throw TranscriptionError.networkError(
-            "No AI follow-up engine is available. Add an OpenAI API key or start Ollama with a downloaded local model."
+            "No AI follow-up engine is available. Add a cloud provider API key or start Ollama with a downloaded local model."
         )
     }
 

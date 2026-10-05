@@ -2,22 +2,28 @@ import SwiftUI
 
 struct ParakeetSettingsCard: View {
     @ObservedObject var manager: ParakeetModelManager
+    @Binding var selectedModel: ParakeetModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Picker(L.tr("Parakeet model", "Модель Parakeet"), selection: $selectedModel) {
+                ForEach(ParakeetModel.allCases, id: \.self) { model in
+                    Text(model.rawValue).tag(model)
+                }
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .labelsHidden()
+            .disabled(manager.isBusy)
             HStack(spacing: 10) {
                 statusIcon
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Parakeet TDT v3")
-                        .font(.system(size: 13, weight: .semibold))
-                    statusDetail
-                }
+                statusDetail
                 Spacer()
                 controls
             }
             Link(
                 L.tr("Model details and license", "Описание и лицензия модели"),
-                destination: URL(string: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml")!
+                destination: URL(string: "https://huggingface.co/\(manager.selectedModel.modelID)")!
             )
             .font(.system(size: 10))
         }
@@ -93,7 +99,7 @@ struct ParakeetSettingsCard: View {
                     Image(systemName: "trash").foregroundStyle(.red.opacity(0.7))
                 }
                 .buttonStyle(.swPlainInteractive)
-                .disabled(isBusy)
+                .disabled(manager.isBusy)
             }
         }
     }
@@ -114,7 +120,9 @@ struct ParakeetSettingsCard: View {
 
     private var statusSubtitle: String {
         switch manager.state {
-        case .notInstalled: return L.tr("~460 MB · on-demand download", "~460 МБ · скачивание по команде")
+        case .notInstalled:
+            let size = manager.selectedModel.downloadSizeMB
+            return L.tr("~\(size) MB · on-demand download", "~\(size) МБ · скачивание по команде")
         case .partial: return L.tr("Retry continues the saved download.", "Повторение продолжит сохранённую загрузку.")
         case .installed: return L.tr("Run a local check before first use.", "Проверьте модель локально перед первым запуском.")
         case .ready: return L.tr("Runs locally on Apple Silicon.", "Работает локально на Apple Silicon.")
@@ -147,10 +155,4 @@ struct ParakeetSettingsCard: View {
         }
     }
 
-    private var isBusy: Bool {
-        switch manager.state {
-        case .validating, .downloading, .deleting: return true
-        default: return false
-        }
-    }
 }

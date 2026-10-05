@@ -17,6 +17,7 @@ enum LocalTranslationError: Error, LocalizedError {
 }
 
 final class LocalTranslationEngine {
+    static let defaultModel = "qwen3.5:4b"
     private let baseURL = URL(string: "http://localhost:11434/api")!
     
     // Check if Ollama is running
@@ -118,6 +119,7 @@ final class LocalTranslationEngine {
                 ["role": "user", "content": userText]
             ],
             "stream": false,
+            "think": false,
             "options": [
                 "temperature": temperature
             ]

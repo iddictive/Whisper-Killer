@@ -61,12 +61,14 @@ enum QueueItemStatus: Equatable {
 struct TranscriptionRunProvenance: Equatable {
     let engineType: TranscriptionEngineType
     let cloudModel: CloudTranscriptionModel?
+    let cloudProvider: CloudProvider
     let language: String
     let modeName: String
 
     init(settings: AppSettings) {
         self.engineType = settings.engineType
         self.cloudModel = settings.engineType == .cloud ? settings.effectiveCloudTranscriptionModel : nil
+        self.cloudProvider = settings.cloudProvider
         self.language = settings.language
         self.modeName = settings.selectedMode.name
     }
@@ -189,11 +191,12 @@ final class QueueItem: ObservableObject, Identifiable {
 
     func displayCostEstimate(settings: AppSettings) -> CostEstimate? {
         if let provenance = runProvenance {
-            guard provenance.engineType == .cloud, let model = provenance.cloudModel else { return nil }
+            guard provenance.engineType == .cloud, provenance.cloudProvider == .openAI,
+                  let model = provenance.cloudModel else { return nil }
             return CostEstimate.audio(durationSeconds: selectedDuration, model: model)
         }
 
-        guard settings.engineType == .cloud else { return nil }
+        guard settings.engineType == .cloud, settings.cloudProvider == .openAI else { return nil }
         return CostEstimate.audio(durationSeconds: selectedDuration, model: settings.effectiveCloudTranscriptionModel)
     }
 
@@ -294,7 +297,7 @@ final class QueueItem: ObservableObject, Identifiable {
                 }
 
                 if totalPromptTokens + totalCompletionTokens > 0 {
-                    let usageEngine: PostProcessingEngine = runSettings.postProcessingEngine
+                    let usageEngine = PostProcessingEngine.openai
                     usage = UsageLog(
                         date: Date(),
                         modeName: runSettings.selectedMode.name,
@@ -302,7 +305,9 @@ final class QueueItem: ObservableObject, Identifiable {
                         promptTokens: totalPromptTokens,
                         completionTokens: totalCompletionTokens,
                         totalTokens: totalPromptTokens + totalCompletionTokens,
-                        estimatedCost: UsageLog.estimateCost(prompt: totalPromptTokens, completion: totalCompletionTokens, engine: usageEngine)
+                        estimatedCost: UsageLog.estimateCost(prompt: totalPromptTokens, completion: totalCompletionTokens,
+                                                            engine: usageEngine, model: runSettings.postProcessingModel,
+                                                            configuration: runSettings.cloudAPIConfiguration)
                     )
                 }
 
@@ -397,7 +402,8 @@ final class QueueItem: ObservableObject, Identifiable {
             guard let self else { return }
 
             do {
-                let processor = PostProcessor(settings: appState.settings)
+                let summarySettings = appState.settings
+                let processor = PostProcessor(settings: summarySettings)
                 let summaryResult = try await processor.summarizeTranscript(text: sourceText)
                 let totalTokens = summaryResult.promptTokens + summaryResult.completionTokens
                 let usage = totalTokens > 0 ? UsageLog(
@@ -410,7 +416,9 @@ final class QueueItem: ObservableObject, Identifiable {
                     estimatedCost: UsageLog.estimateCost(
                         prompt: summaryResult.promptTokens,
                         completion: summaryResult.completionTokens,
-                        engine: summaryResult.engine
+                        engine: summaryResult.engine,
+                        model: summarySettings.postProcessingModel,
+                        configuration: summarySettings.cloudAPIConfiguration
                     )
                 ) : nil
 

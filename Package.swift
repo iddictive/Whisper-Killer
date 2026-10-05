@@ -10,7 +10,7 @@ let package = Package(
         .executable(name: "WhisperKiller", targets: ["WhisperKiller"])
     ],
     dependencies: [
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.15.6")
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.5")
     ],
     targets: [
         .executableTarget(

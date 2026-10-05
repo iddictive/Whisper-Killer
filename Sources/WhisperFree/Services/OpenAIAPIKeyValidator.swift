@@ -16,11 +16,16 @@ struct OpenAINetworkDiagnosticReport {
 }
 
 enum OpenAIAPIKeyValidator {
-    static func validate(_ apiKey: String) async -> OpenAIAPIKeyValidationState {
+    static func validate(_ apiKey: String, configuration: CloudAPIConfiguration = .init()) async -> OpenAIAPIKeyValidationState {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else { return .idle }
 
-        let url = URL(string: "https://api.openai.com/v1/models")!
+        let url: URL
+        do {
+            url = try configuration.apiURL(path: "models")
+        } catch {
+            return .networkError(error.localizedDescription)
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 20
@@ -42,30 +47,37 @@ enum OpenAIAPIKeyValidator {
             }
         } catch {
             if let urlError = error as? URLError {
-                return .networkError(Self.message(for: urlError))
+                return .networkError(Self.message(for: urlError, host: url.host ?? "provider"))
             }
             return .networkError(error.localizedDescription)
         }
     }
 
-    private static func message(for error: URLError) -> String {
+    private static func message(for error: URLError, host: String) -> String {
         switch error.code {
         case .notConnectedToInternet:
             return "No internet connection."
         case .timedOut:
-            return "The connection to OpenAI timed out."
+            return "The connection to \(host) timed out."
         case .cannotFindHost, .dnsLookupFailed:
-            return "DNS could not resolve api.openai.com."
+            return "DNS could not resolve \(host)."
         case .cannotConnectToHost, .networkConnectionLost:
-            return "The connection to OpenAI was interrupted."
+            return "The connection to \(host) was interrupted."
         case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot:
-            return "TLS connection to OpenAI failed."
+            return "TLS connection to \(host) failed."
         default:
             return error.localizedDescription
         }
     }
 
-    static func diagnoseNetwork() async -> OpenAINetworkDiagnosticReport {
+    static func diagnoseNetwork(configuration: CloudAPIConfiguration = .init()) async -> OpenAINetworkDiagnosticReport {
+        let endpoint: URL
+        do {
+            endpoint = try configuration.apiURL(path: "models")
+        } catch {
+            return OpenAINetworkDiagnosticReport(lines: [error.localizedDescription], isSuccessful: false)
+        }
+        let host = endpoint.host ?? "provider"
         var lines: [String] = []
         var successCount = 0
 
@@ -73,13 +85,13 @@ enum OpenAIAPIKeyValidator {
         lines.append(internetOK ? "1. Internet: OK" : "1. Internet: Failed")
         if internetOK { successCount += 1 }
 
-        let dnsOK = resolveHost("api.openai.com")
-        lines.append(dnsOK ? "2. DNS for api.openai.com: OK" : "2. DNS for api.openai.com: Failed")
+        let dnsOK = resolveHost(host)
+        lines.append(dnsOK ? "2. DNS for \(host): OK" : "2. DNS for \(host): Failed")
         if dnsOK { successCount += 1 }
 
-        let openAIReachable = await checkOpenAIReachability()
-        lines.append(openAIReachable ? "3. OpenAI HTTPS endpoint: OK" : "3. OpenAI HTTPS endpoint: Failed")
-        if openAIReachable { successCount += 1 }
+        let providerReachable = await checkProviderReachability(endpoint)
+        lines.append(providerReachable ? "3. \(host) API endpoint: OK" : "3. \(host) API endpoint: Failed")
+        if providerReachable { successCount += 1 }
 
         return OpenAINetworkDiagnosticReport(lines: lines, isSuccessful: successCount == 3)
     }
@@ -99,8 +111,7 @@ enum OpenAIAPIKeyValidator {
         }
     }
 
-    private static func checkOpenAIReachability() async -> Bool {
-        guard let url = URL(string: "https://api.openai.com/v1/models") else { return false }
+    private static func checkProviderReachability(_ url: URL) async -> Bool {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 10

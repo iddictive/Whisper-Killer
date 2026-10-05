@@ -1564,6 +1564,8 @@ struct SetupWizardView: View {
     }
 
     private func finishSetup() {
+        appState.settings.cloudProvider = .openAI
+        appState.invalidateOpenAIModelCatalog()
         appState.settings.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         appState.settings.engineType = selectedEngine
         appState.settings.localModelSize = selectedModel

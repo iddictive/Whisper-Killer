@@ -224,15 +224,19 @@ struct UsageLog: Codable, Identifiable {
     let promptTokens: Int
     let completionTokens: Int
     let totalTokens: Int
-    let estimatedCost: Double
+    let estimatedCost: Double?
     var audioDurationSeconds: TimeInterval? = nil
 
-    // Estimates based on gpt-4o-mini ($0.15 / 1M input, $0.60 / 1M output)
-    static func estimateCost(prompt: Int, completion: Int, engine: PostProcessingEngine) -> Double {
+    // Standard uncached short-context rates for GPT-6 Luna.
+    static func estimateCost(prompt: Int, completion: Int, engine: PostProcessingEngine,
+                             model: String = OpenAIModelCatalog.defaultTextModel,
+                             configuration: CloudAPIConfiguration = .init()) -> Double? {
         switch engine {
         case .openai:
-            let pRate = 0.15 / 1_000_000.0
-            let cRate = 0.60 / 1_000_000.0
+            guard configuration.isOpenAI, model == OpenAIModelCatalog.defaultTextModel,
+                  prompt <= 272_000 else { return nil }
+            let pRate = 0.10 / 1_000_000.0
+            let cRate = 0.50 / 1_000_000.0
             return Double(prompt) * pRate + Double(completion) * cRate
         case .ollama:
             return 0
@@ -616,6 +620,20 @@ enum QwenASRModel: String, Codable, CaseIterable {
     }
 }
 
+enum ParakeetModel: String, Codable, CaseIterable, Sendable {
+    case ultra = "Ultra"
+    case v3 = "TDT v3"
+
+    var title: String { "Parakeet \(rawValue)" }
+    var modelID: String {
+        self == .ultra ? "FluidInference/parakeet-ultra-coreml" : "FluidInference/parakeet-tdt-0.6b-v3-coreml"
+    }
+    var directoryName: String {
+        self == .ultra ? "parakeet-ultra" : "parakeet-tdt-0.6b-v3"
+    }
+    var downloadSizeMB: Int { self == .ultra ? 630 : 480 }
+}
+
 // MARK: - App Settings
 
 // MARK: - Hotkey Config
@@ -749,6 +767,10 @@ struct HotkeyConfig: Codable, Equatable, Hashable {
 
 struct AppSettings: Codable {
     var apiKey: String = ""
+    var cloudProvider: CloudProvider = .openAI
+    var customCloudBaseURL: String = ""
+    var customCloudAPIKey: String = ""
+    var postProcessingModel: String = OpenAIModelCatalog.defaultTextModel
     var appPresenceMode: AppPresenceMode = .menuBarOnly
     var cloudTranscriptionModel: CloudTranscriptionModel = .gptTranscribe
     var cloudDiarizationModel: CloudTranscriptionModel? = .gpt4oTranscribeDiarize
@@ -770,8 +792,9 @@ struct AppSettings: Codable {
     var customModes: [TranscriptionMode] = []
     var recordingMode: RecordingMode = .hold
     var engineType: TranscriptionEngineType = .cloud
-    var localModelSize: LocalModelSize = .base
-    var qwenASRModel: QwenASRModel = .fast
+    var localModelSize: LocalModelSize = .recommended
+    var qwenASRModel: QwenASRModel = .recommended
+    var parakeetModel: ParakeetModel = .ultra
     var showOverlay: Bool = true
     var setupCompleted: Bool = false
     var hotkeyConfig: HotkeyConfig = HotkeyConfig()
@@ -794,19 +817,19 @@ struct AppSettings: Codable {
     var liveTranslatorTargetLanguage: String = "ru"
     var liveTranslatorSourceLanguage: String = "auto"
     var liveTranslatorEngine: LiveTranslationEngine = .cloud
-    var liveTranslatorLocalModel: String = "qwen2.5:3b"
+    var liveTranslatorLocalModel: String = LocalTranslationEngine.defaultModel
     var liveTranslatorInputDeviceID: String? = nil
     var liveTranslatorHotkeyConfig: HotkeyConfig = HotkeyConfig(keyCode: 17, useOption: true, useCommand: true) // Cmd+Option+T default
     var useScreenCaptureKit: Bool = false
     var liveTranslatorCompactMode: Bool = false
 
     // AI Chat
-    var selectedAIChatModel: String = "gpt-4o-mini"
+    var selectedAIChatModel: String = OpenAIModelCatalog.defaultTextModel
     var selectedAIChatConversationID: UUID? = nil
 
     enum CodingKeys: String, CodingKey {
-        case apiKey, appPresenceMode, cloudTranscriptionModel, cloudDiarizationModel, postProcessingEngine, autoTypeResult, enableProfanityFilter, language,
-             selectedModeName, customModes, recordingMode, engineType, localModelSize, qwenASRModel,
+        case apiKey, cloudProvider, customCloudBaseURL, customCloudAPIKey, postProcessingModel, appPresenceMode, cloudTranscriptionModel, cloudDiarizationModel, postProcessingEngine, autoTypeResult, enableProfanityFilter, language,
+             selectedModeName, customModes, recordingMode, engineType, localModelSize, qwenASRModel, parakeetModel,
              showOverlay, setupCompleted, hotkeyConfig, insertionMethod,
              automaticallyChecksForUpdates, automaticallyDownloadsUpdates,
              enablePostProcessing, useMonochromeMenuIcon, usageLogs,
@@ -824,6 +847,10 @@ struct AppSettings: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
+        cloudProvider = try container.decodeIfPresent(CloudProvider.self, forKey: .cloudProvider) ?? .openAI
+        customCloudBaseURL = try container.decodeIfPresent(String.self, forKey: .customCloudBaseURL) ?? ""
+        customCloudAPIKey = try container.decodeIfPresent(String.self, forKey: .customCloudAPIKey) ?? ""
+        postProcessingModel = try container.decodeIfPresent(String.self, forKey: .postProcessingModel) ?? OpenAIModelCatalog.defaultTextModel
         appPresenceMode = try container.decodeIfPresent(AppPresenceMode.self, forKey: .appPresenceMode) ?? .menuBarOnly
         cloudTranscriptionModel = try container.decodeIfPresent(CloudTranscriptionModel.self, forKey: .cloudTranscriptionModel) ?? .gptTranscribe
         cloudDiarizationModel = try container.decodeIfPresent(CloudTranscriptionModel.self, forKey: .cloudDiarizationModel) ?? .gpt4oTranscribeDiarize
@@ -838,6 +865,7 @@ struct AppSettings: Codable {
         engineType = persistedEngine.flatMap(TranscriptionEngineType.init(rawValue:)) ?? .cloud
         localModelSize = try container.decodeIfPresent(LocalModelSize.self, forKey: .localModelSize) ?? .base
         qwenASRModel = try container.decodeIfPresent(QwenASRModel.self, forKey: .qwenASRModel) ?? .fast
+        parakeetModel = try container.decodeIfPresent(ParakeetModel.self, forKey: .parakeetModel) ?? .v3
         showOverlay = try container.decodeIfPresent(Bool.self, forKey: .showOverlay) ?? true
         setupCompleted = try container.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? false
         hotkeyConfig = try container.decodeIfPresent(HotkeyConfig.self, forKey: .hotkeyConfig) ?? HotkeyConfig()
@@ -863,7 +891,7 @@ struct AppSettings: Codable {
         liveTranslatorHotkeyConfig = try container.decodeIfPresent(HotkeyConfig.self, forKey: .liveTranslatorHotkeyConfig) ?? HotkeyConfig(keyCode: 17, useOption: true, useCommand: true)
         useScreenCaptureKit = try container.decodeIfPresent(Bool.self, forKey: .useScreenCaptureKit) ?? false
         liveTranslatorCompactMode = try container.decodeIfPresent(Bool.self, forKey: .liveTranslatorCompactMode) ?? false
-        selectedAIChatModel = try container.decodeIfPresent(String.self, forKey: .selectedAIChatModel) ?? "gpt-4o-mini"
+        selectedAIChatModel = try container.decodeIfPresent(String.self, forKey: .selectedAIChatModel) ?? OpenAIModelCatalog.defaultTextModel
         selectedAIChatConversationID = try container.decodeIfPresent(UUID.self, forKey: .selectedAIChatConversationID)
         textCasing = try container.decodeIfPresent(TextCasing.self, forKey: .textCasing) ?? .original
         enablePunctuation = try container.decodeIfPresent(Bool.self, forKey: .enablePunctuation) ?? true
@@ -884,7 +912,19 @@ struct AppSettings: Codable {
     }
 
     var normalizedAPIKey: String {
-        apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        cloudAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var cloudAPIKey: String {
+        get { cloudProvider == .openAI ? apiKey : customCloudAPIKey }
+        set {
+            if cloudProvider == .openAI { apiKey = newValue }
+            else { customCloudAPIKey = newValue }
+        }
+    }
+
+    var cloudAPIConfiguration: CloudAPIConfiguration {
+        CloudAPIConfiguration(provider: cloudProvider, customBaseURL: customCloudBaseURL)
     }
 
     var hasOpenAIAPIKey: Bool {
@@ -896,7 +936,7 @@ struct AppSettings: Codable {
     }
 
     var canUseSpeakerDiarization: Bool {
-        engineType == .cloud && hasOpenAIAPIKey && cloudDiarizationModel != nil
+        engineType == .cloud && cloudProvider == .openAI && hasOpenAIAPIKey && cloudDiarizationModel != nil
     }
 
     var usesNativeCloudSpeakerDiarization: Bool {
@@ -928,8 +968,13 @@ struct AppSettings: Codable {
     }
 
     mutating func normalizeBeforeSaving() {
-        apiKey = normalizedAPIKey
-        if cloudTranscriptionModel.usesNativeDiarization {
+        apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        customCloudAPIKey = customCloudAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        customCloudBaseURL = customCloudBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        postProcessingModel = postProcessingModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        selectedAIChatModel = selectedAIChatModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        cloudTranscriptionModel = CloudTranscriptionModel(rawValue: cloudTranscriptionModel.rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
+        if cloudProvider == .openAI, cloudTranscriptionModel.usesNativeDiarization {
             cloudTranscriptionModel = .gpt4oTranscribe
         }
         if !canUseSpeakerDiarization {

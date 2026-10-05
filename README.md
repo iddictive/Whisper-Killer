@@ -19,7 +19,7 @@
   <img alt="macOS 14 or newer" src="https://img.shields.io/badge/macOS-14%2B-333333">
 </p>
 
-WhisperKiller turns a global shortcut into speech-to-text. Choose local transcription with Whisper, Qwen3-ASR, or Parakeet, or connect your own OpenAI API key for cloud transcription. Drop in audio or video files, clean up the results, and revisit them in searchable history.
+WhisperKiller turns a global shortcut into speech-to-text. Choose local transcription with Whisper, Qwen3-ASR, or Parakeet, or connect a cloud provider with your API key. Drop in audio or video files, clean up the results, and revisit them in searchable history.
 
 <p align="center">
   <a href="assets/interface-collage.webp"><img src="assets/interface-collage.webp" alt="WhisperKiller recording controls, file transcription, AI chat, and recording overlay" width="1040"></a>
@@ -29,7 +29,7 @@ WhisperKiller turns a global shortcut into speech-to-text. Choose local transcri
 
 1. Download the DMG from [Releases](https://github.com/iddictive/Whisper-Killer/releases/latest) and move the app to Applications.
 2. Complete setup and grant Microphone and Accessibility permissions.
-3. Choose a transcription engine and download its model, or add your OpenAI API key.
+3. Choose a transcription engine and download its model, or configure Cloud with your API key.
 4. Press **Option + Space** to dictate, or open file transcription and drop in a recording.
 
 Official install/build scripts target Apple Silicon and macOS 14 or newer. Local models need an initial download; cloud features require an API key and provider usage charges may apply.
@@ -52,13 +52,17 @@ Official install/build scripts target Apple Silicon and macOS 14 or newer. Local
 
 | Engine | Use it for | Requirements |
 | --- | --- | --- |
-| Local Whisper | Offline dictation and file transcription | `brew install whisper-cpp` plus a downloaded Whisper model |
+| Local Whisper | Offline dictation and file transcription | `brew install whisper.cpp` plus a downloaded Whisper model |
 | Qwen3-ASR MLX | Local transcription on Apple Silicon; 0.6B for speed or 1.7B for higher multilingual accuracy | App-managed Python/MLX runtime and a downloaded Qwen3-ASR model |
-| Parakeet TDT v3 | Fast offline multilingual transcription through Core ML | Apple Silicon and a one-time ~460 MiB model download |
-| OpenAI transcription | Cloud transcription runs | OpenAI API key |
+| Parakeet Ultra / TDT v3 | Offline multilingual transcription through Core ML | Apple Silicon and a one-time model download (~630 / 480 MB) |
+| Cloud | Transcription, transcript refinement and AI Chat | OpenAI or an OpenAI-compatible provider with the required API endpoints |
 | Ollama follow-up | Local follow-up summaries where configured | Ollama installed locally |
 
 Parakeet integration uses [FluidAudio](https://github.com/FluidInference/FluidAudio) under Apache-2.0. The downloaded [Parakeet TDT v3 Core ML model](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml) is derived from NVIDIA Parakeet and licensed under CC BY 4.0.
+
+Cloud defaults to OpenAI. In **Settings → Engine & API**, choose **OpenAI-compatible** to enter another provider's API base URL (including its API path, such as `https://provider.example/v1`) and key. Choose models from the provider's dynamic list or enter an ID manually for transcription, AI refinement and AI Chat. A provider must support `audio/transcriptions` for speech or `chat/completions` for text; its model list may be unavailable, and listing a model does not imply support for every operation. Native speaker diarization remains available with OpenAI.
+
+New installations default to [Parakeet Ultra](https://huggingface.co/FluidInference/parakeet-ultra-coreml), GPT-6 Luna for cloud text processing, and `qwen3.5:4b` for configured Ollama follow-up. Existing saved local model choices and v3 caches are preserved.
 
 ## Languages
 
@@ -119,7 +123,7 @@ WhisperKiller — диктовка и транскрибация файлов и
 
 1. Скачайте DMG из [Releases](https://github.com/iddictive/Whisper-Killer/releases/latest) и перенесите приложение в Applications.
 2. Пройдите первоначальную настройку и разрешите доступ к микрофону и Универсальному доступу.
-3. Выберите локальный движок и загрузите модель либо добавьте ключ OpenAI API.
+3. Выберите локальный движок и загрузите модель либо настройте Cloud с вашим ключом API.
 4. Начните диктовку горячей клавишей или перетащите запись в окно транскрибации файлов.
 
 Официальные скрипты сборки и установки рассчитаны на Apple Silicon и macOS 14 или новее. Для локальных моделей нужна первоначальная загрузка. Облачная обработка использует ваш ключ API и может оплачиваться по тарифам провайдера.
@@ -136,7 +140,7 @@ WhisperKiller — диктовка и транскрибация файлов и
 
 ### Выбор движка
 
-**Whisper** работает локально через `whisper.cpp`. **Qwen3-ASR** использует управляемое приложением окружение Python/MLX на Apple Silicon. **Parakeet TDT v3** работает локально через Core ML. **OpenAI** обрабатывает записи в облаке с вашим ключом API. Для локальной обработки результатов можно настроить Ollama.
+**Whisper** работает локально через `whisper.cpp`. **Qwen3-ASR** использует управляемое приложением окружение Python/MLX на Apple Silicon. **Parakeet Ultra / TDT v3** работает локально через Core ML. **Cloud** по умолчанию использует OpenAI; можно выбрать OpenAI-совместимого провайдера, указать адрес API и ключ. Модели загружаются из каталога провайдера или задаются вручную. Для транскрибации провайдер должен поддерживать `audio/transcriptions`, для текста — `chat/completions`. Для локальной обработки результатов можно настроить Ollama.
 
 Требования и лицензии моделей приведены в разделе [Engines](#engines). В настройках доступны 17 языков и автоматическое определение.
 

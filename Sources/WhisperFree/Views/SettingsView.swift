@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
@@ -24,6 +25,7 @@ struct SettingsView: View {
 
     // API Testing State
     @State private var apiValidationState: OpenAIAPIKeyValidationState = .idle
+    @State private var apiValidationRequestID: UUID?
     @State private var isRunningNetworkDiagnostics = false
     @State private var networkDiagnosticLines: [String] = []
     @State private var showProfanityDictionaryImporter = false
@@ -108,7 +110,7 @@ struct SettingsView: View {
         case .invalid:
             return L.tr("Key is invalid.", "Ключ невалиден.")
         case .networkError(let message):
-            return L.tr("Could not reach OpenAI. \(message)", "Не удалось связаться с OpenAI. \(message)")
+            return L.tr("Could not reach the provider. \(message)", "Не удалось связаться с провайдером. \(message)")
         case .failed(let statusCode):
             return L.tr("Validation failed (HTTP \(statusCode)).", "Проверка не удалась (HTTP \(statusCode)).")
         }
@@ -804,49 +806,8 @@ struct SettingsView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     if appState.settings.engineType == .cloud {
-                        VStack(alignment: .leading, spacing: 8) {
-                            if appState.selectableCloudTranscriptionModels.isEmpty {
-                                Text(L.tr(
-                                    "No compatible transcription models are available for this API key.",
-                                    "Для этого API-ключа нет доступных совместимых моделей транскрибации."
-                                ))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            } else {
-                                Picker(L.tr("Cloud model", "Облачная модель"), selection: $appState.settings.cloudTranscriptionModel) {
-                                    ForEach(appState.selectableCloudTranscriptionModels, id: \.self) { model in
-                                        Text(model.localizedTitle).tag(model)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                                .labelsHidden()
-                                .disabled(appState.isLoadingAIChatModels)
-                                .onChange(of: appState.settings.cloudTranscriptionModel) { _, _ in
-                                    appState.saveSettings()
-                                }
-                            }
-
-                            if !appState.selectableCloudTranscriptionModels.isEmpty {
-                                Text(appState.settings.cloudTranscriptionModel.localizedDescription)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            if appState.openAIModelCatalogError != nil {
-                                Text(L.tr(
-                                    "Could not load the available model catalog. The saved model remains selected but is not verified for this API key.",
-                                    "Не удалось загрузить каталог доступных моделей. Сохранённая модель оставлена выбранной, но не подтверждена для этого API-ключа."
-                                ))
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-
-                    if appState.settings.engineType == .cloud {
-                        OpenAIAPIKeySettingsCard(
-                            apiKey: $appState.settings.apiKey,
+                        CloudAPISettingsCard(
+                            settings: $appState.settings,
                             validationState: apiValidationState,
                             isValidating: isCheckingOpenAI,
                             statusText: apiValidationText,
@@ -855,6 +816,33 @@ struct SettingsView: View {
                             onValidate: checkOpenAI,
                             onChanged: handleAPIKeyChanged
                         )
+                        .padding(.horizontal)
+
+                        Divider().padding(.horizontal).padding(.vertical, 6)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            CloudModelField(
+                                title: L.tr("Transcription model", "Модель транскрибации"),
+                                modelID: Binding(
+                                    get: { appState.settings.cloudTranscriptionModel.rawValue },
+                                    set: { appState.settings.cloudTranscriptionModel = CloudTranscriptionModel(rawValue: $0) }
+                                ),
+                                models: appState.availableCloudTranscriptionModels.map(\.rawValue),
+                                isLoading: appState.isLoadingAIChatModels,
+                                catalogError: appState.openAIModelCatalogError,
+                                onRefresh: { appState.refreshCloudTranscriptionModelsIfNeeded(force: true) },
+                                onChanged: { appState.saveSettings() }
+                            )
+
+                            if appState.settings.cloudProvider == .custom {
+                                Text(L.tr(
+                                    "The provider must support audio transcription for this model.",
+                                    "Провайдер должен поддерживать транскрибацию аудио этой моделью."
+                                ))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
                         .padding(.horizontal)
                     }
 
@@ -882,8 +870,15 @@ struct SettingsView: View {
                     }
 
                     if appState.settings.engineType == .parakeet {
-                        ParakeetSettingsCard(manager: parakeetModelManager)
+                        ParakeetSettingsCard(
+                            manager: parakeetModelManager,
+                            selectedModel: $appState.settings.parakeetModel
+                        )
                             .padding(.horizontal)
+                            .onChange(of: appState.settings.parakeetModel) { _, model in
+                                parakeetModelManager.selectModel(model)
+                                appState.saveSettings()
+                            }
                     }
 
                 }
@@ -894,27 +889,37 @@ struct SettingsView: View {
         }
 
         VStack(alignment: .leading, spacing: 16) {
-            Text(L.tr("API Refinement", "AI-обработка"))
+            Text(L.tr("AI Refinement", "AI-обработка"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
-            if shouldShowAIRefinementKeyCard {
-                OpenAIAPIKeySettingsCard(
-                    apiKey: $appState.settings.apiKey,
-                    validationState: apiValidationState,
-                    isValidating: isCheckingOpenAI,
-                    statusText: apiValidationText,
-                    statusColor: apiValidationColor,
-                    diagnosticText: networkDiagnosticText,
-                    onValidate: checkOpenAI,
-                    onChanged: handleAPIKeyChanged
+            VStack(alignment: .leading, spacing: 16) {
+                if shouldShowAIRefinementKeyCard {
+                    CloudAPISettingsCard(
+                        settings: $appState.settings,
+                        validationState: apiValidationState,
+                        isValidating: isCheckingOpenAI,
+                        statusText: apiValidationText,
+                        statusColor: apiValidationColor,
+                        diagnosticText: networkDiagnosticText,
+                        onValidate: checkOpenAI,
+                        onChanged: handleAPIKeyChanged
+                    )
+                    Divider()
+                }
+
+                AIConfigView(
+                    settings: $appState.settings,
+                    models: appState.availableAIChatModels,
+                    isLoadingModels: appState.isLoadingAIChatModels,
+                    catalogError: appState.openAIModelCatalogError,
+                    onRefreshModels: { appState.refreshAIChatModelsIfNeeded(force: true) },
+                    onSave: { appState.saveSettings() }
                 )
             }
-
-            AIConfigView(settings: $appState.settings, onSave: { appState.saveSettings() })
-                .padding()
-                .background(Color.primary.opacity(0.03))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding()
+            .background(Color.primary.opacity(0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
     }
 
@@ -1325,7 +1330,8 @@ struct SettingsView: View {
 
             let logs = appState.settings.usageLogs
             let totalTokens = logs.reduce(0) { $0 + $1.totalTokens }
-            let totalCost = logs.reduce(0.0) { $0 + $1.estimatedCost }
+            let estimatedCosts = logs.compactMap(\.estimatedCost)
+            let totalCost = estimatedCosts.count == logs.count ? estimatedCosts.reduce(0.0, +) : nil
 
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 40) {
@@ -1336,7 +1342,7 @@ struct SettingsView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L.tr("Est. Cost", "Оценка стоимости")).font(.caption).foregroundStyle(.secondary)
-                        Text("$\(String(format: "%.4f", totalCost))").font(.title2).bold().foregroundStyle(Color.accentColor)
+                        Text(totalCost.map { "$\(String(format: "%.4f", $0))" } ?? "—").font(.title2).bold().foregroundStyle(Color.accentColor)
                     }
 
                     Spacer()
@@ -1431,11 +1437,14 @@ struct SettingsView: View {
     }
 
     private func handleAPIKeyChanged() {
+        apiValidationRequestID = nil
         apiValidationState = .idle
+        isRunningNetworkDiagnostics = false
         modeEditorMessage = nil
         networkDiagnosticLines.removeAll()
+        appState.markAPIKeyValid()
         appState.invalidateOpenAIModelCatalog()
-        Storage.shared.saveSettings(appState.settings)
+        appState.saveSettings()
     }
 
     private func checkOpenAI() {
@@ -1443,14 +1452,22 @@ struct SettingsView: View {
         apiValidationState = .idle
         networkDiagnosticLines = []
         apiValidationState = .checking
-        let currentKey = appState.settings.apiKey
+        let requestID = UUID()
+        apiValidationRequestID = requestID
+        let currentKey = appState.settings.normalizedAPIKey
+        let configuration = appState.settings.cloudAPIConfiguration
 
         Task {
-            let report = await OpenAIAPIKeyValidator.diagnoseNetwork()
+            let report = await OpenAIAPIKeyValidator.diagnoseNetwork(configuration: configuration)
             let result = currentKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? OpenAIAPIKeyValidationState.idle
-                : await OpenAIAPIKeyValidator.validate(currentKey)
+                : await OpenAIAPIKeyValidator.validate(currentKey, configuration: configuration)
             await MainActor.run {
+                guard apiValidationRequestID == requestID,
+                      appState.settings.normalizedAPIKey == currentKey,
+                      appState.settings.cloudAPIConfiguration == configuration
+                else { return }
+                apiValidationRequestID = nil
                 isRunningNetworkDiagnostics = false
                 networkDiagnosticLines = report.lines
                 apiValidationState = result
@@ -1458,7 +1475,7 @@ struct SettingsView: View {
                     appState.markAPIKeyValid()
                     appState.refreshCloudTranscriptionModelsIfNeeded(force: true)
                 } else if result == .invalid {
-                    appState.markAPIKeyInvalid(reason: L.tr("OpenAI API key is invalid.", "OpenAI API key недействителен."))
+                    appState.markAPIKeyInvalid(reason: L.tr("API key is invalid.", "API-ключ недействителен."))
                 }
             }
         }
@@ -1530,7 +1547,7 @@ struct SettingsView: View {
         }
 
         guard appState.settings.hasOpenAIAPIKey else {
-            modeEditorMessage = L.tr("Add and validate an OpenAI API key first.", "Сначала добавьте и проверьте OpenAI API key.")
+            modeEditorMessage = L.tr("Add and validate an API key first.", "Сначала добавьте и проверьте API-ключ.")
             return
         }
 
@@ -1666,6 +1683,10 @@ struct SettingsView: View {
 
 struct AIConfigView: View {
     @Binding var settings: AppSettings
+    var models: [String] = []
+    var isLoadingModels = false
+    var catalogError: String? = nil
+    var onRefreshModels: () -> Void = {}
     var onSave: () -> Void
 
     private var shouldShowDiarizationControls: Bool {
@@ -1682,6 +1703,37 @@ struct AIConfigView: View {
                     }
             }
 
+            if settings.enablePostProcessing {
+                CloudModelField(
+                    title: L.tr("Refinement model", "Модель AI-обработки"),
+                    modelID: $settings.postProcessingModel,
+                    models: models,
+                    isLoading: isLoadingModels,
+                    catalogError: catalogError,
+                    onRefresh: onRefreshModels,
+                    onChanged: onSave
+                )
+            }
+
+            CloudModelField(
+                title: L.tr("AI Chat model", "Модель AI Chat"),
+                modelID: $settings.selectedAIChatModel,
+                models: models,
+                isLoading: isLoadingModels,
+                catalogError: catalogError,
+                onRefresh: onRefreshModels,
+                onChanged: onSave
+            )
+
+            if settings.cloudProvider == .custom {
+                Text(L.tr(
+                    "The provider must support chat completions for these models.",
+                    "Провайдер должен поддерживать chat completions для этих моделей."
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             if shouldShowDiarizationControls {
                 Divider()
 
@@ -1694,8 +1746,8 @@ struct AIConfigView: View {
 
                     if !settings.canUseSpeakerDiarization {
                         Text(L.tr(
-                            "Cloud (OpenAI), an API key, and an available compatible diarization model are required.",
-                            "Для диаризации нужны Облако (OpenAI), API-ключ и доступная совместимая модель."
+                            "OpenAI, an API key, and a compatible diarization model are required.",
+                            "Для диаризации нужны OpenAI, API-ключ и совместимая модель."
                         ))
                             .font(.caption)
                             .foregroundStyle(.orange)
@@ -1706,8 +1758,102 @@ struct AIConfigView: View {
     }
 }
 
-struct OpenAIAPIKeySettingsCard: View {
-    @Binding var apiKey: String
+struct CloudModelField: View {
+    let title: String
+    @Binding var modelID: String
+    let models: [String]
+    let isLoading: Bool
+    let catalogError: String?
+    let onRefresh: () -> Void
+    let onChanged: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                CloudModelComboBox(modelID: $modelID, models: models, onChanged: onChanged,
+                                   onOpen: { if !isLoading { onRefresh() } })
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 26)
+
+                if isLoading {
+                    ProgressView().controlSize(.small)
+                }
+            }
+
+            if catalogError != nil {
+                Text(L.tr(
+                    "Model list unavailable. Enter a model ID manually.",
+                    "Список моделей недоступен. Введите ID модели вручную."
+                ))
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+        }
+    }
+}
+
+private struct CloudModelComboBox: NSViewRepresentable {
+    @Binding var modelID: String
+    let models: [String]
+    let onChanged: () -> Void
+    let onOpen: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSComboBox {
+        let view = NSComboBox()
+        view.isEditable = true
+        view.usesDataSource = false
+        view.completes = false
+        view.hasVerticalScroller = true
+        view.numberOfVisibleItems = 10
+        view.font = .systemFont(ofSize: NSFont.systemFontSize)
+        view.placeholderString = L.tr("Model ID", "ID модели")
+        view.toolTip = L.tr("Choose a model or enter its ID", "Выберите модель или введите её ID")
+        view.delegate = context.coordinator
+        return view
+    }
+
+    func updateNSView(_ view: NSComboBox, context: Context) {
+        context.coordinator.parent = self
+        if view.objectValues as? [String] != models {
+            view.removeAllItems()
+            view.addItems(withObjectValues: models)
+        }
+        if view.stringValue != modelID { view.stringValue = modelID }
+    }
+
+    final class Coordinator: NSObject, NSComboBoxDelegate {
+        var parent: CloudModelComboBox
+        init(_ parent: CloudModelComboBox) { self.parent = parent }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let view = notification.object as? NSComboBox else { return }
+            save(view.stringValue)
+        }
+
+        func comboBoxSelectionDidChange(_ notification: Notification) {
+            guard let view = notification.object as? NSComboBox,
+                  let value = view.objectValueOfSelectedItem as? String else { return }
+            save(value)
+        }
+
+        func comboBoxWillPopUp(_ notification: Notification) { parent.onOpen() }
+
+        private func save(_ value: String) {
+            guard parent.modelID != value else { return }
+            parent.modelID = value
+            parent.onChanged()
+        }
+    }
+}
+
+struct CloudAPISettingsCard: View {
+    @Binding var settings: AppSettings
     let validationState: OpenAIAPIKeyValidationState
     let isValidating: Bool
     let statusText: String?
@@ -1718,13 +1864,28 @@ struct OpenAIAPIKeySettingsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(L.tr("OpenAI API Key", "OpenAI API Key"))
+            Picker(L.tr("Provider", "Провайдер"), selection: $settings.cloudProvider) {
+                ForEach(CloudProvider.allCases, id: \.self) { provider in
+                    Text(provider.rawValue).tag(provider)
+                }
+            }
+            .pickerStyle(.menu)
+            .onChange(of: settings.cloudProvider) { _, _ in onChanged() }
+
+            if settings.cloudProvider == .custom {
+                TextField(L.tr("API base URL", "Базовый URL API"), text: $settings.customCloudBaseURL,
+                          prompt: Text("https://provider.example/v1"))
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: settings.customCloudBaseURL) { _, _ in onChanged() }
+            }
+
+            Text(L.tr("API Key", "API-ключ"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 10) {
                 MaskedAPIKeyField(
-                    apiKey: $apiKey,
+                    apiKey: $settings.cloudAPIKey,
                     presentation: .roundedBorder,
                     onChanged: onChanged
                 )
@@ -1735,7 +1896,7 @@ struct OpenAIAPIKeySettingsCard: View {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
-                            Text(L.tr("Check OpenAI", "Проверить OpenAI"))
+                            Text(L.tr("Check connection", "Проверить связь"))
                         }
                     }
                     .frame(minWidth: 120)
@@ -1764,9 +1925,6 @@ struct OpenAIAPIKeySettingsCard: View {
             }
 
         }
-        .padding(16)
-        .background(Color.primary.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var validationIcon: String {

@@ -6,7 +6,7 @@ import CryptoKit
 
 /// Local Qwen3-ASR inference through an app-managed MLX runtime.
 final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
-    static let runtimePackageVersion = "0.3.5"
+    static let runtimePackageVersion = "0.4.4"
 
     private let model: QwenASRModel
     private var currentProcess: Process?
@@ -371,8 +371,8 @@ final class QwenASRTranscriber: TranscriptionEngine, @unchecked Sendable {
             return .success(standalonePythonPath)
         }
 
-        let downloadURL = URL(string: "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13%2B20260510-aarch64-apple-darwin-install_only_stripped.tar.gz")!
-        let expectedSHA256 = "55bc1a5edbc8ac4da0081f4f5731ed2d1ed10c57cb37a820b2a0dbc7cad742e9"
+        let downloadURL = URL(string: "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-aarch64-apple-darwin-install_only_stripped.tar.gz")!
+        let expectedSHA256 = "ad8d0c637c0a36b967b310e2c07254f4d2ca8cabaa7699e55ed6290aceb481a2"
         let workDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("qwen_asr_python_\(UUID().uuidString)", isDirectory: true)
         let archiveURL = workDirectory.appendingPathComponent("python.tar.gz")
