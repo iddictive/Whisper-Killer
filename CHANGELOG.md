@@ -4,9 +4,13 @@ All notable changes to WhisperKiller are documented in this file.
 
 ## [Unreleased]
 
+## [4.0.2] - 2026-10-05
+
 ### Fixed
 - **Recording errors**: Keep full transcription diagnostics in History, show a short recovery message in the capsule, and constrain error text to one line so a long engine log cannot expand the overlay across the screen.
-- **Whisper model access**: Stop immediately when a model is unreadable and identify model-open failures without displaying the CLI initialization log.
+- **Whisper model access**: Copy legacy models into the current application-support cache during local installation, preserve existing models, stop immediately when a model is unreadable, and identify model-open failures without displaying the CLI initialization log.
+
+---
 
 ## [4.0.1] - 2026-10-05
 

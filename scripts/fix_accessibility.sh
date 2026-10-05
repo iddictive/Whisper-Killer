@@ -101,22 +101,24 @@ safe_rm "$DEST_DIR/WhisperFlow.app"
 echo "🚚 Migrating data from old containers..."
 OLD_CONTAINER_DIR="$HOME/Library/Containers/com.whisperfree.app/Data/Library/Application Support"
 NEW_CONTAINER_DIR="$HOME/Library/Containers/com.whisperkiller.app/Data/Library/Application Support"
+MODEL_DIR="$HOME/Library/Application Support/WhisperKiller/Models"
 
-# Ensure new container structure exists (open might have created it, but let's be sure)
-mkdir -p "$NEW_CONTAINER_DIR/WhisperKiller/Models"
+# Match Storage.modelsDirectory used by the current non-sandboxed app.
+mkdir -p "$MODEL_DIR"
 
 # Move models from all possible old locations
 MIGRATE_PATHS=(
     "$OLD_CONTAINER_DIR/WhisperKiller/Models"
     "$OLD_CONTAINER_DIR/WhisperFree/Models"
+    "$NEW_CONTAINER_DIR/WhisperKiller/Models"
     "$HOME/Library/Application Support/WhisperFree/Models"
     "$HOME/Library/Application Support/superwhisper/Models"
 )
 
 for path in "${MIGRATE_PATHS[@]}"; do
     if [ -d "$path" ] && [ "$(ls -A "$path")" ]; then
-        echo "  - Found models in "$path", moving to new container..."
-        cp -n "$path"/*.bin "$NEW_CONTAINER_DIR/WhisperKiller/Models/" 2>/dev/null
+        echo "  - Found models in $path, copying to current model storage..."
+        cp -n "$path"/*.bin "$MODEL_DIR/" 2>/dev/null
     fi
 done
 
