@@ -106,6 +106,33 @@ struct SWSectionHeader: View {
     }
 }
 
+/// Title centering is independent of both side slots and native window controls.
+struct SWWindowHeader<Leading: View, Trailing: View>: View {
+    let title: String
+    let leading: Leading
+    let trailing: Trailing
+
+    init(_ title: String, @ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
+        self.title = title
+        self.leading = leading()
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        ZStack {
+            Text(title).font(SW.titleFont)
+            HStack(spacing: 12) {
+                Spacer().frame(width: 76)
+                leading
+                Spacer(minLength: 12)
+                trailing
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 36)
+    }
+}
+
 struct SWStatusBadge: View {
     let title: String
     let icon: String?

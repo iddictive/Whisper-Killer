@@ -241,20 +241,19 @@ struct SettingsView: View {
             modelManager.refreshDownloadedModels()
             appState.refreshCloudTranscriptionModelsIfNeeded()
         }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(columnTitle)
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            ToolbarItem(placement: .primaryAction) {
+        .safeAreaInset(edge: .top, spacing: 0) {
+            SWWindowHeader(columnTitle, leading: { EmptyView() }) {
                 Button {
                     AppDelegate.shared?.showMainMenu()
                 } label: {
-                    Image(systemName: "rectangle.grid.1x2")
+                    Label(L.tr("Menu", "Меню"), systemImage: "line.3.horizontal")
+                        .font(SW.compactFont)
                 }
+                .buttonStyle(.swPlainInteractive)
                 .help(L.tr("Open Main Menu", "Открыть основное меню"))
             }
         }
+        .ignoresSafeArea(.container, edges: .top)
         .fileImporter(
             isPresented: $showProfanityDictionaryImporter,
             allowedContentTypes: [.plainText, .utf8PlainText, .commaSeparatedText, .json],

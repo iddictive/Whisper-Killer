@@ -46,17 +46,14 @@ struct AIChatWindowView: View {
             }
         }
         .frame(minWidth: 680, minHeight: 460)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("AI Chat")
-                    .font(SW.titleFont)
-            }
-            ToolbarItem(placement: .primaryAction) {
+        .safeAreaInset(edge: .top, spacing: 0) {
+            SWWindowHeader("AI Chat", leading: { EmptyView() }) {
                 if appState.settings.hasOpenAIAPIKey {
                     AIChatModelMenu()
                 }
             }
         }
+        .ignoresSafeArea(.container, edges: .top)
         .sheet(isPresented: $isShowingSources, onDismiss: { isInputFocused = true }) {
             AIChatSourcePicker()
         }

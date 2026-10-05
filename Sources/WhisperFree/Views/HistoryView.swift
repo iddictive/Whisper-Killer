@@ -13,6 +13,9 @@ struct HistoryView: View {
     @State private var retranscribingEntryIds = Set<UUID>()
     @State private var markdownSaveURLs: [UUID: URL] = [:]
     @State private var markdownSaveErrors: [UUID: String] = [:]
+    @State private var storageSummary: HistoryStorageSummary?
+    @State private var showStorage = false
+    @State private var storageError: String?
 
     var filteredHistory: [TranscriptionHistoryEntry] {
         if searchText.isEmpty {
@@ -33,13 +36,20 @@ struct HistoryView: View {
            
            VStack(spacing: 0) {
                 windowHeader
-                statsHeader
                 searchBar
                 content
             }
             .ignoresSafeArea(.container, edges: .top)
         }
         .frame(minWidth: 460, minHeight: 480)
+        .task(id: appState.history.count) { await refreshStorage() }
+        .sheet(isPresented: $showStorage, onDismiss: {
+            Task { await refreshStorage() }
+        }) {
+            HistoryStorageView().environmentObject(appState)
+                .onAppear { stopPlayback() }
+        }
+        .onDisappear { stopPlayback() }
         .alert(
             L.tr("Rename Transcription", "Переименовать транскрипцию"),
             isPresented: .init(get: { renamingEntry != nil }, set: { if !$0 { renamingEntry = nil } })
@@ -58,82 +68,78 @@ struct HistoryView: View {
     }
 
     private var windowHeader: some View {
-        HStack(spacing: 0) {
-            // Space reserved for traffic lights on the left
-            Spacer().frame(width: 76)
+        SWWindowHeader(L.tr("Transcription History", "История транскрибации"), leading: { EmptyView() }) {
+            storageButton
+        }
+    }
 
-            Spacer()
-
-            Text(L.tr("Transcription History", "История транскрибации"))
-                .font(.system(size: 13, weight: .semibold))
-
-            Spacer()
-
-            HStack(spacing: 8) {
-                let total = appState.activeHistoryCount
-                let files = appState.fileImportCount
-
-                Text(L.historyCount(entries: total, files: files))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                if !appState.history.isEmpty {
-                    Button(role: .destructive) {
-                        appState.clearHistory()
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color.red.opacity(0.85))
-                            .frame(width: 22, height: 22)
-                            .background(Color.red.opacity(0.10))
-                            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
-                    }
-                    .buttonStyle(.swPlainInteractive)
-                    .help(L.tr("Clear All History", "Очистить всю историю"))
+    private var storageButton: some View {
+        Button { showStorage = true } label: {
+            Label {
+                if let storageSummary {
+                    Text(HistoryStorageSummary.size(storageSummary.totalBytes))
+                } else {
+                    Text(L.tr("Storage…", "Хранилище…"))
                 }
+            } icon: {
+                Image(systemName: "internaldrive")
             }
-            .frame(width: 180, alignment: .trailing)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(SW.rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
         }
-        .padding(.horizontal, 14)
-        .frame(height: 36)
+        .foregroundStyle(storageSummary.map { $0.mediaBytes >= 1_000_000_000 } == true ? SW.warning : SW.accent)
+        .buttonStyle(.swPlainInteractive)
+        .font(SW.compactFont)
+        .fixedSize()
+        .accessibilityLabel(L.tr("Manage storage", "Управление хранилищем"))
+        .help(storageError ?? L.tr("View app storage and delete recordings or downloads", "Посмотреть объём данных и удалить аудиозаписи или скачанные файлы"))
+    }
+
+    private func refreshStorage() async {
+        do {
+            storageSummary = try await HistoryStorage.shared.summary(textBytes: Storage.shared.textStorageBytes)
+            storageError = nil
+        } catch {
+            storageSummary = nil
+            storageError = error.localizedDescription
+        }
+    }
+
+    private func stopPlayback() {
+        audioPlayer?.stop()
+        audioPlayer = nil
+        playingEntryId = nil
     }
 
 
-    private var statsHeader: some View {
-        HStack(spacing: 8) {
-            statItem(title: L.tr("WPM", "WPM"), value: "\(appState.averageWPM)", icon: "speedometer", color: SW.accent)
-            statItem(title: L.tr("Words", "Слова"), value: "\(appState.totalWords)", icon: "text.wordspacing", color: SW.secondaryText)
-            statItem(title: L.tr("Saved", "Сэкономлено"), value: formatSavedTime(appState.estimatedTimeSaved), icon: "hourglass", color: SW.warning)
+    private var overviewHeader: some View {
+        HStack(spacing: 16) {
+            statItem(title: "WPM", value: "\(appState.averageWPM)", icon: "speedometer")
+            statItem(title: L.tr("Words", "Слова"), value: "\(appState.totalWords)", icon: "text.alignleft")
+            statItem(title: L.tr("Time saved", "Сэкономлено"), value: formatSavedTime(appState.estimatedTimeSaved), icon: "hourglass")
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 10)
+        .padding(16)
+        .background(SW.contentBackground)
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusLarge, style: .continuous))
     }
 
-    private func statItem(title: String, value: String, icon: String, color: Color) -> some View {
-        HStack(spacing: 7) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 10))
+    private func statItem(title: String, value: String, icon: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(SW.accent)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(value)
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
                 Text(title)
-                    .font(SW.labelFont)
+                    .font(SW.compactFont)
+                    .foregroundStyle(.secondary)
             }
-            .foregroundStyle(color)
-            
-            Text(value)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(SW.rowBackground)
-        .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
-                .strokeBorder(SW.border, lineWidth: 1)
-        )
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var searchBar: some View {
@@ -155,29 +161,35 @@ struct HistoryView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(SW.rowBackground)
+        .padding(.vertical, 10)
+        .background(SW.contentBackground)
         .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous).strokeBorder(SW.border, lineWidth: 1))
         .padding(.horizontal, 20)
+        .padding(.top, 12)
         .padding(.bottom, 12)
     }
 
     private var content: some View {
-        Group {
-            if filteredHistory.isEmpty {
-                emptyView
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(filteredHistory, id: \.entryId) { entry in
-                            historyRow(entry)
-                        }
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                overviewHeader
+                if filteredHistory.isEmpty {
+                    emptyView.frame(minHeight: 280)
+                } else {
+                    ForEach(filteredHistory, id: \.entryId) { entry in
+                        historyRow(entry)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 2)
-                    .padding(.bottom, 20)
                 }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 20)
+        }
+        .mask {
+            VStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 12)
+                Rectangle()
             }
         }
     }
@@ -200,18 +212,14 @@ struct HistoryView: View {
 
     @ViewBuilder
     private func historyRow(_ entry: TranscriptionHistoryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             rowHeader(entry)
             rowContent(entry)
             rowActions(entry)
         }
-        .padding(12)
-        .background(SW.rowBackground)
-        .clipShape(RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: SW.radiusMedium, style: .continuous)
-                .strokeBorder(SW.border, lineWidth: 1)
-        )
+        .padding(16)
+        .background(SW.contentBackground)
+        .clipShape(RoundedRectangle(cornerRadius: SW.radiusLarge, style: .continuous))
     }
 
     private func rowHeader(_ entry: TranscriptionHistoryEntry) -> some View {
@@ -224,20 +232,13 @@ struct HistoryView: View {
                 Text(entry.modeName)
                     .font(SW.labelFont)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(SW.accent.opacity(0.12))
-            .foregroundStyle(SW.accent)
-            .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+            .foregroundStyle(.secondary)
 
             // Engine badge
             Text(entry.engineUsed)
-                .font(.system(size: 9, weight: .semibold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(SW.rowBackground)
+                .font(SW.compactFont)
                 .foregroundStyle(.secondary)
-                .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
+                .lineLimit(1)
             
             // File badge if imported
             if entry.isFromFileImport {
@@ -288,15 +289,17 @@ struct HistoryView: View {
             Spacer()
 
             Text(entry.date, style: .relative)
-                .font(.system(size: 10))
+                .font(SW.compactFont)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .layoutPriority(1)
         }
     }
 
     private func rowContent(_ entry: TranscriptionHistoryEntry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(preferredDisplayText(for: entry))
-                .font(.system(size: 13, weight: .medium))
+                .font(.body)
                 .lineSpacing(3)
                 .lineLimit(expandedEntryId == entry.entryId ? nil : 3)
                 .contentShape(Rectangle())
@@ -368,48 +371,12 @@ struct HistoryView: View {
                 NSPasteboard.general.setString(preferredDisplayText(for: entry), forType: .string)
             }
 
-            pillActionButton(
-                title: L.tr("Rename", "Переименовать"),
-                icon: "pencil",
-                color: SW.secondaryText,
-                bg: SW.rowBackground
-            ) {
-                newTranscriptionText = entry.summaryText ?? entry.processedText
-                renamingEntry = entry
-            }
-
-            if entry.summaryText?.isEmpty == false {
-                pillActionButton(
-                    title: L.tr("Transcript", "Транскрипт"),
-                    icon: "text.alignleft",
-                    color: SW.secondaryText,
-                    bg: SW.rowBackground
-                ) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(entry.processedText, forType: .string)
-                }
-            }
-
-            if canSaveMarkdown(for: entry) {
-                pillActionButton(
-                    title: L.tr("Save as MD", "Save as MD"),
-                    icon: "square.and.arrow.down",
-                    color: Color.accentColor,
-                    bg: SW.accent.opacity(0.12)
-                ) {
-                    saveMarkdown(for: entry)
-                }
-
-                markdownSaveStatus(entry)
-            }
-
             if let path = entry.audioFilePath, FileManager.default.fileExists(atPath: path) {
                 let isRetranscribing = retranscribingEntryIds.contains(entry.entryId)
                 pillActionButton(
                     title: isRetranscribing ? L.tr("Retranscribing...", "Ретранскрипт...") : L.tr("Retranscribe", "Ретранскрипт"),
                     icon: isRetranscribing ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.clockwise",
-                    color: Color.accentColor,
-                    bg: SW.accent.opacity(0.12),
+                    color: SW.secondaryText,
                     disabled: isRetranscribing || appState.state != .idle || appState.isProcessingActive
                 ) {
                     let entryId = entry.entryId
@@ -423,49 +390,60 @@ struct HistoryView: View {
                 pillActionButton(
                     title: playingEntryId == entry.entryId ? L.tr("Pause", "Пауза") : L.tr("Play", "Воспроизвести"),
                     icon: playingEntryId == entry.entryId ? "pause.fill" : "play.fill",
-                    color: SW.warning,
-                    bg: SW.warning.opacity(0.12)
+                    color: SW.secondaryText
                 ) {
                     togglePlay(entry: entry)
                 }
 
-                pillActionButton(
-                    title: "Finder",
-                    icon: "folder.fill",
-                    color: SW.secondaryText,
-                    bg: SW.rowBackground
-                ) {
-                    let url = URL(fileURLWithPath: path)
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                }
-            }
-
-            if entry.rawText != entry.processedText {
-                pillActionButton(
-                    title: L.tr("Raw", "Сырой"),
-                    icon: "doc.on.clipboard",
-                    color: SW.secondaryText,
-                    bg: SW.rowBackground
-                ) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(entry.rawText, forType: .string)
-                }
             }
 
             Spacer(minLength: 4)
-
-            Button(role: .destructive) {
-                withAnimation { appState.deleteTranscriptionHistoryEntry(entry) }
+            markdownSaveStatus(entry)
+            Menu {
+                Button(L.tr("Edit Text…", "Изменить текст…"), systemImage: "pencil") {
+                    newTranscriptionText = entry.summaryText ?? entry.processedText
+                    renamingEntry = entry
+                }
+                if entry.summaryText?.isEmpty == false {
+                    Button(L.tr("Copy Transcript", "Копировать транскрипт"), systemImage: "text.alignleft") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(entry.processedText, forType: .string)
+                    }
+                }
+                if entry.rawText != entry.processedText {
+                    Button(L.tr("Copy Raw Text", "Копировать исходный текст"), systemImage: "doc.on.clipboard") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(entry.rawText, forType: .string)
+                    }
+                }
+                if canSaveMarkdown(for: entry) {
+                    Button(L.tr("Save as Markdown…", "Сохранить в Markdown…"), systemImage: "square.and.arrow.down") {
+                        saveMarkdown(for: entry)
+                    }
+                }
+                if let path = entry.audioFilePath, FileManager.default.fileExists(atPath: path) {
+                    Button(L.tr("Show in Finder", "Показать в Finder"), systemImage: "folder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                    }
+                }
+                Divider()
+                Button(L.tr("Delete Entry", "Удалить запись"), systemImage: "trash", role: .destructive) {
+                    if playingEntryId == entry.entryId { stopPlayback() }
+                    withAnimation { appState.deleteTranscriptionHistoryEntry(entry) }
+                }
             } label: {
-                Image(systemName: "trash.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.red.opacity(0.85))
-                    .frame(width: 24, height: 22)
-                    .background(Color.red.opacity(0.10))
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 26)
+                    .background(SW.rowBackground)
                     .clipShape(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous))
             }
-            .buttonStyle(.swPlainInteractive)
-            .help(L.tr("Delete Entry", "Удалить запись"))
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel(L.tr("More actions", "Другие действия"))
+            .help(L.tr("Edit, export or delete this entry", "Изменить, экспортировать или удалить запись"))
         }
     }
 
@@ -481,6 +459,7 @@ struct HistoryView: View {
             HStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.system(size: 10, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)

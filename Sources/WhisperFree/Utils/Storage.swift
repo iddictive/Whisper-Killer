@@ -13,6 +13,12 @@ final class Storage {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
+    var textStorageBytes: Int64 {
+        [settingsKey, historyKey, aiChatConversationsKey].reduce(0) {
+            $0 + Int64(defaults.data(forKey: $1)?.count ?? 0)
+        }
+    }
+
     // MARK: - Settings
 
     func loadSettings() -> AppSettings {

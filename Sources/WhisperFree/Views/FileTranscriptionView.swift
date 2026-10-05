@@ -44,9 +44,14 @@ struct FileTranscriptionView: View {
             errorOverlay
         }
         .frame(minWidth: 800, minHeight: 550)
+        .disabled(appState.isCleaningHistoryStorage)
+        .onChange(of: queueItems.map { $0.url.standardizedFileURL.path }) { _, paths in
+            appState.fileTranscriptionQueuePaths = Set(paths)
+        }
         .onDisappear {
             for item in queueItems { item.cancel() }
             queueItems.removeAll()
+            appState.fileTranscriptionQueuePaths.removeAll()
         }
         .onChange(of: appState.settings.cloudTranscriptionModel) { _, _ in
             updateVisibleCosts()
@@ -103,13 +108,8 @@ struct FileTranscriptionView: View {
                 bottomBar
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(L.tr("File Transcription", "Транскрибация файла"))
-                    .font(.system(size: 13, weight: .semibold))
-            }
-
-            ToolbarItem(placement: .primaryAction) {
+        .safeAreaInset(edge: .top, spacing: 0) {
+            SWWindowHeader(L.tr("File Transcription", "Транскрибация файла"), leading: { EmptyView() }) {
                 HStack(spacing: 8) {
                     if !queueItems.isEmpty {
                         let doneCount = queueItems.filter { $0.status == .done }.count
@@ -132,6 +132,7 @@ struct FileTranscriptionView: View {
                 }
             }
         }
+        .ignoresSafeArea(.container, edges: .top)
     }
 
     // MARK: - Config Bar
@@ -525,6 +526,10 @@ struct FileTranscriptionView: View {
     // MARK: - Queue Logic
 
     private func addToQueue(_ urls: [URL]) {
+        guard !appState.isCleaningHistoryStorage else {
+            error = L.tr("Storage cleanup is in progress. Add the files again when it finishes.", "Идёт очистка хранилища. Добавьте файлы повторно после её завершения.")
+            return
+        }
         let supportedURLs = FileTranscriptionSupport.supportedURLs(from: urls)
         let skippedCount = urls.count - supportedURLs.count
 

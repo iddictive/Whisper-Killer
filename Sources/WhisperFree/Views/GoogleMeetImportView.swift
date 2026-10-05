@@ -82,9 +82,15 @@ final class GoogleMeetImportViewModel: ObservableObject {
 
     func importMeeting(_ meeting: GoogleCalendarMeeting, onImport: @escaping ([URL]) -> Void) {
         guard let recording = meeting.recording else { return }
+        guard beginImport() else { return }
+        importingMeetingID = meeting.id
 
         Task {
-            importingMeetingID = meeting.id
+            defer {
+                downloadProgress[meeting.id] = nil
+                importingMeetingID = nil
+                AppState.shared.activeMeetImportCount -= 1
+            }
             if !cachedRecordingIDs.contains(recording.id) {
                 downloadProgress[meeting.id] = GoogleDriveDownloadProgress(downloadedBytes: 0, totalBytes: recording.sizeBytes)
             }
@@ -106,8 +112,6 @@ final class GoogleMeetImportViewModel: ObservableObject {
             } catch {
                 errorMessage = error.localizedDescription
             }
-            downloadProgress[meeting.id] = nil
-            importingMeetingID = nil
         }
     }
 
@@ -156,9 +160,15 @@ final class GoogleMeetImportViewModel: ObservableObject {
             errorMessage = GoogleDriveImportError.invalidDriveLink.localizedDescription
             return
         }
+        guard beginImport() else { return }
+        isImportingDriveLink = true
 
         Task {
-            isImportingDriveLink = true
+            defer {
+                driveLinkProgress = nil
+                isImportingDriveLink = false
+                AppState.shared.activeMeetImportCount -= 1
+            }
             driveLinkProgress = GoogleDriveDownloadProgress(downloadedBytes: 0, totalBytes: nil)
             errorMessage = nil
             do {
@@ -177,9 +187,16 @@ final class GoogleMeetImportViewModel: ObservableObject {
             } catch {
                 errorMessage = error.localizedDescription
             }
-            driveLinkProgress = nil
-            isImportingDriveLink = false
         }
+    }
+
+    private func beginImport() -> Bool {
+        guard !AppState.shared.isCleaningHistoryStorage else {
+            errorMessage = L.tr("Wait for storage cleanup to finish.", "Дождитесь завершения очистки хранилища.")
+            return false
+        }
+        AppState.shared.activeMeetImportCount += 1
+        return true
     }
 
     private func runBusyTask(_ operation: @escaping () async throws -> Void) async {
@@ -214,6 +231,7 @@ final class GoogleMeetImportViewModel: ObservableObject {
 }
 
 struct GoogleMeetImportView: View {
+    @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = GoogleMeetImportViewModel()
     @State private var isShowingDriveLinkImport = false
     @State private var driveLink = ""
@@ -237,8 +255,8 @@ struct GoogleMeetImportView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
+        .safeAreaInset(edge: .top, spacing: 0) {
+            SWWindowHeader(L.tr("Meet Calendar", "Календарь Meet"), leading: {
                 Button {
                     onClose()
                 } label: {
@@ -250,14 +268,7 @@ struct GoogleMeetImportView: View {
                 }
                 .buttonStyle(.swPlainInteractive)
                 .help(L.tr("Back to file transcription", "Вернуться к транскрибации файла"))
-            }
-
-            ToolbarItem(placement: .principal) {
-                Text(L.tr("Meet Calendar", "Календарь Meet"))
-                    .font(.system(size: 13, weight: .semibold))
-            }
-
-            ToolbarItem(placement: .primaryAction) {
+            }) {
                 HStack(spacing: 8) {
                     Button {
                         isConfirmingClearDownloads = true
@@ -324,6 +335,11 @@ struct GoogleMeetImportView: View {
 
                 }
             }
+        }
+        .ignoresSafeArea(.container, edges: .top)
+        .disabled(appState.isCleaningHistoryStorage)
+        .onReceive(appState.$isCleaningHistoryStorage.dropFirst()) { isCleaning in
+            if !isCleaning { viewModel.refreshDownloads() }
         }
         .onAppear {
             viewModel.refreshAccountState()

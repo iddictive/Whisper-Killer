@@ -42,6 +42,9 @@ final class AppState: ObservableObject {
     @Published var processingStage: ProcessingStage = .none
     @Published var settings: AppSettings
     @Published var history: [TranscriptionHistoryEntry] = []
+    @Published var isCleaningHistoryStorage = false
+    @Published var fileTranscriptionQueuePaths = Set<String>()
+    @Published var activeMeetImportCount = 0
     @Published var lastError: String?
     @Published var lastTranscription: String?
     @Published var fileTranscriptionImportRequest: FileTranscriptionImportRequest?
@@ -1125,7 +1128,7 @@ final class AppState: ObservableObject {
     }
 
     func startRecording() {
-        guard state == .idle else { return }
+        guard state == .idle && !isCleaningHistoryStorage else { return }
         guard validateTranscriptionPrerequisites(requiresMicrophone: true) else {
             resetFailedRecordingStart(keepErrorOverlay: true)
             return
@@ -1303,7 +1306,7 @@ final class AppState: ObservableObject {
     }
 
     func retranscribeHistoryEntry(_ entry: TranscriptionHistoryEntry) async {
-        guard state == .idle && backgroundProcessingCount == 0 else {
+        guard state == .idle && backgroundProcessingCount == 0 && !isCleaningHistoryStorage else {
             showError("Wait for the current transcription to finish first.")
             return
         }
@@ -1930,6 +1933,51 @@ final class AppState: ObservableObject {
     }
 
     // MARK: - History
+
+    var canCleanHistoryStorage: Bool {
+        state == .idle && !isProcessingActive && fileTranscriptionQueuePaths.isEmpty
+            && activeMeetImportCount == 0 && !isCleaningHistoryStorage
+    }
+
+    func cleanHistoryStorage(_ cleanup: HistoryStorageCleanup) async throws {
+        guard canCleanHistoryStorage else {
+            throw NSError(domain: "HistoryStorage", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                L.tr("Finish recording and downloads, then clear the file queue before cleaning storage.", "Завершите запись и скачивание, затем освободите очередь файлов перед очисткой.")])
+        }
+        isCleaningHistoryStorage = true
+        defer { isCleaningHistoryStorage = false }
+
+        if cleanup == .downloads {
+            defer { reconcileMissingHistoryAudio() }
+            _ = try await GoogleMeetDownloadCache.shared.clear()
+            return
+        }
+
+        let result = try await HistoryStorage.shared.removeRecordings()
+        for index in history.indices {
+            if let path = history[index].audioFilePath,
+               result.removedPaths.contains(URL(fileURLWithPath: path).standardizedFileURL.path) {
+                history[index].audioFilePath = nil
+                history[index].ownsAudioFile = false
+            }
+        }
+        if cleanup == .history && result.failureCount == 0 { history.removeAll() }
+        Storage.shared.saveHistory(history)
+        if result.failureCount > 0 {
+            throw NSError(domain: "HistoryStorage", code: 2, userInfo: [NSLocalizedDescriptionKey:
+                L.tr("Could not delete \(result.failureCount) audio files. Try again after closing apps using them.", "Не удалось удалить аудиофайлы: \(result.failureCount). Закройте приложения, использующие их, и повторите.")])
+        }
+    }
+
+    private func reconcileMissingHistoryAudio() {
+        for index in history.indices {
+            if let path = history[index].audioFilePath, !FileManager.default.fileExists(atPath: path) {
+                history[index].audioFilePath = nil
+                history[index].ownsAudioFile = false
+            }
+        }
+        Storage.shared.saveHistory(history)
+    }
 
     func deleteTranscriptionHistoryEntry(_ entry: TranscriptionHistoryEntry) {
         Storage.shared.deleteTranscriptionHistoryEntry(id: entry.entryId)

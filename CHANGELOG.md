@@ -7,11 +7,16 @@ All notable changes to WhisperKiller are documented in this file.
 ### Added
 - **Cloud providers and model selection**: Keep OpenAI as the default, allow an OpenAI-compatible API endpoint with its own key, and combine dynamic model menus with manual IDs for transcription, refinement and AI Chat.
 - **Parakeet Ultra**: Add a separate Core ML model option while preserving saved TDT v3 choices and caches.
+- **History storage management**: Show local storage usage for recorded audio, Meet downloads, text and models. Delete audio while keeping transcripts, remove downloaded Meet files, or delete all history with explicit consequences and confirmation. Imported originals and models are preserved.
 
 ### Changed
 - **Engine updates**: Upgrade FluidAudio to 0.17.5 and the managed MLX Qwen3-ASR runtime to 0.4.4. Use GPT-6 Luna for new cloud text configurations and Qwen3.5 4B for new Ollama configurations; preserve saved model choices. Update the standalone Python download to 3.12.15 and use the current whisper.cpp Homebrew formula.
 - **Cloud API compatibility**: Send `languages[]` to OpenAI GPT Transcribe, retain manual model choices when catalogs change, and omit cost estimates for unknown models or custom providers.
 - **Cloud settings**: Keep provider and API key controls visible when AI refinement is disabled so its checkbox stays in place and AI Chat remains configurable.
+- **History and menu layout**: Use lighter borderless history cards, a scrolling statistics summary, sticky search with a fading scroll edge and an entry menu for editing, export and deletion. Center window titles independently of the right-side actions across History, Settings, File Transcription, Meet and AI Chat. Remove the history entry counter, clarify the Settings menu button, and group menu actions by workflow and app maintenance, with Quit last.
+
+### Fixed
+- **Storage cleanup during imports**: Wait for active Meet and Drive downloads before allowing cleanup, and prevent imports from starting while cleanup runs, so downloaded files reach the transcription queue.
 
 ## [3.58] - 2026-09-22
 

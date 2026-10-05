@@ -172,19 +172,11 @@ struct MenuBarView: View {
                     appState.requestGoogleMeetImport()
                 }
 
-                Divider()
-
-                menuButton(icon: "gear", title: L.tr("Settings", "Настройки")) {
-                    AppDelegate.shared?.showSettings()
-                }
                 menuButton(icon: "clock", title: L.tr("History", "История")) {
                     AppDelegate.shared?.showHistory()
                 }
                 menuButton(icon: "bubble.left.and.text.bubble.right", title: "AI Chat") {
                     AppDelegate.shared?.showAIChat()
-                }
-                menuButton(icon: "wand.and.stars", title: L.tr("Setup Wizard", "Мастер настройки")) {
-                    AppDelegate.shared?.showSetupWizard()
                 }
 
                 if AppState.liveTranslatorFeatureAvailable && appState.settings.liveTranslatorEnabled {
@@ -203,14 +195,20 @@ struct MenuBarView: View {
 
             Divider()
 
-            menuButton(icon: "power", title: L.tr("Quit", "Выйти")) {
-                NSApplication.shared.terminate(nil)
+            menuButton(icon: "gear", title: L.tr("Settings", "Настройки")) {
+                AppDelegate.shared?.showSettings()
+            }
+            menuButton(icon: "arrow.clockwise", title: L.tr("Check for Updates...", "Проверить обновления...")) {
+                GitHubUpdater.shared.checkForUpdates(manual: true)
+            }
+            menuButton(icon: "wand.and.stars", title: L.tr("Setup Wizard", "Мастер настройки")) {
+                AppDelegate.shared?.showSetupWizard()
             }
 
             Divider()
 
-            menuButton(icon: "arrow.clockwise", title: L.tr("Check for Updates...", "Проверить обновления...")) {
-                GitHubUpdater.shared.checkForUpdates(manual: true)
+            menuButton(icon: "power", title: L.tr("Quit", "Выйти")) {
+                NSApplication.shared.terminate(nil)
             }
         }
         .frame(
