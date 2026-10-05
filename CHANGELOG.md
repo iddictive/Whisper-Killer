@@ -407,3 +407,10 @@ All notable changes to WhisperKiller are documented in this file.
 - **Initial public release as Whisper Free**: Menu bar dictation with configurable hotkeys, local `whisper.cpp` and OpenAI cloud transcription, automatic paste or typing, and transcription history.
 - **AI modes**: Dictation, Email, Code and Notes presets with custom prompts and OpenAI or Perplexity text processing.
 - **First-run setup and updates**: Permission guidance, local model selection and automatic updates through Sparkle.
+
+---
+
+## [1.0]
+
+### Added
+- **Early dictation prototype (early 2026, approximate retrospective)**: Record speech with a global shortcut, transcribe it locally with Whisper and insert the text into the active app.
