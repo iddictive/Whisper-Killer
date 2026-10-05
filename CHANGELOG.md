@@ -206,11 +206,203 @@ All notable changes to WhisperKiller are documented in this file.
 
 ---
 
-## [3.0.0] - 2026-05-01
+## [3.0] - 2026-05-01
+
+### Changed
+- **Interface refresh**: Rework the menu bar, file queue, history, settings and setup wizard; separate file-processing jobs from the file queue view.
+
+### Fixed
+- **Transcript cleanup**: Share subtitle-credit and repetition filtering across local transcription, cloud transcription and summaries.
+- **Recording and insertion**: Check microphone and Accessibility permissions before recording and release modifier keys after inserting text.
+
+---
+
+## [2.0.72] - 2026-04-29
 
 ### Added
-- **WhisperKiller 3.0 Architecture**: Complete architecture rewrite with support for cloud and local transcription backends.
-- **Local whisper.cpp Engine**: Dynamic discovery and execution of local GGUF/bin models.
-- **AI Post-Processing**: Specialized output modes (Dictation, Email, Code, Notes, User Story) with custom system prompts.
-- **Automated Insertion**: Direct keystroke typing (`AutoTyper`) and single-block clipboard insertion into the frontmost macOS application.
-- **Profanity Filter**: Configurable profanity filtering with custom wordlist importing.
+- **Local engine setup**: Install `whisper.cpp` through Homebrew from the app's dependency setup flow.
+
+---
+
+## [2.0.71] - 2026-04-15
+
+### Fixed
+- **Menu bar sizing**: Remove the fixed minimum popover height to avoid empty space below the controls.
+
+---
+
+## [2.0.70] - 2026-04-15
+
+### Changed
+- **Local transcription controls**: Improve `whisper.cpp` execution and add cancellation during transcription and AI processing.
+
+---
+
+## [2.0.69] - 2026-04-06
+
+### Fixed
+- **Menu bar layout**: Resize the popover to fit its current content.
+
+---
+
+## [2.0.68] - 2026-04-06
+
+### Added
+- **Built-in profanity dictionaries**: Bundle English and Russian wordlists alongside the existing filters and custom dictionaries.
+
+---
+
+## [2.0.67] - 2026-04-05
+
+### Added
+- **Custom profanity dictionaries**: Import and manage wordlists in Settings.
+
+---
+
+## [2.0.66] - 2026-03-31
+
+### Fixed
+- **Failed recording recovery**: Keep audio from failed transcription attempts in history for later retranscription.
+
+---
+
+## [2.0.65] - 2026-03-29
+
+### Fixed
+- **Credentials and recovery**: Improve OpenAI API-key checks, recovery of saved recordings and recording-overlay placement.
+
+---
+
+## [2.0.64] - 2026-03-26
+
+### Fixed
+- **Updates and recording tails**: Stabilize application updates and preserve the end of speech when recording stops.
+
+---
+
+## [2.0.63] - 2026-03-26
+
+### Added
+- **History retranscription**: Run transcription again from a saved recording.
+
+### Changed
+- **Live Translator**: Hide its controls from the interface while retaining the implementation.
+
+---
+
+## [2.0.62] - 2026-03-26
+
+### Added
+- **User Story mode**: Turn spoken product requirements into user stories with acceptance criteria.
+
+### Changed
+- **Live Translator**: Improve microphone and system-audio translation.
+
+---
+
+## [2.0.61] - 2026-03-25
+
+### Added
+- **File summaries**: Automatically summarize imported transcripts and save the summary alongside the text in history.
+
+---
+
+## [2.0.60] - 2026-03-25
+
+### Fixed
+- **Speaker diarization**: Route text processing and speaker separation through OpenAI, removing the Perplexity-dependent bypass.
+
+---
+
+## [2.0.59] - 2026-03-09
+
+### Fixed
+- **Transcription stability**: Address local transcription hangs, voice-activity detection crashes and setup-wizard defaults.
+
+---
+
+## [2.0.58] - 2026-03-06
+
+### Changed
+- **File transcription**: Refine queue cards, range selection and cloud cost estimates; expand local Whisper artifact filtering.
+
+---
+
+## [2.0.57] - 2026-03-06
+
+### Added
+- **Time range selection**: Choose the start and end of an audio or video segment with a dual slider.
+
+### Changed
+- **App theme**: Switch the interface accent to blue.
+
+---
+
+## [2.0.56] - 2026-03-06
+
+### Changed
+- **File queue actions**: Enlarge the start and cancel controls on queue cards.
+
+---
+
+## [2.0.55] - 2026-03-06
+
+### Changed
+- **Explicit queue start**: Wait for Start or Start All instead of transcribing files immediately on import; show cloud diarization independently of AI cleanup.
+
+---
+
+## [2.0.54] - 2026-03-06
+
+### Fixed
+- **Cloud Whisper artifacts**: Adjust the transcription prompt to suppress subtitle/editor credits and repeated closing phrases.
+
+---
+
+## [2.0.53] - 2026-03-06
+
+### Changed
+- **File queue**: Redesign queue cards and improve cloud transcript cleanup.
+
+---
+
+## [2.0.52] - 2026-03-05
+
+### Fixed
+- **Recording window focus**: Prevent window jitter when switching applications with Cmd-Tab during recording.
+
+---
+
+## [2.0.51] - 2026-03-05
+
+### Added
+- **File transcription queue**: Process audio and video files in the background with progress, engine selection, speaker separation and cancellation.
+
+### Changed
+- **Settings and statistics**: Reorganize Settings and exclude file imports from dictation usage statistics.
+
+### Fixed
+- **Update persistence**: Preserve saved settings and existing macOS permission grants across updates.
+
+---
+
+## [2.0.35] - 2026-03-04
+
+### Added
+- **Experimental Auto-Enter**: Optionally press Enter after inserting a transcription.
+
+---
+
+## [2.0.34] - 2026-03-04
+
+### Changed
+- **Updater and recording indicators**: Add GitHub release update checks, refine the recording overlay and offer a monochrome menu bar icon.
+
+---
+
+## [2.0.0] - 2026-03-04
+
+### Added
+- **Initial public release as Whisper Free**: Menu bar dictation with configurable hotkeys, local `whisper.cpp` and OpenAI cloud transcription, automatic paste or typing, and transcription history.
+- **AI modes**: Dictation, Email, Code and Notes presets with custom prompts and OpenAI or Perplexity text processing.
+- **First-run setup and updates**: Permission guidance, local model selection and automatic updates through Sparkle.
