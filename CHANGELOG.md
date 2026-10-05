@@ -11,6 +11,7 @@ All notable changes to WhisperKiller are documented in this file.
 ### Changed
 - **Engine updates**: Upgrade FluidAudio to 0.17.5 and the managed MLX Qwen3-ASR runtime to 0.4.4. Use GPT-6 Luna for new cloud text configurations and Qwen3.5 4B for new Ollama configurations; preserve saved model choices. Update the standalone Python download to 3.12.15 and use the current whisper.cpp Homebrew formula.
 - **Cloud API compatibility**: Send `languages[]` to OpenAI GPT Transcribe, retain manual model choices when catalogs change, and omit cost estimates for unknown models or custom providers.
+- **Cloud settings**: Keep provider and API key controls visible when AI refinement is disabled so its checkbox stays in place and AI Chat remains configurable.
 
 ## [3.58] - 2026-09-22
 

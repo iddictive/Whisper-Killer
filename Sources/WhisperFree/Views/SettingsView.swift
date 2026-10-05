@@ -924,10 +924,7 @@ struct SettingsView: View {
     }
 
     private var shouldShowAIRefinementKeyCard: Bool {
-        appState.settings.engineType != .cloud && (
-        appState.settings.enablePostProcessing ||
-        appState.settings.enableSpeakerDiarization ||
-        appState.settings.hasOpenAIAPIKey)
+        appState.settings.engineType != .cloud
     }
 
     private var integrationsSection: some View {
