@@ -176,6 +176,15 @@ launch_dev_app() {
     echo "✅ WhisperKiller Dev is running (PID $APP_PID)"
 }
 
+ensure_dev_app() {
+    if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
+        return
+    fi
+    if [ -x "$APP_EXECUTABLE" ]; then
+        launch_dev_app
+    fi
+}
+
 cleanup() {
     echo ""
     echo "🛑 Stopping WhisperKiller Dev..."
@@ -203,8 +212,22 @@ acquire_watcher_lock() {
     fi
 
     if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then
-        echo "❌ Dev watcher is already running (PID $existing_pid)."
-        exit 1
+        local existing_command existing_cwd
+        existing_command="$(ps -p "$existing_pid" -o command= 2>/dev/null)"
+        existing_cwd="$(/usr/sbin/lsof -a -p "$existing_pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+        case "$existing_command" in
+            "bash scripts/dev.command"|"/bin/bash scripts/dev.command"|"bash $ROOT_DIR/scripts/dev.command"|"/bin/bash $ROOT_DIR/scripts/dev.command") ;;
+            *) echo "❌ Dev watcher lock points to a different process (PID $existing_pid)."; exit 1 ;;
+        esac
+        if [ "$existing_cwd" != "$ROOT_DIR" ]; then
+            echo "❌ Dev watcher lock belongs to another checkout (PID $existing_pid)."
+            exit 1
+        fi
+        # The running watcher remains the only owner of builds and app processes.
+        if kill -USR1 "$existing_pid" 2>/dev/null; then
+            echo "✅ Reusing Dev watcher (PID $existing_pid)."
+            exit 0
+        fi
     fi
 
     rm -f "$LOCK_DIR/pid"
@@ -222,6 +245,7 @@ main() {
     acquire_watcher_lock
     trap cleanup EXIT
     trap request_exit INT TERM
+    trap ensure_dev_app USR1
 
     echo "👀 Watching Package.swift and Sources/WhisperFree"
     echo "📦 Persistent dev bundle: $APP_BUNDLE"

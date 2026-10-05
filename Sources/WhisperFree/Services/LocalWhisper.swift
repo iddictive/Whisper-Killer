@@ -459,14 +459,16 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         process.standardOutput = pipe
         process.standardError = pipe
 
+        let data: Data
         do {
             try process.run()
+            // Drain while the child is running: newer CLI help fills the pipe buffer.
+            data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
         } catch {
             return []
         }
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let helpText = String(data: data, encoding: .utf8) ?? ""
         let regex = try? NSRegularExpression(pattern: #"--[A-Za-z0-9][A-Za-z0-9-]*"#)
         let range = NSRange(helpText.startIndex..<helpText.endIndex, in: helpText)

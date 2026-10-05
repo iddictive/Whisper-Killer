@@ -9,12 +9,18 @@ copying a version number.
 
 1. Keep user-facing changes in `Unreleased` while implementing a batch.
 2. Run `make release-prepare` after the batch is ready. It reads remote tags and
-   finalizes the notes and the next minor version together. To choose the next
-   major version explicitly, use `make release-prepare VERSION=4.0` (or
-   `python3 scripts/release.py prepare --remote origin --version 4.0`). Explicit
-   selection permits only the next minor or the next major `.0`; it refuses
-   skips, empty notes, stale metadata, or a previous prepared version that is
-   not yet tagged.
+   finalizes the notes and the next version together: next minor for `x.y`, next
+   patch for `x.y.z`. Use `make release-prepare VERSION=4.0` (or
+   `python3 scripts/release.py prepare --remote origin --version 4.0`) to select
+   a version explicitly. Selection permits only the next patch, next minor,
+   or next major `.0`; a new minor or major may start at its first patch `.1`.
+   It refuses skipped versions, `.0` patch aliases, empty notes, or stale metadata.
+   An already prepared, untagged batch requires explicit `VERSION` to retarget
+   it. The new version must be higher than its prepared version and an allowed
+   successor of the latest remote tag; its preceding section must still be that
+   tagged release. Retargeting preserves the same notes and date, updates both
+   bundle version fields, and requires empty `Unreleased`. Tagged releases cannot
+   be retargeted.
 3. Review the exact notes and version, run `make test`, and commit both files
    with the implementation. Push to `main` only when this batch should publish.
 4. CI validates metadata before building. An already released version performs

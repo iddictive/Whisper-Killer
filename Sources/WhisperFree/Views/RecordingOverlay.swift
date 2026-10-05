@@ -8,6 +8,7 @@ import Foundation
 struct WaveformView: View {
     let levels: [Float]
     let barCount: Int = 24
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 3) {
@@ -22,7 +23,7 @@ struct WaveformView: View {
                         )
                     )
                     .frame(width: 3, height: max(2, CGFloat(level) * 18))
-                    .animation(.spring(response: 0.15, dampingFraction: 0.6), value: level)
+                    .animation(reduceMotion ? nil : .spring(response: 0.15, dampingFraction: 0.6), value: level)
             }
         }
         .frame(width: CGFloat(barCount * 6 - 3), height: 20)
@@ -34,10 +35,44 @@ struct WaveformView: View {
 struct RecordingOverlayContent: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var recorder: AudioRecorder
+    @ObservedObject fileprivate var geometry: OverlayGeometry
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     @State private var pulse = false
+    @State private var reservesBackgroundProcessingSlot = false
 
     var body: some View {
+        OverlayCapsuleLayout(size: geometry.size, reduceMotion: reduceMotion, onNaturalSize: { size, reduced in
+            geometry.retarget(size, reduceMotion: reduced)
+        }) {
+            overlayContents
+        }
+        .background(
+            ZStack(alignment: .leading) {
+                Capsule().fill(.ultraThinMaterial)
+                Capsule().fill(Color.black.opacity(0.45))
+                if appState.isProcessingActive {
+                    processingProgressFill(cornerRadius: SW.radiusLarge, opacity: 0.10)
+                }
+            }
+        )
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
+        .environment(\.colorScheme, .dark)
+        .padding(6)
+        .onAppear {
+            reservesBackgroundProcessingSlot = appState.backgroundProcessingCount > 0
+            updatePulse()
+        }
+        .onChange(of: reduceMotion) { _, _ in updatePulse() }
+        .onChange(of: appState.state) { _, state in
+            if state == .recording {
+                reservesBackgroundProcessingSlot = appState.backgroundProcessingCount > 0
+            }
+        }
+    }
+
+    private var overlayContents: some View {
         HStack(spacing: 12) {
             ZStack {
                 Circle()
@@ -52,25 +87,18 @@ struct RecordingOverlayContent: View {
 
             if appState.state == .recording {
                 WaveformView(levels: recorder.audioLevels)
+                    .overlay {
+                        if recorder.isTooQuiet {
+                            recordingQualityBadge("speaker.slash.fill", L.tr("Low", "Тихо"))
+                        } else if recorder.isTooNoisy {
+                            recordingQualityBadge("waveform.badge.exclamationmark", L.tr("Noise", "Шум"))
+                        }
+                    }
 
-                if appState.backgroundProcessingCount > 0 {
+                if appState.backgroundProcessingCount > 0 || reservesBackgroundProcessingSlot {
                     backgroundProcessingPill
-                }
-                
-                if recorder.isTooQuiet {
-                    HStack(spacing: 3) {
-                        Image(systemName: "speaker.slash.fill").font(.system(size: 9))
-                        Text(L.tr("Low", "Тихо")).font(.system(size: 10, weight: .bold))
-                    }
-                    .foregroundStyle(SW.warning).padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).fill(SW.warning.opacity(0.15)))
-                } else if recorder.isTooNoisy {
-                    HStack(spacing: 3) {
-                        Image(systemName: "waveform.badge.exclamationmark").font(.system(size: 9))
-                        Text(L.tr("Noise", "Шум")).font(.system(size: 10, weight: .bold))
-                    }
-                    .foregroundStyle(SW.danger).padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(RoundedRectangle(cornerRadius: SW.radiusSmall, style: .continuous).fill(SW.danger.opacity(0.15)))
+                        .opacity(appState.backgroundProcessingCount > 0 ? 1 : 0)
+                        .accessibilityHidden(appState.backgroundProcessingCount == 0)
                 }
 
                 Text(formatDuration(recorder.recordingDuration))
@@ -117,24 +145,24 @@ struct RecordingOverlayContent: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
         .fixedSize()
-        .background(
-            ZStack(alignment: .leading) {
-                Capsule().fill(.ultraThinMaterial)
-                Capsule().fill(Color.black.opacity(0.45))
-                if appState.isProcessingActive {
-                    processingProgressFill(cornerRadius: SW.radiusLarge, opacity: 0.10)
-                }
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: SW.radiusLarge, style: .continuous))
-        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
-        .environment(\.colorScheme, .dark)
-        .padding(8)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                pulse = true
-            }
+        .opacity(geometry.contentOpacity)
+    }
+
+    private func updatePulse() {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+            pulse = !reduceMotion
         }
+    }
+
+    private func recordingQualityBadge(_ icon: String, _ label: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 9))
+            Text(label).font(.system(size: 10, weight: .bold))
+        }
+        .foregroundStyle(SW.warning)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color.black.opacity(0.8)))
     }
 
     private var statusColor: Color {
@@ -298,20 +326,19 @@ private class GhostPanel: NSPanel {
 @MainActor
 final class OverlayWindowController: NSObject, ObservableObject {
     private var panel: NSPanel?
-    private let panelWidth: CGFloat = 500
-    private let panelHeight: CGFloat = 80
+    private var anchorScreen: NSScreen?
+    private let geometry = OverlayGeometry()
     private let topMargin: CGFloat = 12
 
     func show(appState: AppState) {
         if panel == nil {
-            let content = RecordingOverlayContent(recorder: appState.recorder)
+            let content = RecordingOverlayContent(recorder: appState.recorder, geometry: geometry)
                 .environmentObject(appState)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             let hostingView = NSHostingView(rootView: content)
-            hostingView.translatesAutoresizingMaskIntoConstraints = false
+            hostingView.sizingOptions = .intrinsicContentSize
 
-            guard let frame = overlayFrame() else { return }
+            guard let frame = overlayFrame(size: hostingView.fittingSize) else { return }
 
             let newPanel = GhostPanel(
                 contentRect: frame,
@@ -332,28 +359,149 @@ final class OverlayWindowController: NSObject, ObservableObject {
 
             newPanel.contentView = hostingView
             self.panel = newPanel
+            geometry.onSizeChange = { [weak self] size in
+                guard let self, let panel = self.panel, panel.isVisible,
+                      let frame = self.overlayFrame(size: size), panel.frame != frame else { return }
+                panel.setFrame(frame, display: true)
+            }
         }
 
-        if let frame = overlayFrame() {
+        if panel?.isVisible != true { anchorScreen = nil }
+        if let size = panel?.contentView?.fittingSize, let frame = overlayFrame(size: size) {
             panel?.setFrame(frame, display: true)
         }
+        geometry.setPresented(true)
         panel?.orderFront(nil)
     }
 
     func hide() {
         panel?.orderOut(nil)
+        geometry.setPresented(false)
+        anchorScreen = nil
     }
 
-    private func overlayFrame() -> NSRect? {
+    private func overlayFrame(size: NSSize) -> NSRect? {
         let mouseLocation = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) })
+        let screen = anchorScreen ?? NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) })
             ?? NSScreen.main
             ?? NSScreen.screens.first
         guard let screen else { return nil }
+        anchorScreen = screen
 
         let visibleFrame = screen.visibleFrame
-        let x = visibleFrame.midX - (panelWidth / 2)
-        let y = visibleFrame.maxY - panelHeight - topMargin
-        return NSRect(x: x, y: y, width: panelWidth, height: panelHeight)
+        let x = visibleFrame.midX - (size.width / 2)
+        let y = visibleFrame.maxY - size.height - topMargin
+        return NSRect(x: x, y: y, width: size.width, height: size.height)
+    }
+}
+
+
+@MainActor
+private final class OverlayGeometry: ObservableObject {
+    @Published private(set) var size: CGSize?
+    var contentOpacity: Double {
+        guard let size else { return 1 }
+        return min(1, max(0, Double((size.width - target.width + 18) / 18)))
+    }
+    var onSizeChange: ((CGSize) -> Void)?
+    private let spring = Spring(response: 0.38, dampingRatio: 0.76)
+    private var target = CGSize.zero
+    private var origin = CGSize.zero
+    private var velocity = AnimatablePair<Double, Double>(0, 0)
+    private var startedAt: TimeInterval = 0
+    private var animation: OverlayResizeAnimation?
+    private var presented = false
+
+    func setPresented(_ presented: Bool) {
+        self.presented = presented
+        if !presented {
+            animation?.stop()
+            animation = nil
+            if size != nil { publish(target) }
+        }
+    }
+
+    func retarget(_ target: CGSize, reduceMotion: Bool) {
+        guard target.width > 0, target.height > 0 else { return }
+        guard self.target != target || reduceMotion && animation != nil else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsed = max(0, now - startedAt)
+        let delta = AnimatablePair(Double(self.target.width - origin.width), Double(self.target.height - origin.height))
+        let currentVelocity = animation != nil ? spring.velocity(target: delta, initialVelocity: velocity, time: elapsed) : .zero
+        let current = animation != nil ? sampled(at: elapsed) : size
+        animation?.stop()
+        animation = nil
+        self.target = target
+        guard presented, !reduceMotion, let current else { publish(target); return }
+        origin = current
+        velocity = currentVelocity
+        startedAt = now
+        let displacement = AnimatablePair(Double(target.width - origin.width), Double(target.height - origin.height))
+        let duration = spring.settlingDuration(target: displacement, initialVelocity: velocity, epsilon: 0.1)
+        let driver = OverlayResizeAnimation(duration: duration) { [weak self] elapsed, finished in
+            guard let self else { return }
+            self.publish(finished ? self.target : self.sampled(at: elapsed))
+            if finished { self.animation = nil }
+        }
+        animation = driver
+        driver.start()
+    }
+
+    private func sampled(at elapsed: TimeInterval) -> CGSize {
+        let delta = AnimatablePair(Double(target.width - origin.width), Double(target.height - origin.height))
+        let value = spring.value(target: delta, initialVelocity: velocity, time: elapsed)
+        return CGSize(width: origin.width + value.first, height: origin.height + value.second)
+    }
+
+    private func publish(_ size: CGSize) {
+        onSizeChange?(CGSize(width: size.width + 12, height: size.height + 12))
+        self.size = size
+    }
+}
+
+private final class OverlayResizeAnimation: NSAnimation {
+    private let sample: @MainActor (TimeInterval, Bool) -> Void
+    init(duration: TimeInterval, sample: @escaping @MainActor (TimeInterval, Bool) -> Void) {
+        self.sample = sample
+        super.init(duration: duration, animationCurve: .linear)
+        animationBlockingMode = .nonblocking
+        frameRate = 60
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override var currentProgress: NSAnimation.Progress {
+        get { super.currentProgress }
+        set {
+            super.currentProgress = newValue
+            MainActor.assumeIsolated { sample(Double(newValue) * duration, newValue >= 1) }
+        }
+    }
+}
+
+private struct OverlayCapsuleLayout: Layout {
+    var size: CGSize?
+    var reduceMotion: Bool
+    var onNaturalSize: @MainActor (CGSize, Bool) -> Void
+
+    struct Cache {
+        var naturalSize = CGSize.zero
+        var reduceMotion = false
+    }
+
+    func makeCache(subviews: Subviews) -> Cache { Cache() }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        guard let content = subviews.first else { return .zero }
+        let natural = content.sizeThatFits(.unspecified)
+        if natural != cache.naturalSize || reduceMotion != cache.reduceMotion {
+            cache.naturalSize = natural
+            cache.reduceMotion = reduceMotion
+            let reduced = reduceMotion
+            DispatchQueue.main.async { onNaturalSize(natural, reduced) }
+        }
+        return size ?? natural
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        subviews.first?.place(at: CGPoint(x: bounds.midX, y: bounds.midY), anchor: .center, proposal: .unspecified)
     }
 }

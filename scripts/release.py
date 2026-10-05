@@ -20,13 +20,15 @@ def version_key(value):
 
 
 def successor(version, requested=None):
-    if not re.fullmatch(r"\d+\.\d+", version):
-        raise ValueError("Automatic preparation requires the current major.minor version line")
-    major, minor = version.split(".")
-    next_minor, next_major = f"{major}.{int(minor) + 1}", f"{int(major) + 1}.0"
-    if requested is not None and requested not in (next_minor, next_major):
-        raise ValueError(f"Next version must be {next_minor} or {next_major}")
-    return requested if requested is not None else next_minor
+    parts = version_key(version)
+    major, minor = parts[:2]
+    patch = parts[2] if len(parts) == 3 else 0
+    next_patch = f"{major}.{minor}.{patch + 1}"
+    next_minor, next_major = f"{major}.{minor + 1}", f"{major + 1}.0"
+    allowed = (next_patch, next_minor, next_major, f"{next_minor}.1", f"{next_major}.1")
+    if requested is not None and requested not in allowed:
+        raise ValueError(f"Next version must be one of {', '.join(allowed)}")
+    return requested if requested is not None else next_patch if len(parts) == 3 else next_minor
 
 
 def sections(markdown):
@@ -73,6 +75,14 @@ def tags(root, remote=None):
     return [tag[1:] for tag in names if re.fullmatch(r"v\d+\.\d+(?:\.\d+)?", tag)]
 
 
+def validate_prepared(rows, version, latest):
+    successor(latest, version)
+    if len(rows) < 3 or rows[2][0] != latest:
+        raise ValueError("Prepared release must follow the latest tagged changelog version")
+    if has_notes(rows[0][2]):
+        raise ValueError("Unreleased still contains changes; prepare the release before publishing")
+
+
 def plan(root, remote=None):
     _, rows, version, notes = contract(root)
     known = tags(root, remote)
@@ -83,11 +93,7 @@ def plan(root, remote=None):
         raise ValueError("Checkout version is behind the latest tag")
     publish = version != latest
     if publish:
-        successor(latest, version)
-        if len(rows) < 3 or rows[2][0] != latest:
-            raise ValueError("Prepared release must follow the latest tagged changelog version")
-    if publish and has_notes(rows[0][2]):
-        raise ValueError("Unreleased still contains changes; prepare the release before publishing")
+        validate_prepared(rows, version, latest)
     return {"version": version, "tag": f"v{version}", "publish": publish,
             "notes": notes, "reason": "prepared release" if publish else "version already tagged; no publication"}
 
@@ -96,17 +102,27 @@ def prepare(root, date, remote=None, version=None):
     markdown, rows, current, _ = contract(root)
     known = tags(root, remote)
     latest = max(known, key=version_key) if known else None
-    if latest is None or version_key(current) > version_key(latest):
+    if latest is None:
         raise ValueError("Current version is not tagged yet; publish it before preparing another release")
     if version_key(current) < version_key(latest):
         raise ValueError("Checkout is behind the latest tag; reconcile it before preparing a release")
-    body = rows[0][2]
-    if not has_notes(body):
-        raise ValueError("Unreleased is empty; refusing to create an empty release")
-    version = successor(current, version)
-    datetime.date.fromisoformat(date)
-    start, end = rows[0][3:]
-    updated = markdown[:start] + f"## [Unreleased]\n\n## [{version}] - {date}\n\n{body}\n\n---\n\n" + markdown[end:]
+    if version_key(current) > version_key(latest):
+        if version is None:
+            raise ValueError("Current version is not tagged yet; explicitly select a version to retarget this batch")
+        validate_prepared(rows, current, latest)
+        version = successor(latest, version)
+        if version_key(version) <= version_key(current):
+            raise ValueError("Retargeted version must be newer than the prepared version")
+        start, end = HEADER.match(markdown, rows[1][3]).span(1)
+        updated = markdown[:start] + version + markdown[end:]
+    else:
+        body = rows[0][2]
+        if not has_notes(body):
+            raise ValueError("Unreleased is empty; refusing to create an empty release")
+        version = successor(current, version)
+        datetime.date.fromisoformat(date)
+        start, end = rows[0][3:]
+        updated = markdown[:start] + f"## [Unreleased]\n\n## [{version}] - {date}\n\n{body}\n\n---\n\n" + markdown[end:]
     # Preserve plist formatting; validate both substitutions before writing either file.
     plist = (root / PLIST).read_text()
     for key in ("CFBundleShortVersionString", "CFBundleVersion"):
@@ -139,7 +155,7 @@ def main():
     parser.add_argument("--require-new", action="store_true")
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--remote", help="Read authoritative tags from this remote without changing local refs")
-    parser.add_argument("--version", help="Prepare the explicit next minor or next major.0 version")
+    parser.add_argument("--version", help="Select the next patch, minor, or major.0 release; explicitly retarget an unpublished batch")
     args = parser.parse_args()
     try:
         if args.command == "prepare":

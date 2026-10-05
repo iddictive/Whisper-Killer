@@ -42,9 +42,21 @@ class ReleaseContractTests(unittest.TestCase):
         path.write_bytes(plistlib.dumps({"CFBundleShortVersionString": version, "CFBundleVersion": version}))
 
     def test_prepare_plan_and_repeat_preserve_one_release_identity(self):
-        for requested, version in ((None, "3.57"), ("3.57", "3.57"), ("4.0", "4.0")):
-            with self.subTest(requested=requested):
-                self.write_fixture()
+        for baseline, requested, version, retarget in (
+            ("3.56", None, "3.57", None), ("3.56", "3.57", "3.57", None),
+            ("3.56", "4.0", "4.0", None), ("3.56", "3.56.1", "3.56.1", None),
+            ("3.56", "3.57.1", "3.57.1", None), ("3.56", "4.0.1", "4.0.1", None),
+            ("3.56.1", None, "3.56.2", None), ("3.56.1", "3.57", "3.57", None),
+            ("3.56.1", "4.0.1", "4.0.1", None),
+            ("3.56", "4.0", "4.0", "4.0.1"),
+            ("3.56", "3.57", "3.57", "3.57.1"),
+            ("3.56", "3.56.1", "3.56.1", "3.57.1"),
+        ):
+            with self.subTest(baseline=baseline, requested=requested, retarget=retarget):
+                self.write_fixture(version=baseline)
+                if baseline != "3.56":
+                    self.git("tag", f"v{baseline}")
+                tagged_commit = self.git("rev-parse", f"v{baseline}")
                 self.assertFalse(release.plan(self.root)["publish"])
                 if requested is None:
                     self.assertEqual(release.prepare(self.root, "2026-09-23"), version)
@@ -61,22 +73,46 @@ class ReleaseContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "not tagged"):
                     release.prepare(self.root, "2026-09-24")
                 self.assertEqual(snapshot, (self.root / "CHANGELOG.md").read_bytes())
+                if retarget:
+                    subprocess.check_call([sys.executable, release.__file__, "prepare", "--root", str(self.root),
+                                           "--date", "2026-09-24", "--version", retarget],
+                                          stdout=subprocess.DEVNULL)
+                    self.assertEqual((self.root / "CHANGELOG.md").read_bytes(),
+                                     snapshot.replace(f"## [{version}]".encode(), f"## [{retarget}]".encode()))
+                    self.assertEqual(release.contract(self.root)[2], retarget)
+                    self.assertEqual(release.plan(self.root)["notes"], plan["notes"])
+                    self.assertEqual(self.git("rev-parse", f"v{baseline}"), tagged_commit)
+                    self.assertNotIn(version, release.tags(self.root))
+                    version = retarget
                 self.git("add", ".")
                 self.git("commit", "-qm", "prepared", "--allow-empty")
                 self.git("tag", f"v{version}")
                 self.assertFalse(release.plan(self.root)["publish"])
                 self.git("tag", "-d", f"v{version}")
+                if baseline != "3.56":
+                    self.git("tag", "-d", f"v{baseline}")
 
     def test_inconsistent_and_unprepared_inputs_fail_closed(self):
-        for version in ("3.55", "3.56", "3.58", "4.1", "5.0", "4.0.0", "invalid"):
-            with self.subTest(requested=version):
+        for baseline, version in (
+            *(("3.56", version) for version in (
+                "3.55", "3.56", "3.58", "4.1", "5.0", "4.0.0", "invalid",
+                "3.56.2", "3.57.2", "4.0.2", "4.1.1", "5.0.1")),
+            ("3.56.1", "3.56.1"), ("3.56.1", "3.56.3"), ("3.56.1", "3.57.2"),
+        ):
+            with self.subTest(baseline=baseline, requested=version):
+                self.write_fixture(version=baseline)
+                if baseline != "3.56":
+                    self.git("tag", f"v{baseline}")
                 snapshot = [(self.root / path).read_bytes() for path in ("CHANGELOG.md", release.PLIST)]
                 with self.assertRaisesRegex(ValueError, "Next version"):
                     release.prepare(self.root, "2026-09-23", version=version)
                 self.assertEqual(snapshot, [(self.root / path).read_bytes()
                                             for path in ("CHANGELOG.md", release.PLIST)])
+                if baseline != "3.56":
+                    self.git("tag", "-d", f"v{baseline}")
         for case in ("empty", "mismatch", "unfinished", "duplicate", "skipped", "major",
-                     "untagged", "untagged-baseline", "stale"):
+                     "untagged", "untagged-baseline", "retarget-current", "retarget-behind",
+                     "retarget-skip", "retarget-baseline", "retarget-tagged", "stale"):
             with self.subTest(case=case):
                 self.write_fixture()
                 if case == "empty":
@@ -105,11 +141,24 @@ class ReleaseContractTests(unittest.TestCase):
                 elif case == "untagged-baseline":
                     self.write_fixture(pending="", version="4.0", previous="3.57")
                     operation = lambda: release.plan(self.root)
+                elif case.startswith("retarget"):
+                    self.write_fixture(pending="", version="4.0",
+                                       previous="3.57" if case == "retarget-baseline" else "3.56")
+                    if case == "retarget-tagged":
+                        self.git("tag", "v4.0")
+                    target = {"retarget-current": "4.0", "retarget-behind": "3.56.1",
+                              "retarget-skip": "4.0.2"}.get(case, "4.0.1")
+                    operation = lambda: release.prepare(self.root, "2026-09-23", version=target)
                 else:
                     self.git("tag", "v3.58")
                     operation = lambda: release.plan(self.root)
+                snapshot = [(self.root / path).read_bytes() for path in ("CHANGELOG.md", release.PLIST)]
                 with self.assertRaises(ValueError):
                     operation()
+                self.assertEqual(snapshot, [(self.root / path).read_bytes()
+                                            for path in ("CHANGELOG.md", release.PLIST)])
+                if case == "retarget-tagged":
+                    self.git("tag", "-d", "v4.0")
 
     def test_packaged_version_and_notes_must_match_source(self):
         bundle = self.root / "Fixture.app"
@@ -142,6 +191,11 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertTrue(release.plan(self.root, "origin")["publish"])
         self.assertIn("3.99", release.tags(self.root))
         self.assertNotIn("3.57", release.tags(self.root, "origin"))
+        remote_tags = self.git("ls-remote", "--tags", "origin")
+        self.assertEqual(release.prepare(self.root, "2026-09-24", "origin", "4.0.1"), "4.0.1")
+        self.assertTrue(release.plan(self.root, "origin")["publish"])
+        self.assertEqual(self.git("ls-remote", "--tags", "origin"), remote_tags)
+        self.assertNotIn("4.0.1", release.tags(self.root))
 
     def test_publication_stops_on_tag_conflict_or_release_failure(self):
         fake_bin = self.root / "bin"

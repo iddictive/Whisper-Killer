@@ -18,7 +18,9 @@ struct WhisperFreeApp: App {
 
     var body: some Scene {
         Settings {
-            EmptyView()
+            SettingsView(modelManager: AppState.shared.modelManager, recorder: AppState.shared.recorder)
+                .environmentObject(AppState.shared)
+                .background(SettingsSceneBridge())
         }
         .commands {
             CommandGroup(replacing: .appSettings) {
@@ -110,6 +112,35 @@ struct WhisperFreeApp: App {
                 Link(L.tr("Changelog", "История изменений"), destination: URL(string: "https://github.com/iddictive/Whisper-Killer/blob/main/CHANGELOG.md")!)
             }
         }
+    }
+}
+
+// Route system Settings requests to the existing AppKit window controller.
+private struct SettingsSceneBridge: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { SettingsSceneBridgeView() }
+    func updateNSView(_ view: NSView, context: Context) {}
+}
+
+private final class SettingsSceneBridgeView: NSView {
+    private var observer: NSObjectProtocol?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        guard let window else { return }
+        observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+        ) { [weak window] _ in
+            Task { @MainActor in
+                guard let window, let delegate = AppDelegate.shared else { return }
+                window.orderOut(nil)
+                delegate.showSettings()
+            }
+        }
+    }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 }
 
@@ -657,7 +688,6 @@ final class MainMenuWindowController: NSObject {
 @MainActor
 final class SettingsWindowController: NSObject {
     private var window: NSWindow?
-
     func show() {
         if let window {
             AppDelegate.shared?.presentStandaloneWindow(window)
