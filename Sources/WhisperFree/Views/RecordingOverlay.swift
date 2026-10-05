@@ -115,7 +115,12 @@ struct RecordingOverlayContent: View {
                     processingCancelButton
                 }
             } else {
-                Text(statusText).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                Text(statusText)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 380, alignment: .leading)
             }
             
             if let _ = appState.lastError {

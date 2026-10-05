@@ -1433,7 +1433,7 @@ final class AppState: ObservableObject {
                 history[index].processingError = error.localizedDescription
                 Storage.shared.updateTranscriptionHistoryEntry(history[index])
             }
-            showError(error.localizedDescription)
+            showError((error as? TranscriptionError)?.overlayDescription ?? error.localizedDescription)
         }
     }
 
@@ -1671,7 +1671,7 @@ final class AppState: ObservableObject {
                 usage: usage
             )
             finishProcessingJob(id: jobID)
-            showError(error.localizedDescription)
+            showError((error as? TranscriptionError)?.overlayDescription ?? error.localizedDescription)
         }
     }
 

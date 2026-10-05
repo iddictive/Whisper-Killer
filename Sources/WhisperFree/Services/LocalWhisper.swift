@@ -69,7 +69,7 @@ final class LocalWhisper: TranscriptionEngine, @unchecked Sendable {
         
         if !FileManager.default.isReadableFile(atPath: path) {
             print("whisper_debug: ❌ Model file is NOT READABLE at path: \(path)")
-            // Try to fix permissions or report specific error
+            throw TranscriptionError.transcriptionFailed("Local model is not readable. Check Engine & API.")
         }
         
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int64) ?? 0

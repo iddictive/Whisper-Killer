@@ -52,6 +52,19 @@ enum TranscriptionError: LocalizedError {
 
         return false
     }
+
+    var overlayDescription: String {
+        guard case .transcriptionFailed(let details) = self else {
+            return localizedDescription
+        }
+        if details.contains("whisper_init_from_file") && details.contains("failed to open") {
+            return L.tr("Local model unavailable. Open Engine & API.", "Модель недоступна. Откройте Engine & API.")
+        }
+        if details.contains("\n") || details.count > 200 {
+            return L.tr("Transcription failed. See History for details.", "Ошибка транскрибации. Подробности в истории.")
+        }
+        return localizedDescription
+    }
 }
 
 // MARK: - Engine Factory
