@@ -849,9 +849,8 @@ final class AccessibilityDragHelperWindowController: NSObject {
         pendingShowTimer = nil
 
         if let panel {
-            panel.makeKeyAndOrderFront(nil)
             position(panel)
-            NSApp.activate(ignoringOtherApps: true)
+            panel.orderFrontRegardless()
             return
         }
 
@@ -878,12 +877,12 @@ final class AccessibilityDragHelperWindowController: NSObject {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.level = .floating
+        panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         self.panel = panel
         position(panel)
-        panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        panel.orderFrontRegardless()
         startRepositioning()
     }
 

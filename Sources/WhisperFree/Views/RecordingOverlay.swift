@@ -334,6 +334,8 @@ final class OverlayWindowController: NSObject, ObservableObject {
     private var anchorScreen: NSScreen?
     private let geometry = OverlayGeometry()
     private let topMargin: CGFloat = 12
+    private var visibilityAnimation: OverlayResizeAnimation?
+    private var wantsVisible = false
 
     func show(appState: AppState) {
         if panel == nil {
@@ -371,18 +373,55 @@ final class OverlayWindowController: NSObject, ObservableObject {
             }
         }
 
-        if panel?.isVisible != true { anchorScreen = nil }
+        if panel?.isVisible != true {
+            anchorScreen = nil
+            panel?.alphaValue = 0
+        }
         if let size = panel?.contentView?.fittingSize, let frame = overlayFrame(size: size) {
             panel?.setFrame(frame, display: true)
         }
         geometry.setPresented(true)
         panel?.orderFront(nil)
+        setVisible(true)
     }
 
     func hide() {
-        panel?.orderOut(nil)
-        geometry.setPresented(false)
-        anchorScreen = nil
+        setVisible(false)
+    }
+
+    private func setVisible(_ visible: Bool) {
+        guard let panel, wantsVisible != visible else { return }
+        wantsVisible = visible
+        visibilityAnimation?.stop()
+        visibilityAnimation = nil
+
+        let origin = panel.alphaValue
+        let target: CGFloat = visible ? 1 : 0
+        let duration = (visible ? 0.22 : 0.18) * Double(abs(target - origin))
+        guard duration > 0, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            finishVisibility(visible)
+            return
+        }
+
+        let driver = OverlayResizeAnimation(duration: duration) { [weak self] elapsed, finished in
+            guard let self, self.wantsVisible == visible else { return }
+            let progress = min(1, elapsed / duration)
+            let eased = progress * progress * (3 - 2 * progress)
+            panel.alphaValue = origin + (target - origin) * eased
+            if finished { self.finishVisibility(visible) }
+        }
+        visibilityAnimation = driver
+        driver.start()
+    }
+
+    private func finishVisibility(_ visible: Bool) {
+        visibilityAnimation = nil
+        panel?.alphaValue = visible ? 1 : 0
+        if !visible {
+            panel?.orderOut(nil)
+            geometry.setPresented(false)
+            anchorScreen = nil
+        }
     }
 
     private func overlayFrame(size: NSSize) -> NSRect? {

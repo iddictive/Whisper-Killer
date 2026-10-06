@@ -4,6 +4,14 @@ All notable changes to WhisperKiller are documented in this file.
 
 ## [Unreleased]
 
+## [4.0.3] - 2026-10-06
+
+### Fixed
+- **Capsule visibility**: Fade the recording capsule in and out, continue from its current opacity when a transition reverses, and remove the panel only after it has faded away.
+- **Accessibility helper**: Show the drag-and-drop card without activating the application or bringing its other windows above System Settings.
+
+---
+
 ## [4.0.2] - 2026-10-05
 
 ### Fixed
