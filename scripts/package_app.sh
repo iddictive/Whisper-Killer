@@ -74,7 +74,8 @@ if [ -L "$OUTPUT_BUNDLE" ]; then
     exit 1
 fi
 
-mkdir -p "$(dirname "$OUTPUT_BUNDLE")"
+OUTPUT_DIR="$(dirname "$OUTPUT_BUNDLE")"
+mkdir -p "$OUTPUT_DIR"
 
 if [ -n "$BINARY" ] && [[ "$BINARY" != /* ]]; then
     BINARY="$(pwd)/$BINARY"
@@ -110,8 +111,34 @@ if [ ! -f "$INFO_PLIST" ]; then
     exit 1
 fi
 
-STAGE_DIR="$(mktemp -d)"
-trap 'rm -rf "$STAGE_DIR"' EXIT
+EXPECTED_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$INFO_PLIST" 2>/dev/null || true)"
+if [ -z "$EXPECTED_BUNDLE_ID" ]; then
+    echo "Error: Canonical Info.plist lacks CFBundleIdentifier: $INFO_PLIST" >&2
+    exit 1
+fi
+
+if [ -e "$OUTPUT_BUNDLE" ]; then
+    if [ ! -d "$OUTPUT_BUNDLE" ]; then
+        echo "Error: Existing destination is not a bundle directory: $OUTPUT_BUNDLE" >&2
+        exit 1
+    fi
+    EXISTING_PLIST="$OUTPUT_BUNDLE/Contents/Info.plist"
+    if [ ! -f "$EXISTING_PLIST" ]; then
+        echo "Error: Existing destination lacks Contents/Info.plist: $OUTPUT_BUNDLE" >&2
+        exit 1
+    fi
+    EXISTING_ID="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$EXISTING_PLIST" 2>/dev/null || true)"
+    if [ "$EXISTING_ID" != "$EXPECTED_BUNDLE_ID" ]; then
+        echo "Error: Existing destination has mismatched bundle identifier: '$EXISTING_ID' (expected '$EXPECTED_BUNDLE_ID')" >&2
+        exit 1
+    fi
+fi
+
+STAGE_DIR="$(mktemp -d "$OUTPUT_DIR/.pkg-stage.XXXXXX")"
+cleanup_stage() {
+    rm -rf "$STAGE_DIR"
+}
+trap cleanup_stage EXIT
 
 BUNDLE_BASENAME="$(basename "$OUTPUT_BUNDLE")"
 STAGED_BUNDLE="$STAGE_DIR/$BUNDLE_BASENAME"
@@ -186,7 +213,21 @@ fi
 clean_metadata "$STAGED_BUNDLE"
 codesign --verify --deep --strict "$STAGED_BUNDLE"
 
-rm -rf "$OUTPUT_BUNDLE"
-ditto --norsrc --noextattr "$STAGED_BUNDLE" "$OUTPUT_BUNDLE"
+BACKUP_BUNDLE=""
+if [ -e "$OUTPUT_BUNDLE" ]; then
+    BACKUP_BUNDLE="$STAGE_DIR/.prev-$BUNDLE_BASENAME"
+    if ! mv "$OUTPUT_BUNDLE" "$BACKUP_BUNDLE"; then
+        echo "Error: Failed to move existing bundle to staging backup" >&2
+        exit 1
+    fi
+fi
+
+if ! mv "$STAGED_BUNDLE" "$OUTPUT_BUNDLE"; then
+    echo "Error: Failed to promote staged bundle to $OUTPUT_BUNDLE" >&2
+    if [ -n "$BACKUP_BUNDLE" ] && [ -e "$BACKUP_BUNDLE" ]; then
+        mv "$BACKUP_BUNDLE" "$OUTPUT_BUNDLE" || true
+    fi
+    exit 1
+fi
 
 echo "Packaged and verified: $OUTPUT_BUNDLE"
