@@ -52,55 +52,7 @@ jobs:
         if: steps.release.outputs.publish == 'true'
         run: |
           swift build -c release --disable-keychain --disable-netrc
-          mkdir -p WhisperKiller.app/Contents/MacOS
-          mkdir -p WhisperKiller.app/Contents/Resources
-
-          # Find the binary dynamically
-          echo "🔍 Looking for binary: WhisperKiller in .build/..."
-          ACTUAL_BINARY=$(find .build -name "WhisperKiller" -type f -not -path "*.dSYM*" 2>/dev/null | grep -i "/release/" | head -n 1)
-
-          if [ -z "$ACTUAL_BINARY" ]; then
-            echo "❌ Binary not found!"
-            find .build -name "WhisperKiller" -type f 2>/dev/null
-            exit 1
-          fi
-          echo "Found binary at: $ACTUAL_BINARY"
-
-          cp "$ACTUAL_BINARY" WhisperKiller.app/Contents/MacOS/
-          chmod +x WhisperKiller.app/Contents/MacOS/WhisperKiller
-
-          cp Sources/WhisperFree/Resources/Info.plist WhisperKiller.app/Contents/
-          /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable WhisperKiller" "WhisperKiller.app/Contents/Info.plist"
-
-          if [ -d Sources/WhisperFree/Resources/Profanity ]; then
-            mkdir -p WhisperKiller.app/Contents/Resources/Resources
-            ditto --norsrc --noextattr Sources/WhisperFree/Resources/Profanity WhisperKiller.app/Contents/Resources/Resources/Profanity
-          fi
-
-          if [ -f Sources/WhisperFree/Resources/AppIcon.icns ]; then
-            cp Sources/WhisperFree/Resources/AppIcon.icns WhisperKiller.app/Contents/Resources/
-          fi
-
-          cp CHANGELOG.md WhisperKiller.app/Contents/Resources/CHANGELOG.md
-          python3 scripts/release.py verify-bundle --bundle WhisperKiller.app
-
-          # Ad-hoc sign after all files are in place.
-          rm -rf WhisperKiller.app/Contents/_CodeSignature
-          dot_clean -m WhisperKiller.app 2>/dev/null || true
-          find WhisperKiller.app -name '._*' -delete
-          find WhisperKiller.app -print0 | xargs -0 xattr -c 2>/dev/null || true
-          codesign --force --deep --sign - WhisperKiller.app || {
-            echo "First signing pass failed after xattr cleanup. Retrying once..."
-            rm -rf WhisperKiller.app/Contents/_CodeSignature
-            dot_clean -m WhisperKiller.app 2>/dev/null || true
-            find WhisperKiller.app -name '._*' -delete
-            find WhisperKiller.app -print0 | xargs -0 xattr -c 2>/dev/null || true
-            codesign --force --deep --sign - WhisperKiller.app
-          }
-          dot_clean -m WhisperKiller.app 2>/dev/null || true
-          find WhisperKiller.app -name '._*' -delete
-          find WhisperKiller.app -print0 | xargs -0 xattr -c 2>/dev/null || true
-          codesign --verify --deep --strict WhisperKiller.app
+          bash scripts/package_app.sh --output WhisperKiller.app --identity -
 
       - name: Create DMG
         if: steps.release.outputs.publish == 'true'
