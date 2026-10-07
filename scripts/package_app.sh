@@ -134,8 +134,14 @@ if [ -e "$OUTPUT_BUNDLE" ]; then
     fi
 fi
 
+BACKUP_BUNDLE=""
+PRESERVE_STAGE=0
 STAGE_DIR="$(mktemp -d "$OUTPUT_DIR/.pkg-stage.XXXXXX")"
 cleanup_stage() {
+    if [ "$PRESERVE_STAGE" -eq 1 ] || { [ -n "$BACKUP_BUNDLE" ] && [ -e "$BACKUP_BUNDLE" ] && [ ! -e "$OUTPUT_BUNDLE" ]; }; then
+        echo "Preserving backup bundle for manual recovery at: $BACKUP_BUNDLE" >&2
+        return
+    fi
     rm -rf "$STAGE_DIR"
 }
 trap cleanup_stage EXIT
@@ -213,7 +219,6 @@ fi
 clean_metadata "$STAGED_BUNDLE"
 codesign --verify --deep --strict "$STAGED_BUNDLE"
 
-BACKUP_BUNDLE=""
 if [ -e "$OUTPUT_BUNDLE" ]; then
     BACKUP_BUNDLE="$STAGE_DIR/.prev-$BUNDLE_BASENAME"
     if ! mv "$OUTPUT_BUNDLE" "$BACKUP_BUNDLE"; then
@@ -225,7 +230,11 @@ fi
 if ! mv "$STAGED_BUNDLE" "$OUTPUT_BUNDLE"; then
     echo "Error: Failed to promote staged bundle to $OUTPUT_BUNDLE" >&2
     if [ -n "$BACKUP_BUNDLE" ] && [ -e "$BACKUP_BUNDLE" ]; then
-        mv "$BACKUP_BUNDLE" "$OUTPUT_BUNDLE" || true
+        if ! mv "$BACKUP_BUNDLE" "$OUTPUT_BUNDLE"; then
+            PRESERVE_STAGE=1
+            echo "Error: Failed to restore backup bundle to $OUTPUT_BUNDLE. Preserved backup at: $BACKUP_BUNDLE" >&2
+            exit 1
+        fi
     fi
     exit 1
 fi
